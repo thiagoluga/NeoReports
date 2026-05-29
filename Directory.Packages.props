@@ -1,0 +1,7 @@
+<Project>
+
+  <!-- Central Package Management lives under build/. This root shim is the file
+       MSBuild auto-discovers for package versions; it forwards to the real catalog. -->
+  <Import Project="build\Directory.Packages.props" />
+
+</Project>
