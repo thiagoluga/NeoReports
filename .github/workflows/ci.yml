@@ -20,12 +20,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Pin exact SDK versions: wildcards (8.0.x) make setup-dotnet query the
+      # actions/dotnet-versions repo via the API, which fails with
+      # "Resource not accessible by integration". Exact versions install directly.
       - name: Setup .NET (8 + 9)
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |
-            8.0.x
-            9.0.x
+            8.0.100
+            9.0.100
 
       - name: Restore
         run: dotnet restore NeoReports.sln
