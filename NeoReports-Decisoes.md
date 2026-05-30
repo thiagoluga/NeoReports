@@ -179,4 +179,27 @@ Removido da v1 vs. Cap. 16: `IRetryPolicy`, `IExceptionClassifier`, `IAuthProvid
 | D8 | Disparo/sync | Reports registrados por nome; sem config dinâmica; sync = single-output |
 | D9 | Abstractions | Mínimo typed-only, congelado, SemVer estrito |
 | D10 | Filtro | Delegates C# tipados; JsonLogic/DynamicLinq pós-MVP |
+| D11 | Retry/Skip | Retry (Polly) envolve a leitura do batch; falha de leitura não é "skippável" (sem cursor pra avançar) → vira Abort; falha de projeção/escrita é skippável (cursor já conhecido) |
+| D12 | Map no builder | `Map` não é um passo que troca o tipo do builder; o mapeamento é expresso por `From(source, map)`, mantendo `ReportBuilder<TRow>` mono-genérico e compatível com `AddReport<TRow>(Action<...>)` |
 | — | Design | Já feito no Claude Design; exportar conforme handoff; UI pós-MVP |
+
+---
+
+## D11 — Semântica de retry, skip e threshold (Core / PR 2)
+
+**Decisão.**
+- A unidade de resiliência é a **leitura de um batch**. A `ResiliencePipeline` (Polly v8) envolve `reader.ReadAsync` (leitura + filtro + projeção). `MaxAttempts` inclui a primeira tentativa (`MaxRetryAttempts = MaxAttempts - 1`). Cancelamento (`OperationCanceledException`) nunca é retentado.
+- **Falha de leitura** depois de esgotado o retry **não é "skippável"**: sem um batch lido não há `NextCursor` para avançar a paginação keyset, então pular silenciosamente truncaria dados. Nesse caso, mesmo em modo skip, o report **aborta** (status `Failed`).
+- **Falha de projeção/escrita** de um batch já lido **é skippável**: o `NextCursor` já é conhecido, então `SkipBatchAndLog` descarta aquele batch, loga warning estruturado e marca o report como **parcial** (`CompletedPartial`), seguindo para o próximo cursor.
+- O `IFailureStrategy` recebe contadores (consecutivas/total/razão) via `BatchFailureContext`; `SkipBatchAndLog().AbortIf(t => t.ConsecutiveFailures(n))` escala para Abort quando o threshold é atingido.
+- **Premissa de atomicidade do writer:** writers devem escrever um batch de forma atômica (bufferizar e dar flush) para que o skip não deixe linha parcial. Saída vai para arquivo temporário por execução; publicação (upload) acontece só no fim (alinha com D2: restart-do-zero, publicação atômica).
+
+**Por quê.** Retry resolve transitórios de leitura (CA-11); skip + threshold dão resiliência a falhas definitivas sem corromper ordenação keyset (CA-12/13/14). Separar leitura (retentável, idempotente) de escrita (não re-escrita) evita escrita dupla no stream de saída.
+
+---
+
+## D12 — `Map` via overload de `From`, builder mono-genérico (Core / PR 2)
+
+**Decisão.** `ReportBuilder<TRow>` é genérico **apenas** sobre o tipo de linha final `TRow`. O mapeamento de um tipo de origem diferente é expresso por overloads `From<TSource>(IBatchSource<TSource>, Func<TSource,TRow>)` / `From<TSource>(IStreamingSource<TSource>, Func<TSource,TRow>)`, que adaptam a source via `MappingBatchSource`/`MappingStreamingSource`.
+
+**Por quê.** Um passo `Map<TOut>` que troca o tipo do builder quebraria o padrão de registro `AddReport<TRow>("nome", Action<ReportBuilder<TRow>>)` (a lambda continuaria num builder de outro tipo enquanto o registro buildaria o original). O overload de `From` entrega a mesma capacidade ("Map para um tipo de saída" da spec) sem essa armadilha e sem segundo parâmetro genérico no builder. Colunas são declaradas com `.Column(v => v.X, "Header")` (infere `ColumnType` do tipo do membro) ou `Columns(Col(...))`.
