@@ -32,11 +32,11 @@ PRs pequenos e independentes, em ordem. Cada um fecha com testes verdes e fecha 
 - **Depende de:** PR 2.
 
 ## PR 4 — Formats.Xlsx + Destinations.S3
-- [ ] `Format.Xlsx(...)` com ClosedXML (aba, auto-filtro, tipos nativos).
-- [ ] Multi-output numa passada (CSV + XLSX lendo a source uma vez).
-- [ ] `Destination.S3(bucket, keyTemplate)` — upload tudo-ou-nada (sem objeto parcial em falha).
-- [ ] Sample `02-sql-to-xlsx-s3`.
-- **Aceite:** CA-5, CA-6, CA-8.
+- [x] `Format.Xlsx(...)` com ClosedXML (aba, auto-filtro, tipos nativos; formato/data por coluna). Memória cresce com as linhas — ver D14.
+- [x] Multi-output numa passada (CSV + XLSX lendo a source uma vez) — provado no E2E `Csv_and_xlsx_are_generated_reading_the_source_once`.
+- [x] `Destination.S3(bucket, keyTemplate)` — upload tudo-ou-nada via `PutObject` (sem objeto parcial em falha) — ver D15.
+- [x] Sample `02-sql-to-xlsx-s3`.
+- **Aceite:** CA-5, CA-6, CA-8. ✅ Total acumulado de testes verdes: 37 (13 Core + 4 CSV + 6 Local + 4 Xlsx + 3 S3 + 7 SQL/E2E).
 - **Depende de:** PR 3.
 
 ## PR 5 — Memória constante (validação)

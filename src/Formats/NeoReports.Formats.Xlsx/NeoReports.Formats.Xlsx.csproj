@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
+    <Description>XLSX (Excel) format writer for NeoReports, backed by ClosedXML.</Description>
+    <PackageTags>reports;reporting;xlsx;excel;data-export</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\NeoReports.Abstractions\NeoReports.Abstractions.csproj" />
+    <ProjectReference Include="..\..\NeoReports.Core\NeoReports.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ClosedXML" />
+  </ItemGroup>
+
+</Project>
