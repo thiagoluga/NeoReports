@@ -1,0 +1,53 @@
+name: Bug report
+description: Report a defect in NeoReports
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. Please fill out the sections
+        below so we can reproduce and fix it quickly.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, including the actual behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: A minimal report definition or code snippet that reproduces the issue.
+      render: csharp
+    validations:
+      required: true
+  - type: input
+    id: package
+    attributes:
+      label: Affected package(s) and version
+      placeholder: "e.g. NeoReports.Sources.Sql 0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: dotnet
+    attributes:
+      label: .NET version
+      placeholder: "e.g. .NET 8.0.x"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / stack trace
+      description: Any relevant log output (will be rendered as code).
+      render: shell
+    validations:
+      required: false

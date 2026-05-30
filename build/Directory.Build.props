@@ -14,8 +14,8 @@
     <Authors>NeoReports Contributors</Authors>
     <Company>NeoReports</Company>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/&lt;org&gt;/neoreports</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/&lt;org&gt;/neoreports</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/thiagoluga/NeoReports</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/thiagoluga/NeoReports</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <IncludeSymbols>true</IncludeSymbols>

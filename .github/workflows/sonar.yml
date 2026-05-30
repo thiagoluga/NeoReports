@@ -1,0 +1,78 @@
+name: Sonar
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonar-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: SonarCloud
+    runs-on: ubuntu-latest
+    # Skip until the SONAR_TOKEN secret is configured (e.g. on forks). Once you
+    # add the secret in repo settings, the job runs automatically.
+    if: ${{ github.repository == 'thiagoluga/NeoReports' }}
+    env:
+      DOTNET_NOLOGO: true
+      DOTNET_CLI_TELEMETRY_OPTOUT: true
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    steps:
+      - name: Guard — require SONAR_TOKEN
+        id: guard
+        run: |
+          if [ -z "${SONAR_TOKEN}" ]; then
+            echo "SONAR_TOKEN not set — skipping SonarCloud analysis."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.guard.outputs.enabled == 'true'
+        with:
+          # Full history gives Sonar accurate new-code / blame information.
+          fetch-depth: 0
+
+      - name: Setup .NET (8 + 9)
+        if: steps.guard.outputs.enabled == 'true'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+
+      - name: Setup Java (required by the Sonar scanner)
+        if: steps.guard.outputs.enabled == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Sonar + coverage tools
+        if: steps.guard.outputs.enabled == 'true'
+        run: |
+          dotnet tool install --global dotnet-sonarscanner
+          dotnet tool install --global dotnet-coverage
+
+      - name: Build, test (with coverage) and analyze
+        if: steps.guard.outputs.enabled == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          dotnet sonarscanner begin \
+            /k:"thiagoluga_NeoReports" \
+            /o:"thiagoluga" \
+            /d:sonar.host.url="https://sonarcloud.io" \
+            /d:sonar.token="${SONAR_TOKEN}" \
+            /d:sonar.cs.vscoveragexml.reportsPaths=coverage.xml
+          dotnet build NeoReports.sln --configuration Release
+          dotnet-coverage collect "dotnet test NeoReports.sln --configuration Release --no-build" -f xml -o coverage.xml
+          dotnet sonarscanner end /d:sonar.token="${SONAR_TOKEN}"

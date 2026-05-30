@@ -1,0 +1,31 @@
+version: 2
+updates:
+  # NuGet packages (centrally managed in build/Directory.Packages.props)
+  - package-ecosystem: "nuget"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      # Keep related ecosystem bumps together to reduce PR noise.
+      microsoft-extensions:
+        patterns:
+          - "Microsoft.Extensions.*"
+      test-tooling:
+        patterns:
+          - "xunit*"
+          - "Microsoft.NET.Test.Sdk"
+          - "FluentAssertions"
+          - "NSubstitute"
+          - "Testcontainers*"
+          - "coverlet*"
+
+  # GitHub Actions used by the workflows
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "chore(ci)"
