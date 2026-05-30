@@ -61,3 +61,8 @@ desktop.ini
 .env.local
 appsettings.*.local.json
 secrets.json
+
+# Scratch files used by the local build/test loop (never committed)
+_*.log
+_*.txt
+*.flag
