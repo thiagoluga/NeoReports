@@ -41,6 +41,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NeoReports.Destinations.S3.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "02-sql-to-xlsx-s3", "samples\02-sql-to-xlsx-s3\02-sql-to-xlsx-s3.csproj", "{34079216-845C-417E-8511-FDD3F075CDCD}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NeoReports.Benchmarks", "benchmarks\NeoReports.Benchmarks\NeoReports.Benchmarks.csproj", "{C4AE3756-5EA7-48E1-AF38-0DE79AA4B0DC}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -231,6 +233,18 @@ Global
 		{34079216-845C-417E-8511-FDD3F075CDCD}.Release|x64.Build.0 = Release|Any CPU
 		{34079216-845C-417E-8511-FDD3F075CDCD}.Release|x86.ActiveCfg = Release|Any CPU
 		{34079216-845C-417E-8511-FDD3F075CDCD}.Release|x86.Build.0 = Release|Any CPU
+		{C4AE3756-5EA7-48E1-AF38-0DE79AA4B0DC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C4AE3756-5EA7-48E1-AF38-0DE79AA4B0DC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C4AE3756-5EA7-48E1-AF38-0DE79AA4B0DC}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{C4AE3756-5EA7-48E1-AF38-0DE79AA4B0DC}.Debug|x64.Build.0 = Debug|Any CPU
+		{C4AE3756-5EA7-48E1-AF38-0DE79AA4B0DC}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{C4AE3756-5EA7-48E1-AF38-0DE79AA4B0DC}.Debug|x86.Build.0 = Debug|Any CPU
+		{C4AE3756-5EA7-48E1-AF38-0DE79AA4B0DC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C4AE3756-5EA7-48E1-AF38-0DE79AA4B0DC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C4AE3756-5EA7-48E1-AF38-0DE79AA4B0DC}.Release|x64.ActiveCfg = Release|Any CPU
+		{C4AE3756-5EA7-48E1-AF38-0DE79AA4B0DC}.Release|x64.Build.0 = Release|Any CPU
+		{C4AE3756-5EA7-48E1-AF38-0DE79AA4B0DC}.Release|x86.ActiveCfg = Release|Any CPU
+		{C4AE3756-5EA7-48E1-AF38-0DE79AA4B0DC}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -251,5 +265,6 @@ Global
 		{A96127D0-8777-4B00-AB8A-B59BAC0B3342} = {22222222-2222-2222-2222-222222222222}
 		{5A33C69B-40A0-49AF-87F4-40B75D0D53A5} = {22222222-2222-2222-2222-222222222222}
 		{34079216-845C-417E-8511-FDD3F075CDCD} = {44444444-4444-4444-4444-444444444444}
+		{C4AE3756-5EA7-48E1-AF38-0DE79AA4B0DC} = {33333333-3333-3333-3333-333333333333}
 	EndGlobalSection
 EndGlobal
