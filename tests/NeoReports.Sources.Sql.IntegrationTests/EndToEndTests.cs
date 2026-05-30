@@ -1,14 +1,14 @@
 using System.Globalization;
 using System.Text;
-using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NeoReports.Abstractions;
 using NeoReports.Core.Building;
 using NeoReports.Core.Pipeline;
 using NeoReports.Destinations.Local;
-using NeoReports.Formats.Csv;
+using Shouldly;
 using Xunit;
 using static NeoReports.Core.Building.ReportColumns;
+using static NeoReports.Formats.Csv.Format;
 
 namespace NeoReports.Sources.Sql.IntegrationTests;
 
@@ -36,7 +36,7 @@ public class EndToEndTests : IClassFixture<SqlServerFixture>, IDisposable
                 Col<Venda, string>(v => v.Cliente, "Cliente"),
                 Col<Venda, decimal>(v => v.Valor, "Valor", format: "C2", culture: "pt-BR"),
                 Col<Venda, DateTime>(v => v.Data, "Data Venda", format: "yyyy-MM-dd"))
-            .To(Format.Csv(o => o.Delimiter(';').Encoding(Encoding.UTF8)))
+            .To(Csv(o => o.Delimiter(';').Encoding(Encoding.UTF8)))
             .UploadTo(Destination.Local(Path.Combine(_outDir, "{name}-{date:yyyy-MM-dd}.{ext}")))
             .Build();
 
@@ -44,23 +44,23 @@ public class EndToEndTests : IClassFixture<SqlServerFixture>, IDisposable
             Guid.NewGuid().ToString("N"), report.Name, null, NullLogger.Instance, CancellationToken.None);
         var result = await ReportRunner.ExecuteAsync(report, exec, new EmptyServices(), CancellationToken.None);
 
-        result.Status.Should().Be(ReportRunStatus.Completed);
+        result.Status.ShouldBe(ReportRunStatus.Completed);
         // Filter removes rows where Valor == 0 (every 7th id).
         var expectedWritten = _fixture.SeededRows - _fixture.SeededRows / 7;
-        result.Stats.RecordsRead.Should().Be(_fixture.SeededRows);
-        result.Stats.RecordsWritten.Should().Be(expectedWritten);
+        result.Stats.RecordsRead.ShouldBe(_fixture.SeededRows);
+        result.Stats.RecordsWritten.ShouldBe(expectedWritten);
 
-        var upload = result.Uploads.Should().ContainSingle().Subject;
-        upload.Success.Should().BeTrue();
-        File.Exists(upload.RemotePath).Should().BeTrue();
+        var upload = result.Uploads.ShouldHaveSingleItem();
+        upload.Success.ShouldBeTrue();
+        File.Exists(upload.RemotePath).ShouldBeTrue();
 
         var lines = await File.ReadAllLinesAsync(upload.RemotePath!, new UTF8Encoding(false));
-        lines[0].Should().Be("ID Venda;Cliente;Valor;Data Venda");
-        lines.Should().HaveCount(expectedWritten + 1); // header + data
+        lines[0].ShouldBe("ID Venda;Cliente;Valor;Data Venda");
+        lines.Length.ShouldBe(expectedWritten + 1); // header + data
 
         // First data row is Id=1 (Valor 1.5 > 0), formatted pt-BR.
         var valor = 1.5m.ToString("C2", CultureInfo.GetCultureInfo("pt-BR"));
-        lines[1].Should().Be($"1;C1;{valor};2026-01-01");
+        lines[1].ShouldBe($"1;C1;{valor};2026-01-01");
     }
 
     private sealed class EmptyServices : IServiceProvider

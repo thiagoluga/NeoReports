@@ -1,8 +1,8 @@
 using ClosedXML.Excel;
-using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NeoReports.Abstractions;
 using NeoReports.Formats.Xlsx;
+using Shouldly;
 using Xunit;
 
 namespace NeoReports.Formats.Xlsx.UnitTests;
@@ -47,19 +47,19 @@ public class XlsxWriterTests
             new XlsxOptions().SheetName("Vendas").AutoFilter(), Schema(), rows);
 
         var ws = wb.Worksheet("Vendas");
-        ws.Name.Should().Be("Vendas");
+        ws.Name.ShouldBe("Vendas");
 
         // Header row.
-        ws.Cell(1, 1).GetString().Should().Be("ID Venda");
-        ws.Cell(1, 4).GetString().Should().Be("Data Venda");
+        ws.Cell(1, 1).GetString().ShouldBe("ID Venda");
+        ws.Cell(1, 4).GetString().ShouldBe("Data Venda");
 
         // Native numeric + date types preserved (not strings).
-        ws.Cell(2, 1).Value.IsNumber.Should().BeTrue();
-        ws.Cell(2, 1).GetDouble().Should().Be(1d);
-        ws.Cell(2, 3).GetDouble().Should().Be(1234.5);
-        ws.Cell(2, 4).Value.IsDateTime.Should().BeTrue();
-        ws.Cell(2, 4).GetDateTime().Should().Be(new DateTime(2026, 1, 15));
-        ws.Cell(2, 2).GetString().Should().Be("Ana");
+        ws.Cell(2, 1).Value.IsNumber.ShouldBeTrue();
+        ws.Cell(2, 1).GetDouble().ShouldBe(1d);
+        ws.Cell(2, 3).GetDouble().ShouldBe(1234.5);
+        ws.Cell(2, 4).Value.IsDateTime.ShouldBeTrue();
+        ws.Cell(2, 4).GetDateTime().ShouldBe(new DateTime(2026, 1, 15));
+        ws.Cell(2, 2).GetString().ShouldBe("Ana");
     }
 
     [Fact]
@@ -68,7 +68,7 @@ public class XlsxWriterTests
         var rows = new object?[][] { new object?[] { 1L, "Ana", 1m, new DateTime(2026, 1, 1) } };
 
         using var wb = await WriteAndReopen(new XlsxOptions().SheetName("S").AutoFilter(), Schema(), rows);
-        wb.Worksheet("S").AutoFilter.IsEnabled.Should().BeTrue();
+        wb.Worksheet("S").AutoFilter.IsEnabled.ShouldBeTrue();
     }
 
     [Fact]
@@ -77,7 +77,7 @@ public class XlsxWriterTests
         var rows = new object?[][] { new object?[] { 1L, "Ana", 1m, new DateTime(2026, 1, 1) } };
 
         using var wb = await WriteAndReopen(new XlsxOptions().SheetName("S"), Schema(), rows);
-        wb.Worksheet("S").AutoFilter.IsEnabled.Should().BeFalse();
+        wb.Worksheet("S").AutoFilter.IsEnabled.ShouldBeFalse();
     }
 
     [Fact]
@@ -92,7 +92,7 @@ public class XlsxWriterTests
 
         using var wb = await WriteAndReopen(new XlsxOptions().SheetName("S"), schema, rows);
         var ws = wb.Worksheet("S");
-        ws.Cell(2, 1).IsEmpty().Should().BeTrue();
-        ws.Cell(2, 2).GetDouble().Should().Be(5);
+        ws.Cell(2, 1).IsEmpty().ShouldBeTrue();
+        ws.Cell(2, 2).GetDouble().ShouldBe(5);
     }
 }

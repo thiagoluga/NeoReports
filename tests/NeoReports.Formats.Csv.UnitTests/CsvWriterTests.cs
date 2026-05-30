@@ -1,8 +1,8 @@
 using System.Globalization;
 using System.Text;
-using FluentAssertions;
 using NeoReports.Abstractions;
 using NeoReports.Formats.Csv;
+using Shouldly;
 using Xunit;
 
 namespace NeoReports.Formats.Csv.UnitTests;
@@ -46,7 +46,7 @@ public class CsvWriterTests
         var text = Encoding.UTF8.GetString(bytes);
 
         var valor = 1234.5m.ToString("C2", CultureInfo.GetCultureInfo("pt-BR"));
-        text.Should().Be(
+        text.ShouldBe(
             "ID Venda;Cliente;Valor;Data Venda\r\n" +
             $"1;Ana;{valor};2026-01-15\r\n" +
             $"2;João;{0.99m.ToString("C2", CultureInfo.GetCultureInfo("pt-BR"))};2026-02-01\r\n");
@@ -69,7 +69,7 @@ public class CsvWriterTests
         var bytes = await WriteAsync(new CsvOptions(), schema, rows);
         var text = Encoding.UTF8.GetString(bytes);
 
-        text.Should().Be(
+        text.ShouldBe(
             "A,B\r\n" +
             "\"has,comma\",\"has\"\"quote\"\r\n" +
             "\"has\nnewline\",plain\r\n");
@@ -88,7 +88,7 @@ public class CsvWriterTests
         var bytes = await WriteAsync(new CsvOptions().Header(false), schema, rows);
         var text = Encoding.UTF8.GetString(bytes);
 
-        text.Should().Be(",5\r\n");
+        text.ShouldBe(",5\r\n");
     }
 
     [Fact]
@@ -98,6 +98,6 @@ public class CsvWriterTests
         var bytes = await WriteAsync(new CsvOptions(), schema, new object?[][] { new object?[] { "x" } });
 
         // UTF-8 BOM is EF BB BF — must be absent.
-        bytes.Take(3).Should().NotEqual(new byte[] { 0xEF, 0xBB, 0xBF });
+        bytes.Take(3).ShouldNotBe(new byte[] { 0xEF, 0xBB, 0xBF });
     }
 }

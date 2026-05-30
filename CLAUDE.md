@@ -60,7 +60,7 @@ dotnet run --project benchmarks/NeoReports.Benchmarks -c Release
 
 ## Estratégia de testes (inclua em cada PR)
 
-- **xUnit + NSubstitute.** Asserções com FluentAssertions.
+- **xUnit + NSubstitute.** Asserções com Shouldly (MIT; FluentAssertions saiu na v8 por virar licença comercial — ver `NeoReports-Decisoes.md`).
 - **Writers: golden-file tests.** Saída comparada byte-a-byte / linha-a-linha com arquivo de referência versionado.
 - **SQL source: Testcontainers** (SQL Server/Postgres efêmero), não mock de banco.
 - **Memória: BenchmarkDotNet com `MemoryDiagnoser`** num report de 1M linhas — provar alocação ~constante (critério de aceite do MVP).
