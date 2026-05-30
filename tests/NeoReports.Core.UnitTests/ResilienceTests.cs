@@ -90,6 +90,7 @@ public class ResilienceTests
 
         result.Status.ShouldBe(ReportRunStatus.Failed);
         result.SkippedBatches.ShouldBe(2);
+        result.Error.ShouldNotBeNull();
         result.Error.ShouldContain("threshold");
     }
 }

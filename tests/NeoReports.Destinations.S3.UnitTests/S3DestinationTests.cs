@@ -54,6 +54,7 @@ public class S3DestinationTests
         var result = await destination.UploadAsync(file, Context(), CancellationToken.None);
 
         result.Success.ShouldBeFalse();
+        result.ErrorMessage.ShouldNotBeNull();
         result.ErrorMessage.ShouldContain("disk gone");
         client.ReceivedCalls()
             .Count(c => c.GetMethodInfo().Name == nameof(IAmazonS3.PutObjectAsync))
@@ -71,6 +72,7 @@ public class S3DestinationTests
         var result = await destination.UploadAsync(FileOf("r.csv", "x"), Context(), CancellationToken.None);
 
         result.Success.ShouldBeFalse();
+        result.ErrorMessage.ShouldNotBeNull();
         result.ErrorMessage.ShouldContain("403");
     }
 }
