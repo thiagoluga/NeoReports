@@ -7,11 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Sources\NeoReports.Sources.Sql\NeoReports.Sources.Sql.csproj" />
-    <ProjectReference Include="..\..\src\NeoReports.Core\NeoReports.Core.csproj" />
-    <ProjectReference Include="..\..\src\Formats\NeoReports.Formats.Csv\NeoReports.Formats.Csv.csproj" />
     <ProjectReference Include="..\..\src\Formats\NeoReports.Formats.Xlsx\NeoReports.Formats.Xlsx.csproj" />
-    <ProjectReference Include="..\..\src\Destinations\NeoReports.Destinations.Local\NeoReports.Destinations.Local.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -19,10 +15,7 @@
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="FluentAssertions" />
-    <PackageReference Include="Microsoft.Data.SqlClient" />
-    <PackageReference Include="Testcontainers.MsSql" />
     <PackageReference Include="ClosedXML" />
-    <PackageReference Include="Xunit.SkippableFact" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
 
