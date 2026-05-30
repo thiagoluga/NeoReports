@@ -203,3 +203,17 @@ Removido da v1 vs. Cap. 16: `IRetryPolicy`, `IExceptionClassifier`, `IAuthProvid
 **Decisão.** `ReportBuilder<TRow>` é genérico **apenas** sobre o tipo de linha final `TRow`. O mapeamento de um tipo de origem diferente é expresso por overloads `From<TSource>(IBatchSource<TSource>, Func<TSource,TRow>)` / `From<TSource>(IStreamingSource<TSource>, Func<TSource,TRow>)`, que adaptam a source via `MappingBatchSource`/`MappingStreamingSource`.
 
 **Por quê.** Um passo `Map<TOut>` que troca o tipo do builder quebraria o padrão de registro `AddReport<TRow>("nome", Action<ReportBuilder<TRow>>)` (a lambda continuaria num builder de outro tipo enquanto o registro buildaria o original). O overload de `From` entrega a mesma capacidade ("Map para um tipo de saída" da spec) sem essa armadilha e sem segundo parâmetro genérico no builder. Colunas são declaradas com `.Column(v => v.X, "Header")` (infere `ColumnType` do tipo do membro) ou `Columns(Col(...))`.
+
+---
+
+## D13 — SQL Server keyset source (Sources / PR 3)
+
+**Decisão.**
+- Entrada fluente: `Source.Sql(connectionString, sql).Keyset<T,TKey>(v => v.Id, pageSize: 1000)`. O primeiro parâmetro é a **connection string** na v1; resolução por **nome de conexão** (config/DI, como o `"vendas-db"` da spec) fica pós-MVP.
+- A query é responsabilidade do autor e **deve** expor um parâmetro `@cursor` na coluna-chave e ordenar por ela — padrão recomendado `WHERE (@cursor IS NULL OR Id > @cursor) ORDER BY Id`. Primeira página manda `@cursor = NULL`.
+- **Conexão aberta/fechada por página** (D2/D3). O **cursor** é a última chave da página serializada como `string?` (`BatchResult.NextCursor`); `HasMore` só é verdadeiro quando a página encheu (`Count == pageSize`) e há última chave.
+- **Bind de parâmetros defensivo:** só são adicionados ao comando os parâmetros que a query realmente referencia (varredura do texto por `@nome`), evitando "too many parameters"; parâmetros de execução (run-time) sobrepõem os estáticos sem duplicar.
+- **Materialização** (`RecordMaterializer<T>`): preferir o construtor mais longo do POCO (records posicionais), casando parâmetros↔colunas por nome (case-insensitive); fallback para construtor vazio + propriedades setáveis. Ordinais de coluna mapeados por nome.
+- O `Schema` declarado pela source é um placeholder mínimo — a projeção da pipeline usa as colunas do builder (D1), não o schema da source.
+
+**Por quê.** Keyset com `@cursor` opaco e conexão-por-página atende CA-2 (lê todas as páginas em ordem, sem pular/repetir) e mantém memória constante, deixando checkpoint/multi-worker viáveis depois sem rework. Connection-by-name é açúcar de configuração que não muda o contrato — corta da v1.
