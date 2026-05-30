@@ -1,10 +1,10 @@
 using ClosedXML.Excel;
-using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NeoReports.Abstractions;
 using NeoReports.Core.Building;
 using NeoReports.Core.Pipeline;
 using NeoReports.Destinations.Local;
+using Shouldly;
 using Xunit;
 using static NeoReports.Core.Building.ReportColumns;
 using static NeoReports.Formats.Csv.Format;
@@ -43,33 +43,33 @@ public class MultiOutputE2ETests : IClassFixture<SqlServerFixture>, IDisposable
             Guid.NewGuid().ToString("N"), report.Name, null, NullLogger.Instance, CancellationToken.None);
         var result = await ReportRunner.ExecuteAsync(report, exec, new EmptyServices(), CancellationToken.None);
 
-        result.Status.Should().Be(ReportRunStatus.Completed);
+        result.Status.ShouldBe(ReportRunStatus.Completed);
 
         // Single pass: the source is read once and every row is fed to BOTH outputs. RecordsWritten
         // counts distinct rows (not per-output), so it equals the row count; the proof that both
         // formats received all rows is the file contents asserted below.
-        result.Stats.RecordsRead.Should().Be(_fixture.SeededRows);
-        result.Stats.RecordsWritten.Should().Be(_fixture.SeededRows);
-        result.Uploads.Should().HaveCount(2);
-        result.Uploads.Should().OnlyContain(u => u.Success);
+        result.Stats.RecordsRead.ShouldBe(_fixture.SeededRows);
+        result.Stats.RecordsWritten.ShouldBe(_fixture.SeededRows);
+        result.Uploads.Count.ShouldBe(2);
+        result.Uploads.ShouldAllBe(u => u.Success);
 
         var csvPath = Path.Combine(_outDir, "vendas-multi.csv");
         var xlsxPath = Path.Combine(_outDir, "vendas-multi.xlsx");
-        File.Exists(csvPath).Should().BeTrue();
-        File.Exists(xlsxPath).Should().BeTrue();
+        File.Exists(csvPath).ShouldBeTrue();
+        File.Exists(xlsxPath).ShouldBeTrue();
 
         // CSV: header + all data rows.
         var csvLines = await File.ReadAllLinesAsync(csvPath);
-        csvLines[0].Should().Be("ID Venda;Cliente;Valor;Data Venda");
-        csvLines.Should().HaveCount(_fixture.SeededRows + 1);
+        csvLines[0].ShouldBe("ID Venda;Cliente;Valor;Data Venda");
+        csvLines.Length.ShouldBe(_fixture.SeededRows + 1);
 
         // XLSX: named sheet, auto-filter, native types, header + data rows.
         using var wb = new XLWorkbook(xlsxPath);
         var ws = wb.Worksheet("Vendas");
-        ws.AutoFilter.IsEnabled.Should().BeTrue();
-        ws.Cell(1, 1).GetString().Should().Be("ID Venda");
-        ws.Cell(2, 1).GetDouble().Should().Be(1);
-        ws.LastRowUsed()!.RowNumber().Should().Be(_fixture.SeededRows + 1);
+        ws.AutoFilter.IsEnabled.ShouldBeTrue();
+        ws.Cell(1, 1).GetString().ShouldBe("ID Venda");
+        ws.Cell(2, 1).GetDouble().ShouldBe(1);
+        ws.LastRowUsed()!.RowNumber().ShouldBe(_fixture.SeededRows + 1);
     }
 
     private sealed class EmptyServices : IServiceProvider

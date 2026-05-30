@@ -1,6 +1,6 @@
-using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NeoReports.Abstractions;
+using Shouldly;
 using Xunit;
 
 namespace NeoReports.Sources.Sql.IntegrationTests;
@@ -38,14 +38,14 @@ public class SqlKeysetSourceTests : IClassFixture<SqlServerFixture>
             if (!result.HasMore)
                 break;
             cursor = result.NextCursor;
-            cursor.Should().NotBeNull();
+            cursor.ShouldNotBeNull();
         }
 
-        pages.Should().Be(3); // 2500 rows / 1000 per page
-        all.Should().HaveCount(_fixture.SeededRows);
-        all.Select(v => v.Id).Should().BeInAscendingOrder();
-        all.Select(v => v.Id).Should().OnlyHaveUniqueItems();
-        all.Select(v => v.Id).Should().Equal(Enumerable.Range(1, _fixture.SeededRows).Select(i => (long)i));
+        pages.ShouldBe(3); // 2500 rows / 1000 per page
+        all.Count.ShouldBe(_fixture.SeededRows);
+        all.Select(v => v.Id).ShouldBeInOrder();
+        all.Select(v => v.Id).ShouldBeUnique();
+        all.Select(v => v.Id).ShouldBe(Enumerable.Range(1, _fixture.SeededRows).Select(i => (long)i));
     }
 
     [SkippableFact]
@@ -56,11 +56,11 @@ public class SqlKeysetSourceTests : IClassFixture<SqlServerFixture>
         var source = Source.Sql(_fixture.ConnectionString, Sql).Keyset<Venda, long>(v => v.Id, pageSize: 10);
         var result = await source.ReadBatchAsync(new BatchContext(Exec(), 10, null, 1), CancellationToken.None);
 
-        result.Records.Should().HaveCount(10);
+        result.Records.Count.ShouldBe(10);
         var first = result.Records[0];
-        first.Id.Should().Be(1);
-        first.Cliente.Should().Be("C1");
-        first.Data.Should().Be(new DateTime(2026, 1, 1));
-        first.Valor.Should().Be(1.5m);
+        first.Id.ShouldBe(1);
+        first.Cliente.ShouldBe("C1");
+        first.Data.ShouldBe(new DateTime(2026, 1, 1));
+        first.Valor.ShouldBe(1.5m);
     }
 }

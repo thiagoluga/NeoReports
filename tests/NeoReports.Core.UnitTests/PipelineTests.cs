@@ -1,10 +1,10 @@
 using System.Text;
-using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NeoReports.Abstractions;
 using NeoReports.Core.Building;
 using NeoReports.Core.Pipeline;
 using NeoReports.Core.UnitTests.Fakes;
+using Shouldly;
 using Xunit;
 
 namespace NeoReports.Core.UnitTests;
@@ -36,15 +36,16 @@ public class PipelineTests
 
         var result = await Run(report);
 
-        result.Status.Should().Be(ReportRunStatus.Completed);
-        result.Stats.RecordsRead.Should().Be(3);
-        result.Stats.RecordsWritten.Should().Be(3);
-        result.Stats.BatchesProcessed.Should().Be(2);
-        result.Uploads.Should().ContainSingle().Which.Success.Should().BeTrue();
+        result.Status.ShouldBe(ReportRunStatus.Completed);
+        result.Stats.RecordsRead.ShouldBe(3);
+        result.Stats.RecordsWritten.ShouldBe(3);
+        result.Stats.BatchesProcessed.ShouldBe(2);
+        result.Uploads.ShouldHaveSingleItem().Success.ShouldBeTrue();
 
-        destination.LastDestination!.Files.Should().ContainKey("r.fake");
+        destination.LastDestination!.Files.ShouldContainKey("r.fake");
         var content = Encoding.UTF8.GetString(destination.LastDestination.Files["r.fake"]);
-        content.Should().Contain("1").And.Contain("3");
+        content.ShouldContain("1");
+        content.ShouldContain("3");
     }
 
     [Fact]
@@ -63,11 +64,11 @@ public class PipelineTests
 
         var result = await Run(report);
 
-        result.Status.Should().Be(ReportRunStatus.Completed);
-        source.ReadCalls.Should().Be(2);
-        csvLike.LastWriter!.Rows.Should().HaveCount(4);
-        xlsxLike.LastWriter!.Rows.Should().HaveCount(4);
-        csvLike.LastWriter!.Finalized.Should().BeTrue();
+        result.Status.ShouldBe(ReportRunStatus.Completed);
+        source.ReadCalls.ShouldBe(2);
+        csvLike.LastWriter!.Rows.Count.ShouldBe(4);
+        xlsxLike.LastWriter!.Rows.Count.ShouldBe(4);
+        csvLike.LastWriter!.Finalized.ShouldBeTrue();
     }
 
     [Fact]
@@ -85,9 +86,9 @@ public class PipelineTests
 
         var result = await Run(report);
 
-        result.Stats.RecordsRead.Should().Be(4);
-        result.Stats.RecordsWritten.Should().Be(2);
-        writer.LastWriter!.Rows.Select(r => (long)r[0]!).Should().Equal(2, 4);
+        result.Stats.RecordsRead.ShouldBe(4);
+        result.Stats.RecordsWritten.ShouldBe(2);
+        writer.LastWriter!.Rows.Select(r => (long)r[0]!).ShouldBe(new long[] { 2, 4 });
     }
 
     [Fact]
@@ -106,10 +107,10 @@ public class PipelineTests
 
         var result = await Run(report);
 
-        result.Status.Should().Be(ReportRunStatus.Completed);
-        result.Stats.RecordsRead.Should().Be(5);
-        result.Stats.BatchesProcessed.Should().Be(3);
-        writer.LastWriter!.Rows.Should().HaveCount(5);
+        result.Status.ShouldBe(ReportRunStatus.Completed);
+        result.Stats.RecordsRead.ShouldBe(5);
+        result.Stats.BatchesProcessed.ShouldBe(3);
+        writer.LastWriter!.Rows.Count.ShouldBe(5);
     }
 
     [Fact]
@@ -130,8 +131,8 @@ public class PipelineTests
 
         var result = await Run(report);
 
-        result.Status.Should().Be(ReportRunStatus.Completed);
-        writer.LastWriter!.Rows.Should().HaveCount(2);
-        writer.LastWriter!.Rows.Select(r => (string)r[1]!).Should().Equal("a", "b");
+        result.Status.ShouldBe(ReportRunStatus.Completed);
+        writer.LastWriter!.Rows.Count.ShouldBe(2);
+        writer.LastWriter!.Rows.Select(r => (string)r[1]!).ShouldBe(new[] { "a", "b" });
     }
 }
