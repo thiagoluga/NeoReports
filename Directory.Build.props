@@ -1,0 +1,8 @@
+<Project>
+
+  <!-- The shared MSBuild properties live under build/. This root shim is the file
+       MSBuild auto-discovers when walking up from each project; it forwards to the
+       real definitions so the props can stay grouped in build/ as per the repo layout. -->
+  <Import Project="build\Directory.Build.props" />
+
+</Project>
