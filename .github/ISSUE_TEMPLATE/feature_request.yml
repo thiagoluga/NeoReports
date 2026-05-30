@@ -1,0 +1,30 @@
+name: Feature request
+description: Suggest an idea for NeoReports
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        NeoReports v1 has a deliberately tight scope (see `CLAUDE.md` and
+        `docs/MVP-Spec.md`). Out-of-scope ideas are welcome here — they help shape
+        the roadmap and are recorded as decisions before any code is written.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem are you trying to solve? What's the use case?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How would you like it to work? API sketches welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
