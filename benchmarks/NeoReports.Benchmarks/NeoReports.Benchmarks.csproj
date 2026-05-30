@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Single-target net8.0: the build machine has no .NET 9 runtime to run the benchmark host. -->
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- BenchmarkDotNet requires an optimized build to run. -->
+    <Optimize>true</Optimize>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\NeoReports.Core\NeoReports.Core.csproj" />
+    <ProjectReference Include="..\..\src\Formats\NeoReports.Formats.Csv\NeoReports.Formats.Csv.csproj" />
+    <ProjectReference Include="..\..\src\Formats\NeoReports.Formats.Xlsx\NeoReports.Formats.Xlsx.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" />
+  </ItemGroup>
+
+</Project>
