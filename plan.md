@@ -24,11 +24,11 @@ PRs pequenos e independentes, em ordem. Cada um fecha com testes verdes e fecha 
 - **Depende de:** PR 1.
 
 ## PR 3 — Sources.Sql + Formats.Csv + Destinations.Local (primeiro end-to-end)
-- [ ] `Source.Sql(...).Keyset(key, pageSize)` — `IBatchSource<T>`, conexão por página, cursor `string?`, parâmetros parametrizados.
-- [ ] `Format.Csv(...)` — writer não-genérico (delimitador, encoding, cabeçalho via `DisplayName`, formatação por cultura).
-- [ ] `Destination.Local(pathTemplate)` — tokens `{name}/{date}/{ext}`.
-- [ ] Sample `01-sql-to-csv-local`.
-- **Aceite:** CA-2, CA-4, CA-7. Report de referência roda fim-a-fim em CSV+Local. SQL testado com Testcontainers.
+- [x] `Source.Sql(...).Keyset(key, pageSize)` — `IBatchSource<T>`, conexão por página, cursor `string?`, parâmetros parametrizados (bind automático só do que a query referencia).
+- [x] `Format.Csv(...)` — writer não-genérico (delimitador, encoding, cabeçalho via `DisplayName`, formatação por cultura/format, escaping RFC 4180, CRLF, UTF-8 sem BOM).
+- [x] `Destination.Local(pathTemplate)` — tokens `{name}/{date[:fmt]}/{ext}` + parâmetros; publicação atômica (temp + move).
+- [x] Sample `01-sql-to-csv-local`.
+- **Aceite:** CA-2, CA-4, CA-7. Report de referência roda fim-a-fim em CSV+Local. SQL testado com Testcontainers. ✅ 26 testes verdes (13 Core + 4 CSV + 6 Local + 3 SQL/E2E).
 - **Depende de:** PR 2.
 
 ## PR 4 — Formats.Xlsx + Destinations.S3
