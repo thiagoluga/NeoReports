@@ -41,8 +41,8 @@ PRs pequenos e independentes, em ordem. Cada um fecha com testes verdes e fecha 
 
 ## PR 5 — Memória constante (validação)
 - [x] `NeoReports.Benchmarks` com `MemoryDiagnoser`: source sintética (lazy, página a página) de 100k e 1M linhas → CSV/XLSX.
-- [x] Nenhum ajuste de buffering necessário: alocação por linha já constante (~446 B/linha @100k vs ~461 B/linha @1M — crescimento linear, não super-linear).
-- **Aceite:** CA-3 (alocação ~constante). ✅ comprovado. CSV é streaming de verdade; XLSX cresce com o volume por design do ClosedXML (D14).
+- [x] Nenhum ajuste de buffering necessário: alocação por linha já constante (~446 B/linha @100k vs ~461 B/linha @1M — linear, não super-linear).
+- **Aceite:** CA-3 (alocação ~constante). ✅ comprovado. CSV é streaming; XLSX cresce com o volume por design do ClosedXML (D14).
 - **Depende de:** PR 4.
 
 ## PR 6 — Jobs: worker único
