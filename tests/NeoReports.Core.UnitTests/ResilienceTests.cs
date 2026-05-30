@@ -1,9 +1,9 @@
-using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NeoReports.Abstractions;
 using NeoReports.Core.Building;
 using NeoReports.Core.Pipeline;
 using NeoReports.Core.UnitTests.Fakes;
+using Shouldly;
 using Xunit;
 
 namespace NeoReports.Core.UnitTests;
@@ -46,9 +46,9 @@ public class ResilienceTests
         var report = Build(source, writer, b => b.Retry(r => r.MaxAttempts(3).Constant(TimeSpan.Zero)));
         var result = await Run(report);
 
-        result.Status.Should().Be(ReportRunStatus.Completed);
-        result.Stats.Retries.Should().Be(2);
-        writer.LastWriter!.Rows.Should().HaveCount(4);
+        result.Status.ShouldBe(ReportRunStatus.Completed);
+        result.Stats.Retries.ShouldBe(2);
+        writer.LastWriter!.Rows.Count.ShouldBe(4);
     }
 
     [Fact]
@@ -60,8 +60,8 @@ public class ResilienceTests
         var report = Build(source, writer, b => b.OnFailure(f => f.AbortReport()));
         var result = await Run(report);
 
-        result.Status.Should().Be(ReportRunStatus.Failed);
-        result.Error.Should().NotBeNullOrEmpty();
+        result.Status.ShouldBe(ReportRunStatus.Failed);
+        result.Error.ShouldNotBeNullOrEmpty();
     }
 
     [Fact]
@@ -73,9 +73,9 @@ public class ResilienceTests
         var report = Build(source, writer, b => b.OnFailure(f => f.SkipBatchAndLog()));
         var result = await Run(report);
 
-        result.Status.Should().Be(ReportRunStatus.CompletedPartial);
-        result.SkippedBatches.Should().Be(1);
-        writer.LastWriter!.Rows.Select(r => (long)r[0]!).Should().Equal(1, 3);
+        result.Status.ShouldBe(ReportRunStatus.CompletedPartial);
+        result.SkippedBatches.ShouldBe(1);
+        writer.LastWriter!.Rows.Select(r => (long)r[0]!).ShouldBe(new long[] { 1, 3 });
     }
 
     [Fact]
@@ -88,8 +88,8 @@ public class ResilienceTests
             .OnFailure(f => f.SkipBatchAndLog().AbortIf(t => t.ConsecutiveFailures(3))));
         var result = await Run(report);
 
-        result.Status.Should().Be(ReportRunStatus.Failed);
-        result.SkippedBatches.Should().Be(2);
-        result.Error.Should().Contain("threshold");
+        result.Status.ShouldBe(ReportRunStatus.Failed);
+        result.SkippedBatches.ShouldBe(2);
+        result.Error.ShouldContain("threshold");
     }
 }

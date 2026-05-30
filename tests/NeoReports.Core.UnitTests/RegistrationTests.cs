@@ -1,4 +1,3 @@
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NeoReports.Abstractions;
 using NeoReports.Core.Building;
@@ -6,6 +5,7 @@ using NeoReports.Core.DependencyInjection;
 using NeoReports.Core.Pipeline;
 using NeoReports.Core.Registry;
 using NeoReports.Core.UnitTests.Fakes;
+using Shouldly;
 using Xunit;
 
 namespace NeoReports.Core.UnitTests;
@@ -35,18 +35,18 @@ public class RegistrationTests
         var provider = services.BuildServiceProvider();
         var registry = provider.GetRequiredService<IReportRegistry>();
 
-        registry.Contains("vendas-mensal").Should().BeTrue();
-        registry.Names.Should().ContainSingle().Which.Should().Be("vendas-mensal");
+        registry.Contains("vendas-mensal").ShouldBeTrue();
+        registry.Names.ShouldHaveSingleItem().ShouldBe("vendas-mensal");
 
         var report = registry.Find("vendas-mensal");
-        report.Should().NotBeNull();
-        report!.Schema.Columns.Select(c => c.Name).Should().Equal("Id", "Cliente", "Valor", "Data");
-        report.Schema.Find("Valor")!.Type.Should().Be(ColumnType.Decimal);
-        report.Schema.Find("Id")!.Type.Should().Be(ColumnType.Integer);
-        report.Schema.Find("Valor")!.DisplayName.Should().Be("Valor");
-        report.OutputCount.Should().Be(1);
+        report.ShouldNotBeNull();
+        report.Schema.Columns.Select(c => c.Name).ShouldBe(new[] { "Id", "Cliente", "Valor", "Data" });
+        report.Schema.Find("Valor")!.Type.ShouldBe(ColumnType.Decimal);
+        report.Schema.Find("Id")!.Type.ShouldBe(ColumnType.Integer);
+        report.Schema.Find("Valor")!.DisplayName.ShouldBe("Valor");
+        report.OutputCount.ShouldBe(1);
 
-        provider.GetRequiredService<IReportRunner>().Should().BeOfType<ReportRunner>();
+        provider.GetRequiredService<IReportRunner>().ShouldBeOfType<ReportRunner>();
     }
 
     [Fact]
@@ -62,8 +62,7 @@ public class RegistrationTests
             .To(new OutputSpec(new FakeWriterFactory())));
 
         Register();
-        var act = Register;
-        act.Should().Throw<ConfigurationException>();
+        Should.Throw<ConfigurationException>(Register);
     }
 
     [Fact]
@@ -73,7 +72,7 @@ public class RegistrationTests
             .Column(v => v.Id, "Id")
             .Build();
 
-        act.Should().Throw<ConfigurationException>().WithMessage("*no source*");
+        Should.Throw<ConfigurationException>(act).Message.ShouldContain("no source");
     }
 
     [Fact]
@@ -82,6 +81,6 @@ public class RegistrationTests
         var source = new FakeBatchSource<Venda>(new[] { new[] { new Venda(1, "A", 1m, DateTime.UnixEpoch) } });
         var act = () => new ReportBuilder<Venda>("x").From(source).Build();
 
-        act.Should().Throw<ConfigurationException>().WithMessage("*no columns*");
+        Should.Throw<ConfigurationException>(act).Message.ShouldContain("no columns");
     }
 }

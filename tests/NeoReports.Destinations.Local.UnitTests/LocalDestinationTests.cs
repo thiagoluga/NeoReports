@@ -1,7 +1,7 @@
 using System.Text;
-using FluentAssertions;
 using NeoReports.Abstractions;
 using NeoReports.Destinations.Local;
+using Shouldly;
 using Xunit;
 
 namespace NeoReports.Destinations.Local.UnitTests;
@@ -28,10 +28,11 @@ public class LocalDestinationTests : IDisposable
 
         var result = await destination.UploadAsync(FileOf("vendas.csv", "a,b\n1,2\n"), Context(), CancellationToken.None);
 
-        result.Success.Should().BeTrue();
-        File.Exists(result.RemotePath).Should().BeTrue();
-        (await File.ReadAllTextAsync(result.RemotePath!)).Should().Be("a,b\n1,2\n");
-        Path.GetFileName(result.RemotePath!).Should().StartWith("vendas-").And.EndWith(".csv");
+        result.Success.ShouldBeTrue();
+        File.Exists(result.RemotePath).ShouldBeTrue();
+        (await File.ReadAllTextAsync(result.RemotePath!)).ShouldBe("a,b\n1,2\n");
+        Path.GetFileName(result.RemotePath!).ShouldStartWith("vendas-");
+        Path.GetFileName(result.RemotePath!).ShouldEndWith(".csv");
     }
 
     [Fact]
@@ -43,9 +44,9 @@ public class LocalDestinationTests : IDisposable
         await destination.UploadAsync(FileOf("r.csv", "old"), Context(), CancellationToken.None);
         var result = await destination.UploadAsync(FileOf("r.csv", "new"), Context(), CancellationToken.None);
 
-        (await File.ReadAllTextAsync(result.RemotePath!)).Should().Be("new");
+        (await File.ReadAllTextAsync(result.RemotePath!)).ShouldBe("new");
         // No leftover temp files in the directory.
-        Directory.GetFiles(_root).Should().ContainSingle();
+        Directory.GetFiles(_root).ShouldHaveSingleItem();
     }
 
     public void Dispose()

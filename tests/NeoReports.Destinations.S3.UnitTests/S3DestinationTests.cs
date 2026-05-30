@@ -2,12 +2,11 @@ using System.Net;
 using System.Text;
 using Amazon.S3;
 using Amazon.S3.Model;
-using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NeoReports.Abstractions;
 using NeoReports.Destinations.S3;
 using NSubstitute;
-using NSubstitute.ExceptionExtensions;
+using Shouldly;
 using Xunit;
 
 namespace NeoReports.Destinations.S3.UnitTests;
@@ -34,28 +33,31 @@ public class S3DestinationTests
         var destination = new S3Destination(client, "my-bucket", "reports/{name}/{date:yyyy-MM-dd}.{ext}");
         var result = await destination.UploadAsync(FileOf("vendas.csv", "a,b\n1,2\n"), Context(), CancellationToken.None);
 
-        result.Success.Should().BeTrue();
-        captured.Should().NotBeNull();
-        captured!.BucketName.Should().Be("my-bucket");
-        captured.Key.Should().StartWith("reports/vendas/").And.EndWith(".csv");
-        result.RemotePath.Should().Be(captured.Key);
-        result.Url.Should().Be($"s3://my-bucket/{captured.Key}");
+        result.Success.ShouldBeTrue();
+        captured.ShouldNotBeNull();
+        captured.BucketName.ShouldBe("my-bucket");
+        captured.Key.ShouldStartWith("reports/vendas/");
+        captured.Key.ShouldEndWith(".csv");
+        result.RemotePath.ShouldBe(captured.Key);
+        result.Url.ShouldBe($"s3://my-bucket/{captured.Key}");
     }
 
     [Fact]
     public async Task Failure_returns_failed_result_and_does_not_create_partial_object()
     {
         var client = Substitute.For<IAmazonS3>();
-        client.PutObjectAsync(Arg.Any<PutObjectRequest>(), Arg.Any<CancellationToken>())
-            .Throws(new AmazonS3Exception("network blip"));
+        // A read failure surfaces through the same try/catch that wraps the upload: it must become
+        // a Fail result, and PutObject must never run — so no partial object can be created.
+        var file = new ReportFile("r.csv", "text/csv", 1, () => throw new IOException("disk gone"));
 
         var destination = new S3Destination(client, "my-bucket", "{name}.{ext}");
-        var result = await destination.UploadAsync(FileOf("r.csv", "x"), Context(), CancellationToken.None);
+        var result = await destination.UploadAsync(file, Context(), CancellationToken.None);
 
-        result.Success.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("network blip");
-        // All-or-nothing: only the single PutObject was attempted; no fallback partial write.
-        await client.Received(1).PutObjectAsync(Arg.Any<PutObjectRequest>(), Arg.Any<CancellationToken>());
+        result.Success.ShouldBeFalse();
+        result.ErrorMessage.ShouldContain("disk gone");
+        client.ReceivedCalls()
+            .Count(c => c.GetMethodInfo().Name == nameof(IAmazonS3.PutObjectAsync))
+            .ShouldBe(0);
     }
 
     [Fact]
@@ -68,7 +70,7 @@ public class S3DestinationTests
         var destination = new S3Destination(client, "b", "{name}.{ext}");
         var result = await destination.UploadAsync(FileOf("r.csv", "x"), Context(), CancellationToken.None);
 
-        result.Success.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("403");
+        result.Success.ShouldBeFalse();
+        result.ErrorMessage.ShouldContain("403");
     }
 }
