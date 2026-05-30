@@ -6,7 +6,7 @@
 
   <ItemGroup>
     <!-- Core -->
-    <PackageVersion Include="Polly.Core" Version="8.4.2" />
+    <PackageVersion Include="Polly.Core" Version="8.6.6" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.0" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="9.0.0" />
@@ -16,7 +16,7 @@
 
     <!-- Sources / Formats / Destinations -->
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="5.2.2" />
-    <PackageVersion Include="ClosedXML" Version="0.104.2" />
+    <PackageVersion Include="ClosedXML" Version="0.105.0" />
     <PackageVersion Include="AWSSDK.S3" Version="3.7.405.6" />
 
     <!-- Jobs -->
