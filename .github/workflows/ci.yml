@@ -24,7 +24,7 @@ jobs:
       DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
       NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup .NET (8 + 9)
         uses: actions/setup-dotnet@v5
