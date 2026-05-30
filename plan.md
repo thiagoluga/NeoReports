@@ -36,7 +36,7 @@ PRs pequenos e independentes, em ordem. Cada um fecha com testes verdes e fecha 
 - [x] Multi-output numa passada (CSV + XLSX lendo a source uma vez) — provado no E2E `Csv_and_xlsx_are_generated_reading_the_source_once`.
 - [x] `Destination.S3(bucket, keyTemplate)` — upload tudo-ou-nada via `PutObject` (sem objeto parcial em falha) — ver D15.
 - [x] Sample `02-sql-to-xlsx-s3`.
-- **Aceite:** CA-5, CA-6, CA-8. ✅ Total acumulado de testes verdes: 37 (13 Core + 4 CSV + 6 Local + 4 Xlsx + 3 S3 + 7 SQL/E2E).
+- **Aceite:** CA-5, CA-6, CA-8. ✅ Total acumulado de testes verdes: 34 (13 Core + 4 CSV + 6 Local + 4 Xlsx + 3 S3 + 4 SQL/E2E).
 - **Depende de:** PR 3.
 
 ## PR 5 — Memória constante (validação)

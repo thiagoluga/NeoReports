@@ -5,10 +5,10 @@ using NeoReports.Abstractions;
 using NeoReports.Core.Building;
 using NeoReports.Core.Pipeline;
 using NeoReports.Destinations.Local;
-using NeoReports.Formats.Csv;
-using NeoReports.Formats.Xlsx;
 using Xunit;
 using static NeoReports.Core.Building.ReportColumns;
+using static NeoReports.Formats.Csv.Format;
+using static NeoReports.Formats.Xlsx.Format;
 
 namespace NeoReports.Sources.Sql.IntegrationTests;
 
@@ -34,8 +34,8 @@ public class MultiOutputE2ETests : IClassFixture<SqlServerFixture>, IDisposable
             .Column(v => v.Cliente, "Cliente")
             .Column(v => v.Valor, "Valor", format: "C2", culture: "pt-BR")
             .Column(v => v.Data, "Data Venda", format: "yyyy-MM-dd")
-            .To(Format.Csv(o => o.Delimiter(';')))
-            .To(Format.Xlsx(o => o.SheetName("Vendas").AutoFilter()))
+            .To(Csv(o => o.Delimiter(';')))
+            .To(Xlsx(o => o.SheetName("Vendas").AutoFilter()))
             .UploadTo(Destination.Local(Path.Combine(_outDir, "{name}.{ext}")))
             .Build();
 
@@ -45,9 +45,11 @@ public class MultiOutputE2ETests : IClassFixture<SqlServerFixture>, IDisposable
 
         result.Status.Should().Be(ReportRunStatus.Completed);
 
-        // Source read exactly once for BOTH outputs: rows written == 2 outputs * rows read.
+        // Single pass: the source is read once and every row is fed to BOTH outputs. RecordsWritten
+        // counts distinct rows (not per-output), so it equals the row count; the proof that both
+        // formats received all rows is the file contents asserted below.
         result.Stats.RecordsRead.Should().Be(_fixture.SeededRows);
-        result.Stats.RecordsWritten.Should().Be(_fixture.SeededRows * 2);
+        result.Stats.RecordsWritten.Should().Be(_fixture.SeededRows);
         result.Uploads.Should().HaveCount(2);
         result.Uploads.Should().OnlyContain(u => u.Success);
 

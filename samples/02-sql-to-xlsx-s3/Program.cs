@@ -4,10 +4,12 @@ using Microsoft.Extensions.Logging;
 using NeoReports.Core.DependencyInjection;
 using NeoReports.Core.Pipeline;
 using NeoReports.Destinations.S3;
-using NeoReports.Formats.Csv;
-using NeoReports.Formats.Xlsx;
 using NeoReports.Sources.Sql;
 using static NeoReports.Core.Building.ReportColumns;
+// Import the format entry methods directly so Csv(...) and Xlsx(...) read cleanly and avoid the
+// Format class-name collision between the two format packages (ADR D16).
+using static NeoReports.Formats.Csv.Format;
+using static NeoReports.Formats.Xlsx.Format;
 
 // Sample 02 — SQL Server -> CSV + XLSX (single pass) -> Amazon S3.
 //
@@ -35,8 +37,8 @@ services.AddReport<Venda>("vendas-mensal", b => b
         Col<Venda, string>(v => v.Cliente, "Cliente"),
         Col<Venda, decimal>(v => v.Valor, "Valor", format: "C2", culture: "pt-BR"),
         Col<Venda, DateTime>(v => v.Data, "Data Venda", format: "yyyy-MM-dd"))
-    .To(Format.Csv(o => o.Delimiter(';').Encoding(Encoding.UTF8)))
-    .To(Format.Xlsx(o => o.SheetName("Vendas").AutoFilter()))
+    .To(Csv(o => o.Delimiter(';').Encoding(Encoding.UTF8)))
+    .To(Xlsx(o => o.SheetName("Vendas").AutoFilter()))
     .UploadTo(Destination.S3(bucket, "reports/{name}/{date:yyyy-MM-dd}.{ext}")));
 
 var provider = services.BuildServiceProvider();
