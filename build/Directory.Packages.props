@@ -22,6 +22,7 @@
     <!-- Jobs -->
     <PackageVersion Include="Hangfire.Core" Version="1.8.14" />
     <PackageVersion Include="Hangfire.SqlServer" Version="1.8.14" />
+    <PackageVersion Include="Hangfire.InMemory" Version="1.0.0" />
 
     <!-- Tests -->
     <PackageVersion Include="xunit" Version="2.9.3" />
