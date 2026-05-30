@@ -1,0 +1,60 @@
+using NeoReports.Abstractions;
+using NeoReports.Core.Building;
+using NeoReports.Core.Pipeline;
+
+namespace NeoReports.Core;
+
+/// <summary>
+/// An immutable, type-erased report definition produced by <c>ReportBuilder&lt;T&gt;</c> and held
+/// by the registry. The generic row type is captured inside <see cref="ReaderFactory"/>, so the
+/// pipeline can execute the report without knowing <c>T</c>.
+/// </summary>
+public sealed class CompiledReport
+{
+    internal CompiledReport(
+        string name,
+        ReportSchema schema,
+        int pageSize,
+        Func<ReportExecutionContext, IProjectedBatchReader> readerFactory,
+        IReadOnlyList<OutputSpec> outputs,
+        IReadOnlyList<DestinationSpec> destinations,
+        RetryOptions retry,
+        IFailureStrategy failureStrategy)
+    {
+        Name = name;
+        Schema = schema;
+        PageSize = pageSize;
+        ReaderFactory = readerFactory;
+        Outputs = outputs;
+        Destinations = destinations;
+        Retry = retry;
+        FailureStrategy = failureStrategy;
+    }
+
+    /// <summary>The unique report name it was registered under.</summary>
+    public string Name { get; }
+
+    /// <summary>The output schema (columns in order).</summary>
+    public ReportSchema Schema { get; }
+
+    /// <summary>Page size used when reading the source.</summary>
+    public int PageSize { get; }
+
+    /// <summary>Number of configured outputs (formats).</summary>
+    public int OutputCount => Outputs.Count;
+
+    /// <summary>Creates a fresh per-execution reader for this report.</summary>
+    internal Func<ReportExecutionContext, IProjectedBatchReader> ReaderFactory { get; }
+
+    /// <summary>Configured outputs (formats).</summary>
+    internal IReadOnlyList<OutputSpec> Outputs { get; }
+
+    /// <summary>Configured destinations.</summary>
+    internal IReadOnlyList<DestinationSpec> Destinations { get; }
+
+    /// <summary>Declarative retry configuration.</summary>
+    internal RetryOptions Retry { get; }
+
+    /// <summary>Strategy applied after a batch exhausts its retries.</summary>
+    internal IFailureStrategy FailureStrategy { get; }
+}

@@ -3,24 +3,24 @@
 PRs pequenos e independentes, em ordem. Cada um fecha com testes verdes e fecha um critério de aceite (CA-n) da `docs/MVP-Spec.md`. Marque o checkbox ao concluir.
 
 ## PR 0 — Bootstrap do repositório
-- [ ] `global.json`, `build/Directory.Build.props`, `build/Directory.Packages.props`, `.editorconfig`, `.gitignore`.
-- [ ] `NeoReports.sln` com solution folders espelhando `src/ tests/ benchmarks/ samples/`.
-- [ ] CI mínimo (`dotnet build` + `dotnet test` + `dotnet format --verify-no-changes`).
+- [x] `global.json`, `build/Directory.Build.props`, `build/Directory.Packages.props`, `.editorconfig`, `.gitignore`.
+- [x] `NeoReports.sln` com solution folders espelhando `src/ tests/ benchmarks/ samples/`.
+- [x] CI mínimo (`dotnet build` + `dotnet test` + `dotnet format --verify-no-changes`).
 - **Aceite:** `dotnet build` e `dotnet test` passam num repo vazio.
 
 ## PR 1 — NeoReports.Abstractions
-- [ ] Tipos e interfaces typed-only conforme D9 (já esqueletados em `src/NeoReports.Abstractions/`).
-- [ ] XML docs em inglês em tudo que é público.
+- [x] Tipos e interfaces typed-only conforme D9 (já esqueletados em `src/NeoReports.Abstractions/`).
+- [x] XML docs em inglês em tudo que é público.
 - **Aceite:** compila multi-target (net8/net9), sem dependências além de `Logging.Abstractions`.
 - **Depende de:** PR 0.
 
 ## PR 2 — NeoReports.Core: builder + pipeline batch
-- [ ] Fluent builder genérico `ReportBuilder<TRow>` (`From/Map/Filter/Columns/To/UploadTo/Retry/OnFailure`).
-- [ ] `IReportRegistry` + `AddReport<TRow>(...)` (DI).
-- [ ] `ReportPipeline`: loop de batches, `StreamingToBatchAdapter`, projeção compilada `T → object?[]` na borda do writer (Expression-compiled getters por coluna).
-- [ ] Integração Polly v8 (`ResiliencePipeline`) no read de batch.
-- [ ] `IFailureStrategy`: `AbortReport`, `SkipBatchAndLog`; `ThresholdMonitor` (consecutivas/total/razão).
-- **Aceite:** CA-1, CA-11, CA-12, CA-13, CA-14. Pipeline testado com source fake em memória.
+- [x] Fluent builder genérico `ReportBuilder<TRow>` (`From`/`Filter`/`Columns`/`Column`/`To`/`UploadTo`/`Retry`/`OnFailure`; mapeamento via `From(source, map)` — ver D12).
+- [x] `IReportRegistry` + `AddReport<TRow>(...)` (DI).
+- [x] `ReportRunner`/pipeline: loop de batches, `TypedBatchReader` (adapta streaming → batches), projeção `T → object?[]` na borda do writer.
+- [x] Integração Polly v8 (`ResiliencePipeline`) no read de batch.
+- [x] `IFailureStrategy`: `AbortReport`, `SkipBatchAndLog`; threshold (consecutivas/total/razão) via `AbortIf` (ver D11).
+- **Aceite:** CA-1, CA-11, CA-12, CA-13, CA-14. Pipeline testado com source fake em memória. ✅ 13 testes verdes.
 - **Depende de:** PR 1.
 
 ## PR 3 — Sources.Sql + Formats.Csv + Destinations.Local (primeiro end-to-end)
