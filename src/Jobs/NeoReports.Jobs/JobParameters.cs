@@ -51,10 +51,11 @@ public static class JobParameters
         if (text is null)
             return null;
 
-        // Recover round-tripped ISO-8601 timestamps as DateTime so SQL date parameters bind correctly.
+        // Recover round-tripped ISO-8601 timestamps as DateTime so SQL date parameters bind
+        // correctly. RoundtripKind honors the 'Z'/offset in the text and preserves the kind; it
+        // must NOT be combined with AdjustToUniversal/AssumeUniversal (.NET rejects that pairing).
         if (DateTime.TryParse(
-                text, CultureInfo.InvariantCulture,
-                DateTimeStyles.RoundtripKind | DateTimeStyles.AdjustToUniversal, out var dt))
+                text, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var dt))
             return dt;
 
         return text;
