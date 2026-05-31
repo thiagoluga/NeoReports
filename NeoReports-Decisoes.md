@@ -181,6 +181,8 @@ Removido da v1 vs. Cap. 16: `IRetryPolicy`, `IExceptionClassifier`, `IAuthProvid
 | D10 | Filtro | Delegates C# tipados; JsonLogic/DynamicLinq pós-MVP |
 | D11 | Retry/Skip | Retry (Polly) envolve a leitura do batch; falha de leitura não é "skippável" (sem cursor pra avançar) → vira Abort; falha de projeção/escrita é skippável (cursor já conhecido) |
 | D12 | Map no builder | `Map` não é um passo que troca o tipo do builder; o mapeamento é expresso por `From(source, map)`, mantendo `ReportBuilder<TRow>` mono-genérico e compatível com `AddReport<TRow>(Action<...>)` |
+| D18 | Empacotamento de jobs | Pacote base `NeoReports.Jobs` (worker compartilhado `ReportJobWorker` + `InMemoryJobStore` + `InMemoryJobScheduler` + `NoOpCheckpointStore` + DI) e `NeoReports.Jobs.Hangfire` estendendo-o. Evita um 3º pacote só p/ compartilhar o worker; o "InMemory" do plano mora no pacote base |
+| D19 | Worker e cancelamento | `ReportJobWorker` é o núcleo único de ciclo de vida (running→completed/failed/cancelled), usado por ambos os schedulers. Restart idempotente (CA-16) vem do pipeline (temp por job + upload só no fim; cleanup do temp é best-effort e nunca altera o status). InMemory: cancela via `CancellationTokenSource` por job. Hangfire: `CancellationToken` injetado no invoker; `CancelAsync` deleta o job; mapa id↔hangfire-id em processo (single-server; cross-restart é pós-MVP, D2). Parâmetros viajam como JSON (`JobParameters`, datas em ISO-8601 round-trip) |
 | — | Design | Já feito no Claude Design; exportar conforme handoff; UI pós-MVP |
 
 ---
