@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using NeoReports.Abstractions;
 
 namespace NeoReports.AspNetCore;
@@ -9,7 +10,9 @@ public sealed record RunReportRequest(IReadOnlyDictionary<string, object?>? Para
 /// <summary>Response returned when a report is triggered asynchronously.</summary>
 /// <param name="JobId">Identifier of the queued job.</param>
 /// <param name="Status">Initial job status (typically <c>Queued</c>).</param>
-public sealed record RunAcceptedResponse(string JobId, ReportJobStatus Status);
+public sealed record RunAcceptedResponse(
+    string JobId,
+    [property: JsonConverter(typeof(JsonStringEnumConverter))] ReportJobStatus Status);
 
 /// <summary>Summary of a registered report.</summary>
 /// <param name="Name">The report name.</param>
@@ -29,7 +32,7 @@ public sealed record ReportSummary(string Name, int OutputCount, IReadOnlyList<s
 public sealed record JobView(
     string Id,
     string ReportName,
-    ReportJobStatus Status,
+    [property: JsonConverter(typeof(JsonStringEnumConverter))] ReportJobStatus Status,
     DateTimeOffset CreatedAt,
     DateTimeOffset? StartedAt,
     DateTimeOffset? CompletedAt,
