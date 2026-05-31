@@ -93,7 +93,7 @@ O handoff esperado do Claude Design são quatro entregáveis (`tokens.css`, `com
 
 ## Permissões permanentes do agente (concedidas pelo mantenedor)
 
-O agente tem permissão **permanente** para executar, sem pedir confirmação a cada vez, o ciclo completo de trabalho de um PR:
+O agente tem permissão **permanente** (tem permissão pra tudo no ciclo abaixo, sem pedir confirmação a cada vez):
 
 - **Leitura irrestrita.** Qualquer comando de leitura/inspeção em qualquer parte do sistema: ler/listar/buscar arquivos, `git` de leitura (`status`, `log`, `diff`, `show`, `branch`, `ls-files`, …), inspecionar build/testes, etc.
 - **Inspecionar arquivos, rodar quaisquer testes e analisar os resultados.**
@@ -102,6 +102,20 @@ O agente tem permissão **permanente** para executar, sem pedir confirmação a 
 - **Criar branch e escrever o código necessário.**
 - **Commit, push e abrir PR** (`git commit`, `git push`, `gh pr create`).
 - **Esperar o CI, corrigir o que for necessário, commitar e fazer push de novo** — iterar até o PR ficar verde.
+
+### Ciclo de cada task (executar autonomamente, sem pedir confirmação)
+
+Para cada item do `plan.md` (ou tarefa equivalente), seguir este ciclo de ponta a ponta:
+
+1. **Criar a branch** a partir do `master` atualizado (`git branch --show-current` p/ confirmar que não está no master antes de codar/commitar).
+2. **Escrever todo o código necessário** (e os testes).
+3. **Clean build / rebuild quando necessário** — na dúvida sobre cache, apagar `obj/bin` ou usar `--no-incremental`.
+4. **Criar e executar todos os testes**; ler a linha real `Passed!/Failed!` e `Build succeeded/FAILED`.
+5. **Se tudo estiver verde** (0 falhas, build ok): **commit, push e abrir o PR**.
+6. **Após abrir o PR, acompanhar os check-runs até concluírem** (`check runs until done`) — confirmando que o `headRefOid` do PR == último commit.
+7. **Se precisar refazer algum passo** (CI vermelho, conflito, etc.): corrigir, commitar e push de novo, e repetir 3–6 até o PR ficar verde. Tudo isso é permitido sem nova confirmação.
+
+Só **parar e pedir confirmação** no final (merge) e nas exceções abaixo.
 
 Ainda exigem confirmação explícita: **merge de PR**, deletar branch remota de terceiros, force-push, e ações destrutivas/irreversíveis (`reset --hard` em remoto, mudar visibilidade do repo, dropar schema, etc.).
 
