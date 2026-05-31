@@ -197,7 +197,7 @@ public sealed class ReportRunner : IReportRunner
 
                 // Retain finished files for later retrieval (API download / sync streaming) when an
                 // artifact store is registered. Copying happens before the temp dir is cleaned up.
-                if (services.GetService(typeof(Artifacts.IReportArtifactStore)) is Artifacts.IReportArtifactStore artifactStore)
+                if (services.GetService(typeof(NeoReports.Core.Artifacts.IReportArtifactStore)) is NeoReports.Core.Artifacts.IReportArtifactStore artifactStore)
                 {
                     foreach (var output in outputs)
                         await artifactStore.SaveAsync(
