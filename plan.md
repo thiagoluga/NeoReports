@@ -46,10 +46,10 @@ PRs pequenos e independentes, em ordem. Cada um fecha com testes verdes e fecha 
 - **Depende de:** PR 4.
 
 ## PR 6 — Jobs: worker único
-- [ ] `IJobStore` + `ICheckpointStore` (no-op) + `Jobs.InMemory`.
-- [ ] `Jobs.Hangfire` single-server (storage SQL/SQLite); `IReportJobScheduler`.
-- [ ] Cancelamento cooperativo (`CancellationToken` + flag); restart idempotente (temp local + publicação atômica no fim).
-- **Aceite:** CA-15, CA-16; status `queued→running→completed`.
+- [x] `IJobStore` (InMemory) + `ICheckpointStore` (no-op) + `InMemoryJobScheduler` no pacote base `NeoReports.Jobs` (ver D18).
+- [x] `Jobs.Hangfire` single-server: `HangfireJobScheduler` + invoker reusando `ReportJobWorker`; params via JSON; DI. Storage SQL configurado pelo host (ver D19).
+- [x] Cancelamento cooperativo (CTS por job / `CancellationToken` do Hangfire); restart idempotente (temp por job + upload só no fim, herdado do pipeline).
+- **Aceite:** CA-15, CA-16; status `queued→running→completed`. ✅ 16 testes verdes.
 - **Depende de:** PR 2.
 
 ## PR 7 — Integrations.AspNetCore: endpoints de disparo
