@@ -194,6 +194,16 @@ public sealed class ReportRunner : IReportRunner
                             .ConfigureAwait(false));
                     }
                 }
+
+                // Retain finished files for later retrieval (API download / sync streaming) when an
+                // artifact store is registered. Copying happens before the temp dir is cleaned up.
+                if (services.GetService(typeof(Artifacts.IReportArtifactStore)) is Artifacts.IReportArtifactStore artifactStore)
+                {
+                    foreach (var output in outputs)
+                        await artifactStore.SaveAsync(
+                            execution.JobId, output.Path, output.FileName, output.MimeType, cancellationToken)
+                            .ConfigureAwait(false);
+                }
             }
 
             var stats = new JobStats(recordsRead, recordsWritten, bytesWritten, retries, batches);
