@@ -217,9 +217,12 @@ public sealed class ReportRunner : IReportRunner
                 if (Directory.Exists(tempDir))
                     Directory.Delete(tempDir, recursive: true);
             }
-            catch (IOException)
+            catch (Exception)
             {
-                // Best-effort cleanup; a leftover temp file must not fail a completed report.
+                // Best-effort cleanup: a leftover temp file must never change the job's outcome.
+                // Catch broadly (IOException, UnauthorizedAccessException when a file is briefly
+                // locked on Windows, etc.) so cleanup cannot replace an in-flight cancellation
+                // exception and turn a cancelled run into a failed one.
             }
         }
     }
