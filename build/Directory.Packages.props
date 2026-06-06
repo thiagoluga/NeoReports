@@ -34,7 +34,7 @@
     <PackageVersion Include="Xunit.SkippableFact" Version="1.5.61" />
 
     <!-- Benchmarks -->
-    <PackageVersion Include="BenchmarkDotNet" Version="0.14.0" />
+    <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
   </ItemGroup>
 
 </Project>
