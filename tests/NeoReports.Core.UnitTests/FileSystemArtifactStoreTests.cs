@@ -72,10 +72,11 @@ public sealed class FileSystemArtifactStoreTests : IDisposable
         await Should.NotThrowAsync(async () => await store.DeleteAsync("nope", Ct));
     }
 
+    // Use separators that are path separators on every OS. A backslash is a separator on Windows
+    // but a valid filename char on Linux, so it is intentionally not asserted here.
     [Theory]
     [InlineData("../escape")]
     [InlineData("a/b")]
-    [InlineData("a\\b")]
     public async Task Save_rejects_job_ids_that_escape_the_root(string jobId)
     {
         var store = new FileSystemArtifactStore(_root);
