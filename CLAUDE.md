@@ -90,3 +90,60 @@ O handoff esperado do Claude Design são quatro entregáveis (`tokens.css`, `com
 - Siga `plan.md` em ordem; um PR por item, pequeno e independente.
 - Todo PR fecha um critério de aceite da spec e vem com testes.
 - Mudou uma decisão? Atualize `NeoReports-Decisoes.md` no mesmo PR.
+
+## Permissões permanentes do agente (concedidas pelo mantenedor)
+
+O agente tem permissão **permanente** (tem permissão pra tudo no ciclo abaixo, sem pedir confirmação a cada vez):
+
+### Resumo — o que faço sozinho vs. o que precisa de você
+
+| Faço com autonomia | Preciso da sua confirmação | Nunca faço (mesmo se pedir) |
+|---|---|---|
+| Ler/buscar código, explorar o repo | **Merge em `master`** | Inserir credenciais/senhas/tokens/cartão |
+| Criar branch, editar arquivos | **Publicar pacote** (NuGet) / tag de release | Mexer em controle de acesso/permissões de terceiros |
+| `build` / `test` / `format` / scan Sonar / rodar sample | Apagar branch remota, force-push, reescrever history | Apagar dados permanentemente |
+| `commit` + `push` na branch da tarefa | Ações destrutivas/irreversíveis (drop de schema, `reset --hard` em remoto, mudar visibilidade do repo) | Transações financeiras |
+| Abrir PR (`gh pr create`) | Adicionar **nova dependência** (vai no CPM) | Resolver CAPTCHA, mudar settings de segurança |
+| Acompanhar CI, ler/responder comentários do PR | Qualquer coisa "para fora" além do PR | — |
+| Atualizar docs (plan/ADR/CHANGELOG) via PR | — | — |
+
+> O **merge é sempre seu** — eu nunca mergeio. O app do Claude Code ainda pode te mostrar um prompt do harness para autorizar alguns comandos (push, etc.); isso é a UI de permissões, separada deste acordo de fluxo.
+
+Detalhe dos itens autônomos:
+
+- **Leitura irrestrita.** Qualquer comando de leitura/inspeção em qualquer parte do sistema: ler/listar/buscar arquivos, `git` de leitura (`status`, `log`, `diff`, `show`, `branch`, `ls-files`, …), inspecionar build/testes, etc.
+- **Inspecionar arquivos, rodar quaisquer testes e analisar os resultados.**
+- **Executar e acompanhar os checks/CI.** Disparar/aguardar o CI, ler os resultados (`gh run`, `gh pr checks`) e diagnosticar falhas.
+- **Ler e responder comentários do PR no GitHub** (`gh pr view`/`comment`, review comments).
+- **Criar branch e escrever o código necessário.**
+- **Commit, push e abrir PR** (`git commit`, `git push`, `gh pr create`).
+- **Esperar o CI, corrigir o que for necessário, commitar e fazer push de novo** — iterar até o PR ficar verde.
+
+### Ciclo de cada task (executar autonomamente, sem pedir confirmação)
+
+Para cada item do `plan.md` (ou tarefa equivalente), seguir este ciclo de ponta a ponta:
+
+1. **Criar a branch** a partir do `master` atualizado (`git branch --show-current` p/ confirmar que não está no master antes de codar/commitar).
+2. **Escrever todo o código necessário** (e os testes).
+3. **Clean build / rebuild quando necessário** — na dúvida sobre cache, apagar `obj/bin` ou usar `--no-incremental`.
+4. **Criar e executar todos os testes**; ler a linha real `Passed!/Failed!` e `Build succeeded/FAILED`.
+5. **Se tudo estiver verde** (0 falhas, build ok): **commit, push e abrir o PR**.
+6. **Após abrir o PR, acompanhar os check-runs até concluírem** (`check runs until done`) — confirmando que o `headRefOid` do PR == último commit.
+7. **Se precisar refazer algum passo** (CI vermelho, conflito, etc.): corrigir, commitar e push de novo, e repetir 3–6 até o PR ficar verde. Tudo isso é permitido sem nova confirmação.
+
+Só **parar e pedir confirmação** no final (merge) e nas exceções abaixo.
+
+Ainda exigem confirmação explícita: **merge de PR**, deletar branch remota de terceiros, force-push, e ações destrutivas/irreversíveis (`reset --hard` em remoto, mudar visibilidade do repo, dropar schema, etc.).
+
+## Lições operacionais (erros já cometidos — não repetir)
+
+1. **Confirme a branch ANTES de commitar.** Sempre `git branch --show-current` antes de `git add`/`commit`. Já commitei direto no `master` por engano (só não quebrou porque sou admin). Todo trabalho em branch própria.
+2. **NUNCA commite/pushe com build ou teste vermelho.** Antes de `git commit`, leia a linha real `Build succeeded`/`Passed!`/`Failed!` do escopo alterado. Se houver `Failed: N>0` ou `Build FAILED`, não commite. Já afirmei "verde" sem verificar e mergeei PR vermelho — inaceitável.
+3. **Build local incremental MENTE.** `obj/bin` em cache já mascarou erro real de compilação (CS0246) que só apareceu no CI. Na dúvida, `--no-incremental` ou apague `obj/bin` e rebuilde do zero antes de confiar no verde.
+4. **Edit que falha com "file modified since read" NÃO foi aplicado.** Re-leia e refaça; nunca assuma que entrou. Docs (ADR/plan) já não entraram em commits por isso.
+5. **Um comando por vez ao diagnosticar.** Lotes grandes em paralelo cancelam em cascata no primeiro erro e corrompem a visão de estado.
+6. **CI tem cache de status.** `gh pr checks` / `commits/<sha>/check-runs` pode mostrar run antigo. Confirme `headRefOid` do PR == seu último commit antes de confiar no resultado.
+7. **Resultados podem chegar fora de ordem.** Ao notar incoerência, PARE e rode uma checagem sequencial `git branch/status/log` antes de agir.
+8. **Um PR por vez.** Não abrir vários simultâneos sem o mantenedor pedir; fechar (mergear) o atual antes do próximo.
+9. **Novas dependências (inclusive de teste) vão no CPM** (`build/Directory.Packages.props`). `NU1010` = `PackageVersion` faltando.
+10. **`dotnet format --verify-no-changes` dá falso-positivo local** por autocrlf (CRLF no working tree vs LF no repo); o CI faz checkout LF e passa. Não persiga `ENDOFLINE` local; confie no step de format do CI.
