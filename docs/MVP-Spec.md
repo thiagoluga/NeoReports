@@ -1,79 +1,79 @@
-# NeoReports — Spec do MVP (v1)
+# NeoReports — MVP Spec (v1)
 
-Define **o que a v1 entrega, de forma testável**. A arquitetura está em `NeoReports-Decisoes.md`; a ordem de construção em `plan.md` (raiz).
+Defines **what v1 delivers, in a testable way**. The architecture is in `DECISIONS.md`; the build order in `PLAN.md` (root).
 
-## Objetivo
+## Goal
 
-Um desenvolvedor .NET registra um report em código, fortemente tipado, que lê de um banco SQL por paginação keyset, escreve em CSV e XLSX com memória constante, e faz upload para um destino (Local ou S3) — síncrono (stream direto) ou assíncrono (job em background com worker único). Falhas de batch passam por retry (Polly) e por uma estratégia de falha (Abort ou SkipBatchAndLog).
+A .NET developer registers a report in code, strongly typed, that reads from a SQL database via keyset pagination, writes to CSV and XLSX with constant memory, and uploads to a destination (Local or S3) — synchronously (direct stream) or asynchronously (background job with a single worker). Batch failures go through retry (Polly) and a failure strategy (Abort or SkipBatchAndLog).
 
-## O que a v1 faz (resumo funcional)
+## What v1 does (functional summary)
 
-- Registrar reports tipados via DI: `services.AddReport<TRow>("nome", b => ...)`.
-- Ler de SQL com paginação keyset (cursor `string?`), abrindo/fechando conexão por página.
-- `Map` para um tipo de saída, `Filter` com delegate C# tipado.
-- Declarar o schema de colunas (nome, tipo, formato, cultura) para a projeção de saída.
-- Escrever CSV (delimitador, encoding, cabeçalho) e XLSX (nome da aba, auto-filtro) na mesma passada.
-- Upload para Local (path template) e S3 (bucket/key template).
-- Disparar via API: assíncrono (retorna `jobId`) ou síncrono (stream no response).
-- Consultar status do job e baixar o resultado.
-- Retry com Polly + `IFailureStrategy` (Abort / SkipBatchAndLog) + thresholds (consecutivas / total / razão).
+- Register typed reports via DI: `services.AddReport<TRow>("name", b => ...)`.
+- Read from SQL with keyset pagination (`string?` cursor), opening/closing the connection per page.
+- `Map` to an output type, `Filter` with a typed C# delegate.
+- Declare the column schema (name, type, format, culture) for the output projection.
+- Write CSV (delimiter, encoding, header) and XLSX (sheet name, auto-filter) in the same pass.
+- Upload to Local (path template) and S3 (bucket/key template).
+- Trigger via API: asynchronous (returns `jobId`) or synchronous (stream in the response).
+- Query job status and download the result.
+- Retry with Polly + `IFailureStrategy` (Abort / SkipBatchAndLog) + thresholds (consecutive / total / ratio).
 
-## Critérios de aceite (cada um vira teste)
+## Acceptance criteria (each becomes a test)
 
-1. **Registro tipado.** `AddReport<Venda>("vendas", b => b.From(sql).Map(...).To(Csv).UploadTo(Local))` registra e o report aparece no `IReportRegistry`.
-2. **Leitura keyset.** A SQL source lê todas as páginas em ordem por uma coluna-chave, sem pular nem repetir registros; conexão é aberta/fechada por página.
-3. **Memória constante.** Gerar um report de 1.000.000 de linhas mantém alocação ~constante (BenchmarkDotNet `MemoryDiagnoser`); não há crescimento proporcional ao total de linhas.
-4. **CSV correto.** Saída CSV bate byte-a-byte com golden file: delimitador e encoding configurados, cabeçalho com `DisplayName`, valores formatados por cultura/format do schema.
-5. **XLSX correto.** Arquivo abre no Excel/ClosedXML, aba nomeada, auto-filtro ativo, tipos nativos (número/data) preservados.
-6. **Multi-output numa passada.** CSV + XLSX gerados lendo a source **uma única vez**.
-7. **Upload Local.** Arquivo aparece no path resolvido (tokens `{date}`, `{name}` expandidos).
-8. **Upload S3.** Objeto criado no bucket/key resolvido; upload tudo-ou-nada (sem objeto parcial em falha).
-9. **Disparo assíncrono.** `POST /api/reports/{nome}/run` cria job `queued`, retorna `jobId`; worker processa; status caminha `queued → running → completed`.
-10. **Disparo síncrono.** `POST /api/reports/{nome}/run?mode=sync` faz stream do único formato no response com `Content-Disposition` correto; multi-output em sync retorna `400`.
-11. **Retry transitório.** Source que falha 2x com erro transitório e recupera na 3ª completa o report sem perda de dados.
-12. **FailureStrategy Abort.** Com `AbortReport()`, falha definitiva de um batch aborta o report (status `failed`, motivo registrado).
-13. **FailureStrategy Skip.** Com `SkipBatchAndLog()`, batch que falha definitivamente é pulado, warning estruturado é logado, report conclui marcado como **parcial**.
-14. **Threshold.** Com `SkipBatchAndLog().AbortIf(t => t.ConsecutiveFailures(3))`, 3 falhas consecutivas abortam mesmo em modo skip.
-15. **Cancelamento.** `POST /api/jobs/{id}/cancel` faz o job parar cooperativamente (status `cancelled`) em tempo razoável.
-16. **Restart idempotente.** Job interrompido (processo morto) reinicia do zero sem corromper destino (sem arquivo parcial publicado).
+1. **Typed registration.** `AddReport<Sale>("sales", b => b.From(sql).Map(...).To(Csv).UploadTo(Local))` registers and the report appears in `IReportRegistry`.
+2. **Keyset read.** The SQL source reads all pages in order by a key column, without skipping or repeating records; the connection is opened/closed per page.
+3. **Constant memory.** Generating a 1,000,000-row report keeps allocation ~constant (BenchmarkDotNet `MemoryDiagnoser`); there is no growth proportional to the total number of rows.
+4. **Correct CSV.** CSV output matches a golden file byte-by-byte: configured delimiter and encoding, header with `DisplayName`, values formatted per the schema's culture/format.
+5. **Correct XLSX.** The file opens in Excel/ClosedXML, named sheet, active auto-filter, native types (number/date) preserved.
+6. **Multi-output in one pass.** CSV + XLSX generated reading the source **only once**.
+7. **Local upload.** File appears at the resolved path (`{date}`, `{name}` tokens expanded).
+8. **S3 upload.** Object created at the resolved bucket/key; all-or-nothing upload (no partial object on failure).
+9. **Async trigger.** `POST /api/reports/{name}/run` creates a `queued` job, returns `jobId`; the worker processes it; status walks `queued → running → completed`.
+10. **Sync trigger.** `POST /api/reports/{name}/run?mode=sync` streams the single format in the response with a correct `Content-Disposition`; multi-output in sync returns `400`.
+11. **Transient retry.** A source that fails 2x with a transient error and recovers on the 3rd completes the report without data loss.
+12. **FailureStrategy Abort.** With `AbortReport()`, a definitive batch failure aborts the report (status `failed`, reason recorded).
+13. **FailureStrategy Skip.** With `SkipBatchAndLog()`, a definitively failed batch is skipped, a structured warning is logged, the report completes marked as **partial**.
+14. **Threshold.** With `SkipBatchAndLog().AbortIf(t => t.ConsecutiveFailures(3))`, 3 consecutive failures abort even in skip mode.
+15. **Cancellation.** `POST /api/jobs/{id}/cancel` makes the job stop cooperatively (status `cancelled`) within a reasonable time.
+16. **Idempotent restart.** An interrupted job (killed process) restarts from zero without corrupting the destination (no partial file published).
 
-## API REST da v1
+## v1 REST API
 
 ```
-POST   /api/reports/{nome}/run            # async  → 202 { jobId }
-POST   /api/reports/{nome}/run?mode=sync  # sync   → 200 stream (single-output)
-GET    /api/reports                        # lista reports registrados
+POST   /api/reports/{name}/run            # async  → 202 { jobId }
+POST   /api/reports/{name}/run?mode=sync  # sync   → 200 stream (single-output)
+GET    /api/reports                        # list registered reports
 GET    /api/jobs/{id}                       # status + stats
-POST   /api/jobs/{id}/cancel                # cancela
-GET    /api/jobs/{id}/download              # baixa o resultado quando completo
+POST   /api/jobs/{id}/cancel                # cancel
+GET    /api/jobs/{id}/download              # download the result when complete
 ```
 
-Parâmetros do report vão no body do `run` (`{ "parameters": { "inicio": "2026-01-01" } }`). Auth herda do host (sem auth chain na v1).
+Report parameters go in the `run` body (`{ "parameters": { "start": "2026-01-01" } }`). Auth inherits from the host (no auth chain in v1).
 
-## Report de referência (alvo do primeiro end-to-end)
+## Reference report (target of the first end-to-end)
 
 ```csharp
-public sealed record Venda(long Id, string Cliente, decimal Valor, DateTime Data);
+public sealed record Sale(long Id, string Customer, decimal Amount, DateTime Date);
 
-services.AddReport<Venda>("vendas-mensal", b => b
-    .From(Source.Sql("vendas-db",
-        "SELECT Id, Cliente, Valor, Data FROM Vendas WHERE Data >= @inicio AND Id > @cursor ORDER BY Id")
+services.AddReport<Sale>("monthly-sales", b => b
+    .From(Source.Sql("sales-db",
+        "SELECT Id, Customer, Amount, Date FROM Sales WHERE Date >= @start AND Id > @cursor ORDER BY Id")
         .Keyset(v => v.Id, pageSize: 1000))
-    .Filter(v => v.Valor > 0)
+    .Filter(v => v.Amount > 0)
     .Columns(
-        Col(v => v.Id,      "ID Venda"),
-        Col(v => v.Cliente, "Cliente"),
-        Col(v => v.Valor,   "Valor",     format: "C2", culture: "pt-BR"),
-        Col(v => v.Data,    "Data Venda", format: "yyyy-MM-dd"))
+        Col(v => v.Id,       "Sale ID"),
+        Col(v => v.Customer, "Customer"),
+        Col(v => v.Amount,   "Amount",    format: "C2", culture: "pt-BR"),
+        Col(v => v.Date,     "Sale Date", format: "yyyy-MM-dd"))
     .To(Format.Csv(o => o.Delimiter(';').Encoding(Encoding.UTF8)))
-    .To(Format.Xlsx(o => o.SheetName("Vendas").AutoFilter()))
+    .To(Format.Xlsx(o => o.SheetName("Sales").AutoFilter()))
     .UploadTo(Destination.Local("./out/{name}-{date:yyyy-MM-dd}.{ext}"))
     .Retry(r => r.MaxAttempts(5).Exponential(baseDelay: TimeSpan.FromSeconds(2)).WithJitter())
     .OnFailure(f => f.SkipBatchAndLog().AbortIf(t => t.ConsecutiveFailures(3))));
 ```
 
-Esse exemplo deve compilar e rodar end-to-end — é a definição prática de "MVP pronto".
+This example must compile and run end-to-end — it is the practical definition of "MVP done".
 
-## Não-objetivos da v1
+## v1 non-goals
 
-Caminho dinâmico/config JSON, UI, variants, multi-worker, resume mid-job, PDF, SharePoint, auth chain, expressões dinâmicas. Ver lista completa em `CLAUDE.md` e no ADR.
+Dynamic path/JSON config, UI, variants, multi-worker, mid-job resume, PDF, SharePoint, auth chain, dynamic expressions. See the full list in `CLAUDE.md` and the ADR.

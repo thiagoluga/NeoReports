@@ -1,94 +1,94 @@
-# NeoReports — Registro de Decisões (ADR consolidado)
+# NeoReports — Decision Record (consolidated ADR)
 
-> Documento para iniciar a próxima conversa com as decisões cravadas.
-> Contexto de entrada: **v1 só code-first tipado · worker único (escala vertical) · MVP enxuto · solo founder (tempo parcial)**.
+> Document to start the next conversation with the decisions locked in.
+> Entry context: **v1 typed code-first only · single worker (vertical scale) · lean MVP · solo founder (part time)**.
 
-## Princípio que resolve a tensão
+## The principle that resolves the tension
 
-**O contrato (`NeoReports.Abstractions`) é desenhado para não fechar porta nenhuma — caminho dinâmico, multi-worker e UI são todos possíveis sem rework. A implementação da v1 entrega só o mínimo demonstrável.** Abstração estável e pequena; implementação enxuta.
+**The contract (`NeoReports.Abstractions`) is designed to close no door — dynamic path, multi-worker and UI are all possible without rework. The v1 implementation delivers only the minimum that is demonstrable.** Stable, small abstraction; lean implementation.
 
-Corolário para solo founder: cada interface pública em `Abstractions` é um passivo (trava SemVer, quebra plugins externos se mudar). Toda interface que o MVP não usa **sai** da v1.
-
----
-
-## D1 — Registro tipado: pipeline genérica sobre `T`, projeção só na borda do writer
-
-**Decisão.** v1 é **exclusivamente code-first tipado**. A pipeline é genérica sobre `T`; o registro *é* o POCO. Não existe `ReportRecord` posicional nem dicionário por linha na v1.
-
-- **Leitura e processamento** (`IBatchSource<T>`, `map`, `filter`): tudo opera em `T`. Zero boxing durante o processamento.
-- **Projeção para colunas** acontece **só na borda do writer**: o Core compila `Func<T, object?>` por coluna (a partir do `ReportSchema` declarado no builder) e projeta cada linha para `object?[]` na ordem do schema, imediatamente antes de escrever. Boxing só aqui, e é inevitável (CSV/XLSX são saídas fracamente tipadas).
-- **Writers ficam não-genéricos**: consomem `(object?[] linha, ReportSchema)`. Plugin de formato não precisa saber de `T`.
-
-**Por quê.** Dicionário por linha mata a memória constante. Processar tipado e projetar só na saída dá perf máxima no caminho quente e mantém os writers simples. O caminho dinâmico (`ReportRecord` posicional + filtro JsonLogic) **volta pós-MVP** sem quebrar o writer (a borda já fala `object?[]` + schema).
+Corollary for a solo founder: every public interface in `Abstractions` is a liability (it locks SemVer, breaks external plugins if it changes). Every interface the MVP doesn't use **leaves** v1.
 
 ---
 
-## D2 — Worker único (escala vertical)
+## D1 — Typed registration: pipeline generic over `T`, projection only at the writer edge
 
-**Decisão.**
-- **Um processo worker**, escala vertical. Sem fila distribuída, sem coordenação multi-máquina na v1.
-- Default: **Hangfire single-server** (storage SQL/SQLite) — ganha persistência de estado de job entre restarts e dashboard de graça, com um servidor só. `InMemory` para dev/testes.
-- Job é **unidade atômica** que roda inteiro nesse worker. Se o processo cai no meio, o job **reinicia do zero** (re-execução idempotente). Saída em temp local, upload no fim, marca `completed`.
-- `ICheckpointStore` **existe como contrato** mas é no-op na v1.
+**Decision.** v1 is **exclusively typed code-first**. The pipeline is generic over `T`; the registration *is* the POCO. There is no positional `ReportRecord` nor a per-row dictionary in v1.
 
-**Por quê.** Worker vertical é a forma mais simples e atende o MVP. Hangfire single-server custa quase nada e já abre caminho pra multi-server depois (é só subir mais instâncias) sem trocar o contrato. Resume mid-job e multi-worker ficam pós-MVP — o contrato (`IJobStore`, `ICheckpointStore`) já está pronto pra ambos.
+- **Read and processing** (`IBatchSource<T>`, `map`, `filter`): everything operates on `T`. Zero boxing during processing.
+- **Projection to columns** happens **only at the writer edge**: Core compiles `Func<T, object?>` per column (from the `ReportSchema` declared in the builder) and projects each row to `object?[]` in schema order, immediately before writing. Boxing only here, and it is unavoidable (CSV/XLSX are weakly typed outputs).
+- **Writers stay non-generic**: they consume `(object?[] row, ReportSchema)`. A format plugin does not need to know about `T`.
 
----
-
-## D3 — Cursor é token opaco serializável, não `object?`
-
-**Decisão.** O cursor de paginação é um **token opaco serializável** (`string?`, codificado pela própria source). Nada de `object? Cursor`.
-
-**Por quê.** Mesmo com worker único, o cursor é o mecanismo de paginação keyset (abre/fecha conexão por página). `string?` opaco é o tipo certo e custa zero — e já deixa checkpoint/multi-worker viáveis no futuro sem rework.
-
-**Muda no código.** `BatchResult<T>.NextCursor`, `BatchContext.Cursor` e `Checkpoint.LastCursor` são `string?`. A source é dona do encode/decode do cursor tipado interno.
+**Why.** A per-row dictionary kills constant memory. Processing typed and projecting only at the output gives maximum perf on the hot path and keeps writers simple. The dynamic path (positional `ReportRecord` + JsonLogic filter) **comes back post-MVP** without breaking the writer (the edge already speaks `object?[]` + schema).
 
 ---
 
-## D4 — Batch é o modelo canônico; streaming é adaptado
+## D2 — Single worker (vertical scale)
 
-**Decisão.** `IBatchSource<T>` é o contrato primário e o modelo interno da pipeline. `IStreamingSource<T>` (`IAsyncEnumerable<T>`) existe como opção de autoria, mas é fatiado em batches por um `StreamingToBatchAdapter` (tamanho configurável).
+**Decision.**
+- **One worker process**, vertical scale. No distributed queue, no multi-machine coordination in v1.
+- Default: **Hangfire single-server** (SQL/SQLite storage) — gains job-state persistence across restarts and a dashboard for free, with a single server. `InMemory` for dev/tests.
+- A job is an **atomic unit** that runs entirely on that worker. If the process dies mid-way, the job **restarts from zero** (idempotent re-execution). Output to local temp, upload at the end, mark `completed`.
+- `ICheckpointStore` **exists as a contract** but is a no-op in v1.
 
-**Por quê.** Retry, threshold e escrita operam em batch. Um modelo só pra raciocinar.
-
----
-
-## D5 — Variants e coalescência: fora da v1
-
-**Decisão.** Cortar variants, herança de config e coalescência do MVP. Reports independentes evoluem pra pipeline+variants depois sem quebrar contrato.
+**Why.** A vertical worker is the simplest form and serves the MVP. Hangfire single-server costs almost nothing and already opens the path to multi-server later (just spin up more instances) without changing the contract. Mid-job resume and multi-worker are post-MVP — the contract (`IJobStore`, `ICheckpointStore`) is already ready for both.
 
 ---
 
-## D6 — Não re-abstrair o Polly
+## D3 — The cursor is an opaque serializable token, not `object?`
 
-**Decisão.** Usar `Polly v8` (`ResiliencePipeline`) direto no loop de leitura de batch. Remover `IRetryPolicy` e `IExceptionClassifier` de `Abstractions`. Manter só `IFailureStrategy` (decisão após esgotar tentativas) + monitor de threshold.
+**Decision.** The pagination cursor is an **opaque serializable token** (`string?`, encoded by the source itself). No `object? Cursor`.
 
-**Muda no código.** Config de retry compila para um `ResiliencePipeline`. `IFailureStrategy` na v1: só `AbortReport()` e `SkipBatchAndLog()`.
+**Why.** Even with a single worker, the cursor is the keyset-pagination mechanism (opens/closes the connection per page). An opaque `string?` is the right type and costs zero — and already makes checkpoint/multi-worker viable in the future without rework.
 
----
-
-## D7 — Renomear `ExecutionContext` → `ReportExecutionContext`
-
-**Decisão.** Renomear. Colide com `System.Threading.ExecutionContext`.
+**Changes in code.** `BatchResult<T>.NextCursor`, `BatchContext.Cursor` and `Checkpoint.LastCursor` are `string?`. The source owns the encode/decode of its internal typed cursor.
 
 ---
 
-## D8 — Disparo de report e modo `sync`
+## D4 — Batch is the canonical model; streaming is adapted
 
-**Decisão.** Sem endpoint de config dinâmica na v1. Reports são registrados em código (`.AddReport("nome", b => b.From<T>()...)`). O endpoint dispara um report **registrado por nome** com parâmetros:
+**Decision.** `IBatchSource<T>` is the primary contract and the internal model of the pipeline. `IStreamingSource<T>` (`IAsyncEnumerable<T>`) exists as an authoring option, but is sliced into batches by a `StreamingToBatchAdapter` (configurable size).
+
+**Why.** Retry, threshold and writing operate on a batch. A single model to reason about.
+
+---
+
+## D5 — Variants and coalescing: out of v1
+
+**Decision.** Cut variants, config inheritance and coalescing from the MVP. Independent reports evolve to pipeline+variants later without breaking the contract.
+
+---
+
+## D6 — Don't re-abstract Polly
+
+**Decision.** Use `Polly v8` (`ResiliencePipeline`) directly in the batch-read loop. Remove `IRetryPolicy` and `IExceptionClassifier` from `Abstractions`. Keep only `IFailureStrategy` (decision after retries are exhausted) + a threshold monitor.
+
+**Changes in code.** Retry config compiles into a `ResiliencePipeline`. `IFailureStrategy` in v1: only `AbortReport()` and `SkipBatchAndLog()`.
+
+---
+
+## D7 — Rename `ExecutionContext` → `ReportExecutionContext`
+
+**Decision.** Rename. It collides with `System.Threading.ExecutionContext`.
+
+---
+
+## D8 — Report trigger and `sync` mode
+
+**Decision.** No dynamic-config endpoint in v1. Reports are registered in code (`.AddReport("name", b => b.From<T>()...)`). The endpoint triggers a report **registered by name** with parameters:
 
 ```
-POST /api/reports/{nome}/run        # async → jobId
-POST /api/reports/{nome}/run?mode=sync   # streaming direto no response
+POST /api/reports/{name}/run        # async → jobId
+POST /api/reports/{name}/run?mode=sync   # direct streaming in the response
 ```
 
-`mode=sync` é **single-output** (um formato, response body, sem compressão de múltiplos arquivos). Compiler valida e rejeita multi-output em sync com `400`.
+`mode=sync` is **single-output** (one format, response body, no compression of multiple files). The compiler validates and rejects multi-output in sync with `400`.
 
 ---
 
-## D9 — `Abstractions` mínimo e congelado (typed-only)
+## D9 — Minimal and frozen `Abstractions` (typed-only)
 
-**Decisão.** SemVer estrito; tratar como ABI. Superfície da v1:
+**Decision.** Strict SemVer; treat as an ABI. v1 surface:
 
 ```
 Schema/        ColumnType · ReportColumn · ReportSchema
@@ -96,126 +96,132 @@ Data/          ReportBatch<T>
 Execution/     ReportExecutionContext · JobPriority
 Sources/       IReportSource · IBatchSource<T> · IStreamingSource<T>
                BatchContext · BatchResult<T>     (Cursor = string?)
-Formats/       IReportWriter · WriterContext     (writer não-genérico; recebe object?[] + schema)
+Formats/       IReportWriter · WriterContext     (non-generic writer; receives object?[] + schema)
 Destinations/  IReportDestination · ReportFile · DestinationContext · UploadResult
 Resilience/    IFailureStrategy · BatchFailureContext · FailureDecision · FailureAction
 Jobs/          IReportJobScheduler · IJobStore · ReportJob · ReportJobRequest
-               ReportJobStatus · JobStats · ICheckpointStore (contrato, no-op v1)
+               ReportJobStatus · JobStats · ICheckpointStore (contract, no-op v1)
 Extensibility/ ISourceFactory · IWriterFactory · IDestinationFactory
 Exceptions/    NeoReportsException · BatchFailedException · SourceFailedException
                · ThresholdExceededException · ConfigurationException
 ```
 
-Removido da v1 vs. Cap. 16: `IRetryPolicy`, `IExceptionClassifier`, `IAuthProvider*` (host auth basta), `IReportConfigParser` + DTOs de config/variant, `ReportRecord` posicional, `JobEvent`/`JobEventType` completo, `IPaginationStrategy` público (interno por ora).
+Removed from v1 vs. Ch. 16: `IRetryPolicy`, `IExceptionClassifier`, `IAuthProvider*` (host auth is enough), `IReportConfigParser` + config/variant DTOs, positional `ReportRecord`, the full `JobEvent`/`JobEventType`, public `IPaginationStrategy` (internal for now).
 
 ---
 
-## D10 — Filtro/transform tipados; sem expressões dinâmicas na v1
+## D10 — Typed filter/transform; no dynamic expressions in v1
 
-**Decisão.** Filtro e transform são **delegates C# tipados** (`Func<T,bool>`, `Func<T,T>`) declarados no builder. JsonLogic e DynamicLinq saem da v1 (eram do caminho dinâmico, cortado em D1).
+**Decision.** Filter and transform are **typed C# delegates** (`Func<T,bool>`, `Func<T,T>`) declared in the builder. JsonLogic and DynamicLinq leave v1 (they were part of the dynamic path, cut in D1).
 
-**Por quê.** Code-first não precisa de avaliador de expressão — o filtro *é* código C# compilado, rápido e seguro. Expressões dinâmicas voltam junto com o caminho dinâmico, pós-MVP.
+**Why.** Code-first does not need an expression evaluator — the filter *is* compiled C# code, fast and safe. Dynamic expressions come back together with the dynamic path, post-MVP.
 
 ---
 
-## Escopo concreto da v1 (o que entra)
+## Concrete v1 scope (what's in)
 
-| Camada | Entra na v1 | Fica pra depois |
+| Layer | In v1 | Later |
 |---|---|---|
-| Paradigma | Code-first tipado (`.AddReport` + `.From<T>`) | Endpoint de config dinâmica, builder visual, UI |
+| Paradigm | Typed code-first (`.AddReport` + `.From<T>`) | Dynamic-config endpoint, visual builder, UI |
 | Sources | SQL (`IBatchSource<T>`, keyset) | HTTP, File, Mongo, Custom |
 | Formats | CSV, XLSX | PDF, JSON, XML, Parquet |
 | Destinations | Local, S3 | SharePoint, Azure, GDrive, FTP, Email, Webhook |
 | Jobs | Hangfire single-server, InMemory | Multi-worker, Quartz, MassTransit, Azure Functions |
-| Resiliência | Polly + Abort/SkipAndLog + threshold | Pause/Review, FallbackToCache, dead-letter |
-| Auth | Herda do host | Filter chain, signed URLs, per-area/action |
-| Estrutura | Reports independentes | Pipeline + variants + coalescência |
-| Checkpoint | Contrato no-op; restart-do-zero | Resume mid-job; multi-worker |
-| Filtro | Delegates C# tipados | JsonLogic / DynamicLinq (caminho dinâmico) |
+| Resilience | Polly + Abort/SkipAndLog + threshold | Pause/Review, FallbackToCache, dead-letter |
+| Auth | Inherits from the host | Filter chain, signed URLs, per-area/action |
+| Structure | Independent reports | Pipeline + variants + coalescing |
+| Checkpoint | No-op contract; restart-from-zero | Mid-job resume; multi-worker |
+| Filter | Typed C# delegates | JsonLogic / DynamicLinq (dynamic path) |
 
-**Não entra na v1:** UI Blazor, caminho dinâmico, variants/coalescência, multi-worker, auth chain, SharePoint, templates `dotnet new`, PDF, config YAML/TOML, dashboard de métricas.
-
----
-
-## Handoff do Claude Design (já feito) → Claude Code
-
-**Estado:** o design das telas já está pronto no projeto Claude Design (Claude Design System — Anthropic Sans, CSS variables, paleta oficial, ícones Tabler outline, flat). **A UI continua pós-MVP** — este handoff é preparação para a fase de UI, não para a v1.
-
-**Stack-alvo da UI:** Blazor Server + MudBlazor (+ ApexCharts).
-
-**Pedir ao projeto de design que exporte, nesta ordem de prioridade:**
-
-1. **`tokens.css`** — todos os tokens do Design System (cores, tipografia, espaçamento, raios, sombras) como CSS custom properties nomeadas, arquivo único. Vira tema MudBlazor.
-2. **`components.html`** — catálogo de cada componente reutilizável em **todas as variantes e estados** (default/hover/active/disabled/loading/empty/error). Mínimo: MetricCard, StatusBadge (queued/running/completed/failed/paused/retrying/cancelled), ProgressBar, PhaseStepper, WizardStepper, FilterBar, ReportCard, SourceCard, DestinationCard, FormatCard, DataGrid (header+rows), Timeline/EventRow, EmptyState, Banner/Alert, NavBar, SubNav, Chip/Tag, Switch. Classes nomeadas e estáveis, **sem estilo inline**.
-3. **Um `.html` por tela** (as 17) — markup semântico que **referencia** as classes do catálogo (não recopia estilo); só layout/composição/grid.
-4. **`handoff.md`** — tabela `tela → rota → componentes usados → endpoint que alimenta → estados a tratar`, mais breakpoints responsivos e lista de ícones Tabler.
-
-**Regras de formato (minimizam trabalho no Claude Code):** CSS externo só, zero inline style; classes que mapeiam 1:1 pra nome de componente; HTML semântico (`button`/`table`/`nav`/headings, sem div-soup); nenhuma suposição de comportamento JS (interatividade é do Blazor). **Evitar:** screenshots/PNG, Figma, HTML gigante com estilo inline.
+**Not in v1:** Blazor UI, dynamic path, variants/coalescing, multi-worker, auth chain, SharePoint, `dotnet new` templates, PDF, YAML/TOML config, metrics dashboard.
 
 ---
 
-## Sequência sugerida (solo, tempo parcial)
+## Claude Design handoff (already done) → Claude Code
 
-1. `Abstractions` mínimo (D9) + `Core` (builder fluente genérico `<T>` + pipeline batch + projeção compilada + Polly).
-2. `Sources.Sql` (keyset) + `Formats.Csv` + `Destinations.Local`. **Primeiro report tipado end-to-end rodando.**
-3. `Formats.Xlsx` (ClosedXML) + `Destinations.S3` (upload tudo-ou-nada).
+**State:** the screen design is already done in the Claude Design project (Claude Design System — Anthropic Sans, CSS variables, official palette, Tabler outline icons, flat). **The UI remains post-MVP** — this handoff is preparation for the UI phase, not for v1.
+
+**Target UI stack:** Blazor Server + MudBlazor (+ ApexCharts).
+
+**Ask the design project to export, in this priority order:**
+
+1. **`tokens.css`** — all Design System tokens (colors, typography, spacing, radii, shadows) as named CSS custom properties, single file. Becomes the MudBlazor theme.
+2. **`components.html`** — a catalog of each reusable component in **all variants and states** (default/hover/active/disabled/loading/empty/error). Minimum: MetricCard, StatusBadge (queued/running/completed/failed/paused/retrying/cancelled), ProgressBar, PhaseStepper, WizardStepper, FilterBar, ReportCard, SourceCard, DestinationCard, FormatCard, DataGrid (header+rows), Timeline/EventRow, EmptyState, Banner/Alert, NavBar, SubNav, Chip/Tag, Switch. Named, stable classes, **no inline style**.
+3. **One `.html` per screen** (the 17) — semantic markup that **references** the catalog classes (does not recopy style); only layout/composition/grid.
+4. **`handoff.md`** — a table `screen → route → components used → feeding endpoint → states to handle`, plus responsive breakpoints and the list of Tabler icons.
+
+**Format rules (minimize work in Claude Code):** external CSS only, zero inline style; classes that map 1:1 to a component name; semantic HTML (`button`/`table`/`nav`/headings, no div-soup); no assumption about JS behavior (interactivity belongs to Blazor). **Avoid:** screenshots/PNG, Figma, giant HTML with inline style.
+
+---
+
+## Suggested sequence (solo, part time)
+
+1. Minimal `Abstractions` (D9) + `Core` (generic `<T>` fluent builder + batch pipeline + compiled projection + Polly).
+2. `Sources.Sql` (keyset) + `Formats.Csv` + `Destinations.Local`. **First typed end-to-end report running.**
+3. `Formats.Xlsx` (ClosedXML) + `Destinations.S3` (all-or-nothing upload).
 4. `Jobs.Hangfire` (single-server) + `Jobs.InMemory` + `IJobStore`.
-5. `AspNetCore`: endpoints de disparo async/sync de reports registrados. **MVP demonstrável.**
-6. Validar com usuários reais antes de UI / caminho dinâmico / variants / multi-worker.
+5. `AspNetCore`: async/sync trigger endpoints for registered reports. **Demonstrable MVP.**
+6. Validate with real users before UI / dynamic path / variants / multi-worker.
 
 ---
 
-## Tabela-resumo das decisões
+## Decisions summary table
 
-| # | Tema | Decisão |
+| # | Topic | Decision |
 |---|---|---|
-| D1 | Registro | Pipeline genérica `<T>` tipada; projeção pra `object?[]` só na borda do writer; sem dicionário; dinâmico pós-MVP |
-| D2 | Worker | Único / vertical; Hangfire single-server; job atômico; restart-do-zero; multi-worker e resume pós-MVP |
-| D3 | Cursor | Token opaco serializável (`string?`) |
-| D4 | Stream vs Batch | Batch canônico; streaming adaptado |
-| D5 | Variants/coalescência | Fora da v1 |
-| D6 | Resiliência | Polly direto; só `IFailureStrategy` + threshold como abstração própria |
+| D1 | Registration | Typed generic `<T>` pipeline; projection to `object?[]` only at the writer edge; no dictionary; dynamic post-MVP |
+| D2 | Worker | Single / vertical; Hangfire single-server; atomic job; restart-from-zero; multi-worker and resume post-MVP |
+| D3 | Cursor | Opaque serializable token (`string?`) |
+| D4 | Stream vs Batch | Batch canonical; streaming adapted |
+| D5 | Variants/coalescing | Out of v1 |
+| D6 | Resilience | Polly directly; only `IFailureStrategy` + threshold as an owned abstraction |
 | D7 | Naming | `ExecutionContext` → `ReportExecutionContext` |
-| D8 | Disparo/sync | Reports registrados por nome; sem config dinâmica; sync = single-output |
-| D9 | Abstractions | Mínimo typed-only, congelado, SemVer estrito |
-| D10 | Filtro | Delegates C# tipados; JsonLogic/DynamicLinq pós-MVP |
-| D11 | Retry/Skip | Retry (Polly) envolve a leitura do batch; falha de leitura não é "skippável" (sem cursor pra avançar) → vira Abort; falha de projeção/escrita é skippável (cursor já conhecido) |
-| D12 | Map no builder | `Map` não é um passo que troca o tipo do builder; o mapeamento é expresso por `From(source, map)`, mantendo `ReportBuilder<TRow>` mono-genérico e compatível com `AddReport<TRow>(Action<...>)` |
-| D18 | Empacotamento de jobs | Pacote base `NeoReports.Jobs` (worker compartilhado `ReportJobWorker` + `InMemoryJobStore` + `InMemoryJobScheduler` + `NoOpCheckpointStore` + DI) e `NeoReports.Jobs.Hangfire` estendendo-o. Evita um 3º pacote só p/ compartilhar o worker; o "InMemory" do plano mora no pacote base |
-| D19 | Worker e cancelamento | `ReportJobWorker` é o núcleo único de ciclo de vida (running→completed/failed/cancelled), usado por ambos os schedulers. Restart idempotente (CA-16) vem do pipeline (temp por job + upload só no fim; cleanup do temp é best-effort e nunca altera o status). InMemory: cancela via `CancellationTokenSource` por job. Hangfire: `CancellationToken` injetado no invoker; `CancelAsync` deleta o job; mapa id↔hangfire-id em processo (single-server; cross-restart é pós-MVP, D2). Parâmetros viajam como JSON (`JobParameters`, datas em ISO-8601 round-trip) |
-| — | Design | Já feito no Claude Design; exportar conforme handoff; UI pós-MVP |
+| D8 | Trigger/sync | Reports registered by name; no dynamic config; sync = single-output |
+| D9 | Abstractions | Minimal typed-only, frozen, strict SemVer |
+| D10 | Filter | Typed C# delegates; JsonLogic/DynamicLinq post-MVP |
+| D11 | Retry/Skip | Retry (Polly) wraps the batch read; a read failure is not "skippable" (no cursor to advance) → becomes Abort; a projection/write failure is skippable (cursor already known) |
+| D12 | Map in the builder | `Map` is not a step that changes the builder's type; mapping is expressed by `From(source, map)`, keeping `ReportBuilder<TRow>` single-generic and compatible with `AddReport<TRow>(Action<...>)` |
+| D13 | SQL keyset source | `Source.Sql(connString, sql).Keyset(key, pageSize)`; the query carries `@cursor` (`(@cursor IS NULL OR Id > @cursor)`) and `ORDER BY`; connection per page; cursor = last key as `string?`; binds only the parameters the query references; connection-by-name is post-MVP |
+| D14 | In-memory XLSX | The XLSX writer uses ClosedXML, which materializes the whole sheet in memory before saving — a conscious exception to "constant memory" (rule 8). Acceptable for v1 sizes; streaming OpenXML is post-MVP. CSV stays truly streaming |
+| D15 | All-or-nothing S3 | `Destination.S3(bucket, keyTemplate)` uses `PutObject` (atomic per object): a failure leaves no partial object. Client from DI (`IAmazonS3`) or AWS defaults. Multipart for large objects is post-MVP |
+| D16 | Format entry point | Each format package exposes a `static class Format` with a `Csv()`/`Xlsx()` method. To use two formats together (the spec does `Format.Csv(...).Format.Xlsx(...)`), the consumer uses `using static ...Csv.Format;` + `using static ...Xlsx.Format;` and calls `Csv(...)`/`Xlsx(...)` — avoiding the `Format` name collision between the two assemblies |
+| D17 | Assertion lib | Tests use **Shouldly** (MIT). FluentAssertions left because v8 went commercial-license (Xceed); being stuck on 7.x would block updates. Dependabot keeps the test-tooling group up to date without FA |
+| D18 | Jobs packaging | Base package `NeoReports.Jobs` (shared worker `ReportJobWorker` + `InMemoryJobStore` + `InMemoryJobScheduler` + `NoOpCheckpointStore` + DI) and `NeoReports.Jobs.Hangfire` extending it. Avoids a 3rd package just to share the worker; the plan's "InMemory" lives in the base package |
+| D19 | Worker and cancellation | `ReportJobWorker` is the single lifecycle core (running→completed/failed/cancelled), used by both schedulers. Idempotent restart (AC-16) comes from the pipeline (per-job temp + upload only at the end; temp cleanup is best-effort and never changes the status). InMemory: cancels via a per-job `CancellationTokenSource`. Hangfire: `CancellationToken` injected into the invoker; `CancelAsync` deletes the job; in-process id↔hangfire-id map (single-server; cross-restart is post-MVP, D2). Parameters travel as JSON (`JobParameters`, dates as ISO-8601 round-trip) |
+| D20 | Endpoints + artifact store | `MapNeoReports("/api")` (Minimal API). Download/sync need to retain the file beyond the pipeline's temp: `IReportArtifactStore` (+ `FileSystemArtifactStore`) in **Core** (an engine concern, not a plugin contract → outside `Abstractions`); the `ReportRunner` saves into it only if registered (opt-in via DI). Sync = single-output (multi → 400, AC-10); multi-output on download becomes a zip. Job status serialized as a **string** (`JsonStringEnumConverter` on the DTOs, without touching the enum in `Abstractions`). Auth inherits from the host (`RequireAuthorization` optional; no auth chain). Outputs with the same extension (e.g. two CSVs) get a **disambiguated** file name in the pipeline (`name.csv`, `name-2.csv`) so they don't collide on disk/artifact and can go together in the zip |
+| — | Design | Already done in Claude Design; export per the handoff; UI post-MVP |
 
 ---
 
-## D11 — Semântica de retry, skip e threshold (Core / PR 2)
+## D11 — Retry, skip and threshold semantics (Core / PR 2)
 
-**Decisão.**
-- A unidade de resiliência é a **leitura de um batch**. A `ResiliencePipeline` (Polly v8) envolve `reader.ReadAsync` (leitura + filtro + projeção). `MaxAttempts` inclui a primeira tentativa (`MaxRetryAttempts = MaxAttempts - 1`). Cancelamento (`OperationCanceledException`) nunca é retentado.
-- **Falha de leitura** depois de esgotado o retry **não é "skippável"**: sem um batch lido não há `NextCursor` para avançar a paginação keyset, então pular silenciosamente truncaria dados. Nesse caso, mesmo em modo skip, o report **aborta** (status `Failed`).
-- **Falha de projeção/escrita** de um batch já lido **é skippável**: o `NextCursor` já é conhecido, então `SkipBatchAndLog` descarta aquele batch, loga warning estruturado e marca o report como **parcial** (`CompletedPartial`), seguindo para o próximo cursor.
-- O `IFailureStrategy` recebe contadores (consecutivas/total/razão) via `BatchFailureContext`; `SkipBatchAndLog().AbortIf(t => t.ConsecutiveFailures(n))` escala para Abort quando o threshold é atingido.
-- **Premissa de atomicidade do writer:** writers devem escrever um batch de forma atômica (bufferizar e dar flush) para que o skip não deixe linha parcial. Saída vai para arquivo temporário por execução; publicação (upload) acontece só no fim (alinha com D2: restart-do-zero, publicação atômica).
+**Decision.**
+- The unit of resilience is the **read of a batch**. The `ResiliencePipeline` (Polly v8) wraps `reader.ReadAsync` (read + filter + projection). `MaxAttempts` includes the first attempt (`MaxRetryAttempts = MaxAttempts - 1`). Cancellation (`OperationCanceledException`) is never retried.
+- A **read failure** after retries are exhausted **is not "skippable"**: without a read batch there is no `NextCursor` to advance the keyset pagination, so silently skipping would truncate data. In that case, even in skip mode, the report **aborts** (status `Failed`).
+- A **projection/write failure** of an already-read batch **is skippable**: the `NextCursor` is already known, so `SkipBatchAndLog` discards that batch, logs a structured warning and marks the report as **partial** (`CompletedPartial`), moving on to the next cursor.
+- `IFailureStrategy` receives counters (consecutive/total/ratio) via `BatchFailureContext`; `SkipBatchAndLog().AbortIf(t => t.ConsecutiveFailures(n))` escalates to Abort when the threshold is reached.
+- **Writer atomicity assumption:** writers must write a batch atomically (buffer and flush) so that a skip leaves no partial row. Output goes to a per-execution temp file; publishing (upload) happens only at the end (aligns with D2: restart-from-zero, atomic publish).
 
-**Por quê.** Retry resolve transitórios de leitura (CA-11); skip + threshold dão resiliência a falhas definitivas sem corromper ordenação keyset (CA-12/13/14). Separar leitura (retentável, idempotente) de escrita (não re-escrita) evita escrita dupla no stream de saída.
+**Why.** Retry handles transient read failures (AC-11); skip + threshold give resilience to definitive failures without corrupting keyset ordering (AC-12/13/14). Separating reading (retryable, idempotent) from writing (not re-written) avoids double-writing into the output stream.
 
 ---
 
-## D12 — `Map` via overload de `From`, builder mono-genérico (Core / PR 2)
+## D12 — `Map` via a `From` overload, single-generic builder (Core / PR 2)
 
-**Decisão.** `ReportBuilder<TRow>` é genérico **apenas** sobre o tipo de linha final `TRow`. O mapeamento de um tipo de origem diferente é expresso por overloads `From<TSource>(IBatchSource<TSource>, Func<TSource,TRow>)` / `From<TSource>(IStreamingSource<TSource>, Func<TSource,TRow>)`, que adaptam a source via `MappingBatchSource`/`MappingStreamingSource`.
+**Decision.** `ReportBuilder<TRow>` is generic **only** over the final row type `TRow`. Mapping from a different source type is expressed by overloads `From<TSource>(IBatchSource<TSource>, Func<TSource,TRow>)` / `From<TSource>(IStreamingSource<TSource>, Func<TSource,TRow>)`, which adapt the source via `MappingBatchSource`/`MappingStreamingSource`.
 
-**Por quê.** Um passo `Map<TOut>` que troca o tipo do builder quebraria o padrão de registro `AddReport<TRow>("nome", Action<ReportBuilder<TRow>>)` (a lambda continuaria num builder de outro tipo enquanto o registro buildaria o original). O overload de `From` entrega a mesma capacidade ("Map para um tipo de saída" da spec) sem essa armadilha e sem segundo parâmetro genérico no builder. Colunas são declaradas com `.Column(v => v.X, "Header")` (infere `ColumnType` do tipo do membro) ou `Columns(Col(...))`.
+**Why.** A `Map<TOut>` step that changes the builder's type would break the `AddReport<TRow>("name", Action<ReportBuilder<TRow>>)` registration pattern (the lambda would stay on a builder of another type while the registration built the original). The `From` overload delivers the same capability (the spec's "Map to an output type") without that trap and without a second generic parameter on the builder. Columns are declared with `.Column(v => v.X, "Header")` (infers `ColumnType` from the member type) or `Columns(Col(...))`.
 
 ---
 
 ## D13 — SQL Server keyset source (Sources / PR 3)
 
-**Decisão.**
-- Entrada fluente: `Source.Sql(connectionString, sql).Keyset<T,TKey>(v => v.Id, pageSize: 1000)`. O primeiro parâmetro é a **connection string** na v1; resolução por **nome de conexão** (config/DI, como o `"vendas-db"` da spec) fica pós-MVP.
-- A query é responsabilidade do autor e **deve** expor um parâmetro `@cursor` na coluna-chave e ordenar por ela — padrão recomendado `WHERE (@cursor IS NULL OR Id > @cursor) ORDER BY Id`. Primeira página manda `@cursor = NULL`.
-- **Conexão aberta/fechada por página** (D2/D3). O **cursor** é a última chave da página serializada como `string?` (`BatchResult.NextCursor`); `HasMore` só é verdadeiro quando a página encheu (`Count == pageSize`) e há última chave.
-- **Bind de parâmetros defensivo:** só são adicionados ao comando os parâmetros que a query realmente referencia (varredura do texto por `@nome`), evitando "too many parameters"; parâmetros de execução (run-time) sobrepõem os estáticos sem duplicar.
-- **Materialização** (`RecordMaterializer<T>`): preferir o construtor mais longo do POCO (records posicionais), casando parâmetros↔colunas por nome (case-insensitive); fallback para construtor vazio + propriedades setáveis. Ordinais de coluna mapeados por nome.
-- O `Schema` declarado pela source é um placeholder mínimo — a projeção da pipeline usa as colunas do builder (D1), não o schema da source.
+**Decision.**
+- Fluent entry: `Source.Sql(connectionString, sql).Keyset<T,TKey>(v => v.Id, pageSize: 1000)`. The first parameter is the **connection string** in v1; resolution by **connection name** (config/DI, like the spec's `"sales-db"`) is post-MVP.
+- The query is the author's responsibility and **must** expose a `@cursor` parameter on the key column and order by it — recommended pattern `WHERE (@cursor IS NULL OR Id > @cursor) ORDER BY Id`. The first page sends `@cursor = NULL`.
+- **Connection opened/closed per page** (D2/D3). The **cursor** is the page's last key serialized as `string?` (`BatchResult.NextCursor`); `HasMore` is true only when the page filled up (`Count == pageSize`) and there is a last key.
+- **Defensive parameter binding:** only the parameters the query actually references are added to the command (text scan for `@name`), avoiding "too many parameters"; run-time parameters override the static ones without duplicating.
+- **Materialization** (`RecordMaterializer<T>`): prefer the POCO's longest constructor (positional records), matching parameters↔columns by name (case-insensitive); fall back to a parameterless constructor + settable properties. Column ordinals mapped by name.
+- The `Schema` declared by the source is a minimal placeholder — the pipeline's projection uses the builder's columns (D1), not the source's schema.
 
-**Por quê.** Keyset com `@cursor` opaco e conexão-por-página atende CA-2 (lê todas as páginas em ordem, sem pular/repetir) e mantém memória constante, deixando checkpoint/multi-worker viáveis depois sem rework. Connection-by-name é açúcar de configuração que não muda o contrato — corta da v1.
+**Why.** Keyset with an opaque `@cursor` and connection-per-page satisfies AC-2 (reads all pages in order, without skipping/repeating) and keeps constant memory, leaving checkpoint/multi-worker viable later without rework. Connection-by-name is configuration sugar that doesn't change the contract — cut from v1.
