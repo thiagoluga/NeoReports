@@ -28,7 +28,8 @@ Se algo fora de escopo parecer necessário, **pare e registre uma decisão** em 
 ## Convenções de código
 
 - **.NET 8 e 9** (multi-target no Core e Abstractions). `LangVersion=latest`, `Nullable=enable`, `ImplicitUsings=enable`, `TreatWarningsAsErrors=true`.
-- **Identificadores e XML doc comments em inglês** (é uma lib OSS pública). Discussão interna/docs de processo podem ser em PT.
+- **Tudo que vai para o repositório é em inglês**: identificadores, comentários de código, XML docs, mensagens de commit, descrições de PR, respostas a comentários de PR, nomes de teste. É uma lib OSS pública. (A conversa com o mantenedor aqui no chat segue em PT-BR; só o que é versionado/publicado é inglês.)
+  - **Próxima tarefa pendente:** traduzir para inglês tudo que ainda estiver em português no repositório — incluindo `plan.md`, `NeoReports-Decisoes.md` (ADR) e qualquer comentário/string remanescente. Fazer isso num PR dedicado.
 - `file-scoped namespaces`, `sealed` por padrão em classes não desenhadas para herança, `record` para DTOs imutáveis, `init`-only properties.
 - Async em tudo que faz I/O, sempre com `CancellationToken` como último parâmetro.
 - Sem dependências externas em `Abstractions` além de `Microsoft.Extensions.Logging.Abstractions`.
@@ -129,7 +130,10 @@ Para cada item do `plan.md` (ou tarefa equivalente), seguir este ciclo de ponta 
 4. **Criar e executar todos os testes**; ler a linha real `Passed!/Failed!` e `Build succeeded/FAILED`.
 5. **Se tudo estiver verde** (0 falhas, build ok): **commit, push e abrir o PR**.
 6. **Após abrir o PR, acompanhar os check-runs até concluírem** (`check runs until done`) — confirmando que o `headRefOid` do PR == último commit.
-7. **Se precisar refazer algum passo** (CI vermelho, conflito, etc.): corrigir, commitar e push de novo, e repetir 3–6 até o PR ficar verde. Tudo isso é permitido sem nova confirmação.
+7. **Ficar atento aos comentários do PR.** Há revisores automáticos (ex.: bots de análise) que deixam comentários importantes, inclusive inline. A cada comentário **novo**, avaliar se a sugestão faz sentido:
+   - **Se faz sentido:** fazer a alteração, depois **responder o comentário** explicando o que foi feito e **marcar como resolvido**.
+   - **Se não faz sentido:** **responder o comentário** explicando o porquê de não seguir, e **marcar como resolvido** mesmo assim.
+8. **Se precisar refazer algum passo** (CI vermelho, conflito, comentário a endereçar, etc.): corrigir, commitar e push de novo, e repetir 3–7 até o PR ficar verde e sem comentários pendentes. Tudo isso é permitido sem nova confirmação.
 
 Só **parar e pedir confirmação** no final (merge) e nas exceções abaixo.
 
