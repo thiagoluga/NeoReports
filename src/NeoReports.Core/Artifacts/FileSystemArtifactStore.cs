@@ -31,7 +31,13 @@ public sealed class FileSystemArtifactStore : IReportArtifactStore
 
         var dir = JobDir(jobId);
         Directory.CreateDirectory(dir);
-        var target = Path.Combine(dir, fileName);
+
+        // Strip any path components from the caller-supplied file name so it cannot escape the
+        // job directory (e.g. "../x" or an absolute path, which Path.Combine would otherwise honor).
+        var safeFileName = Path.GetFileName(fileName);
+        if (string.IsNullOrEmpty(safeFileName))
+            throw new ArgumentException("File name must be a simple file name.", nameof(fileName));
+        var target = Path.Combine(dir, safeFileName);
 
         await using (var source = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read))
         await using (var dest = new FileStream(target, FileMode.Create, FileAccess.Write, FileShare.None))
@@ -74,9 +80,9 @@ public sealed class FileSystemArtifactStore : IReportArtifactStore
             if (Directory.Exists(dir))
                 Directory.Delete(dir, recursive: true);
         }
-        catch (Exception)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // Best-effort cleanup.
+            // Best-effort cleanup: a locked/permission-denied artifact dir must not fail the caller.
         }
 
         return Task.CompletedTask;
