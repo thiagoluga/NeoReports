@@ -51,6 +51,6 @@ var app = builder.Build();
 
 app.MapNeoReports("/api");
 
-app.Run();
+await app.RunAsync();
 
 internal sealed record Venda(long Id, string Cliente, decimal Valor, DateTime Data);
