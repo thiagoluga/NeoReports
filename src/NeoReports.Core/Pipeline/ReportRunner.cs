@@ -84,8 +84,12 @@ public sealed class ReportRunner : IReportRunner
                 // Two outputs can share an extension (e.g. two CSVs). Disambiguate the file name so
                 // they neither collide on disk nor overwrite each other's stored artifact.
                 var fileName = $"{report.Name}.{writer.FileExtension}";
-                for (var n = 2; !usedFileNames.Add(fileName); n++)
-                    fileName = $"{report.Name}-{n}.{writer.FileExtension}";
+                var suffix = 2;
+                while (!usedFileNames.Add(fileName))
+                {
+                    fileName = $"{report.Name}-{suffix}.{writer.FileExtension}";
+                    suffix++;
+                }
 
                 var path = Path.Combine(tempDir, fileName);
                 var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
