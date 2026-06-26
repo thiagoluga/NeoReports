@@ -150,4 +150,71 @@ public class EndpointsTests
 
         response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
+
+    [Fact]
+    public async Task Cancel_running_job_is_accepted()
+    {
+        // A slow source keeps the job running long enough to cancel it deterministically.
+        using var host = await TestApp.StartAsync(services =>
+        {
+            services.AddReport<Venda>("slow", b => b
+                .From(new InMemorySource(rows: 100_000, pageSize: 10, delay: TimeSpan.FromMilliseconds(20)))
+                .Column(v => v.Id, "ID")
+                .To(Csv(o => o.Delimiter(';'))));
+        });
+        var client = host.GetTestClient();
+
+        var run = await client.PostAsJsonAsync("/api/reports/slow/run", new { }, Json);
+        var jobId = (await run.Content.ReadFromJsonAsync<JsonElement>(Json)).GetProperty("jobId").GetString();
+
+        // Wait until it is actually running before cancelling.
+        for (var i = 0; i < 100; i++)
+        {
+            var job = await client.GetFromJsonAsync<JsonElement>($"/api/jobs/{jobId}", Json);
+            if (job.GetProperty("status").GetString() == "Running")
+                break;
+            await Task.Delay(50);
+        }
+
+        var cancel = await client.PostAsync($"/api/jobs/{jobId}/cancel", content: null);
+        cancel.StatusCode.ShouldBe(HttpStatusCode.Accepted);
+    }
+
+    [Fact]
+    public async Task Download_multi_output_returns_zip()
+    {
+        using var host = await TestApp.StartAsync(services =>
+        {
+            services.AddReport<Venda>("multi", b => b
+                .From(new InMemorySource(rows: 5, pageSize: 10))
+                .Column(v => v.Id, "ID")
+                .To(Csv(o => o.Delimiter(';')))
+                .To(Csv(o => o.Delimiter(','))));
+        });
+        var client = host.GetTestClient();
+
+        var run = await client.PostAsJsonAsync("/api/reports/multi/run", new { }, Json);
+        var jobId = (await run.Content.ReadFromJsonAsync<JsonElement>(Json)).GetProperty("jobId").GetString();
+
+        string? status = null;
+        for (var i = 0; i < 100; i++)
+        {
+            var job = await client.GetFromJsonAsync<JsonElement>($"/api/jobs/{jobId}", Json);
+            status = job.GetProperty("status").GetString();
+            if (status is "Completed" or "Failed")
+                break;
+            await Task.Delay(50);
+        }
+
+        status.ShouldBe("Completed");
+
+        var download = await client.GetAsync($"/api/jobs/{jobId}/download");
+        download.StatusCode.ShouldBe(HttpStatusCode.OK);
+        download.Content.Headers.ContentType!.MediaType.ShouldBe("application/zip");
+
+        // The zip carries both CSV outputs.
+        await using var stream = await download.Content.ReadAsStreamAsync();
+        using var archive = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Read);
+        archive.Entries.Count.ShouldBe(2);
+    }
 }

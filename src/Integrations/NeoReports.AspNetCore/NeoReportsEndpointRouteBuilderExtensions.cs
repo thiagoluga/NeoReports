@@ -99,10 +99,10 @@ public static class NeoReportsEndpointRouteBuilderExtensions
                     title: "Report produced no output.", statusCode: StatusCodes.Status500InternalServerError);
 
             var artifact = artifacts[0];
-            // Stream the file, then delete the stored copy once the response finishes.
+            // Stream the file by path (ASP.NET opens and disposes it), then delete the stored copy
+            // once the response finishes.
             http.Response.OnCompleted(async () => await artifactStore.DeleteAsync(jobId, CancellationToken.None).ConfigureAwait(false));
-            var stream = new FileStream(artifact.Path, FileMode.Open, FileAccess.Read, FileShare.Read);
-            return Results.File(stream, artifact.MimeType, artifact.FileName);
+            return Results.File(artifact.Path, artifact.MimeType, artifact.FileName);
         }
 
         var enqueuedId = await scheduler.EnqueueAsync(
@@ -162,12 +162,13 @@ public static class NeoReportsEndpointRouteBuilderExtensions
 
         if (artifacts.Count == 1)
         {
+            // Stream by path so ASP.NET owns the file handle's lifetime.
             var single = artifacts[0];
-            var stream = new FileStream(single.Path, FileMode.Open, FileAccess.Read, FileShare.Read);
-            return Results.File(stream, single.MimeType, single.FileName);
+            return Results.File(single.Path, single.MimeType, single.FileName);
         }
 
-        // Multiple outputs: bundle into a zip so a single download carries them all.
+        // Multiple outputs: bundle into a zip so a single download carries them all. The
+        // MemoryStream is handed to Results.File, which disposes it after writing the response.
         var zip = new MemoryStream();
         using (var archive = new ZipArchive(zip, ZipArchiveMode.Create, leaveOpen: true))
         {
