@@ -95,6 +95,22 @@ O handoff esperado do Claude Design são quatro entregáveis (`tokens.css`, `com
 
 O agente tem permissão **permanente** (tem permissão pra tudo no ciclo abaixo, sem pedir confirmação a cada vez):
 
+### Resumo — o que faço sozinho vs. o que precisa de você
+
+| Faço com autonomia | Preciso da sua confirmação | Nunca faço (mesmo se pedir) |
+|---|---|---|
+| Ler/buscar código, explorar o repo | **Merge em `master`** | Inserir credenciais/senhas/tokens/cartão |
+| Criar branch, editar arquivos | **Publicar pacote** (NuGet) / tag de release | Mexer em controle de acesso/permissões de terceiros |
+| `build` / `test` / `format` / scan Sonar / rodar sample | Apagar branch remota, force-push, reescrever history | Apagar dados permanentemente |
+| `commit` + `push` na branch da tarefa | Ações destrutivas/irreversíveis (drop de schema, `reset --hard` em remoto, mudar visibilidade do repo) | Transações financeiras |
+| Abrir PR (`gh pr create`) | Adicionar **nova dependência** (vai no CPM) | Resolver CAPTCHA, mudar settings de segurança |
+| Acompanhar CI, ler/responder comentários do PR | Qualquer coisa "para fora" além do PR | — |
+| Atualizar docs (plan/ADR/CHANGELOG) via PR | — | — |
+
+> O **merge é sempre seu** — eu nunca mergeio. O app do Claude Code ainda pode te mostrar um prompt do harness para autorizar alguns comandos (push, etc.); isso é a UI de permissões, separada deste acordo de fluxo.
+
+Detalhe dos itens autônomos:
+
 - **Leitura irrestrita.** Qualquer comando de leitura/inspeção em qualquer parte do sistema: ler/listar/buscar arquivos, `git` de leitura (`status`, `log`, `diff`, `show`, `branch`, `ls-files`, …), inspecionar build/testes, etc.
 - **Inspecionar arquivos, rodar quaisquer testes e analisar os resultados.**
 - **Executar e acompanhar os checks/CI.** Disparar/aguardar o CI, ler os resultados (`gh run`, `gh pr checks`) e diagnosticar falhas.
