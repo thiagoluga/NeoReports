@@ -76,10 +76,21 @@ public sealed class ReportRunner : IReportRunner
 
         try
         {
+            var usedFileNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var spec in report.Outputs)
             {
                 var writer = spec.Factory.Create(spec.Options, services);
+
+                // Two outputs can share an extension (e.g. two CSVs). Disambiguate the file name so
+                // they neither collide on disk nor overwrite each other's stored artifact.
                 var fileName = $"{report.Name}.{writer.FileExtension}";
+                var suffix = 2;
+                while (!usedFileNames.Add(fileName))
+                {
+                    fileName = $"{report.Name}-{suffix}.{writer.FileExtension}";
+                    suffix++;
+                }
+
                 var path = Path.Combine(tempDir, fileName);
                 var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
                 await writer.InitializeAsync(
@@ -193,6 +204,16 @@ public sealed class ReportRunner : IReportRunner
                             file, new DestinationContext(execution, destSpec.Options), cancellationToken)
                             .ConfigureAwait(false));
                     }
+                }
+
+                // Retain finished files for later retrieval (API download / sync streaming) when an
+                // artifact store is registered. Copying happens before the temp dir is cleaned up.
+                if (services.GetService(typeof(NeoReports.Core.Artifacts.IReportArtifactStore)) is NeoReports.Core.Artifacts.IReportArtifactStore artifactStore)
+                {
+                    foreach (var output in outputs)
+                        await artifactStore.SaveAsync(
+                            execution.JobId, output.Path, output.FileName, output.MimeType, cancellationToken)
+                            .ConfigureAwait(false);
                 }
             }
 

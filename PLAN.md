@@ -53,10 +53,10 @@ Small, independent PRs, in order. Each one closes with green tests and closes on
 - **Depends on:** PR 2.
 
 ## PR 7 — Integrations.AspNetCore: trigger endpoints
-- [ ] `MapNeoReports("/api")`: `run` (async/sync), `GET /reports`, `GET /jobs/{id}`, `cancel`, `download`.
-- [ ] Validation: sync rejects multi-output (`400`); auth inherited from the host.
-- [ ] Sample `03-async-job-hangfire`.
-- **Acceptance:** AC-9, AC-10. **Demonstrable MVP.**
+- [x] `MapNeoReports("/api")` (Minimal API): `run` (async 202+jobId / `?mode=sync` stream), `GET /reports`, `GET /jobs/{id}`, `POST /jobs/{id}/cancel`, `GET /jobs/{id}/download` (multi-output → zip).
+- [x] Validation: sync rejects multi-output (`400`); auth inherited from the host (optional `RequireAuthorization`). Artifact store in Core; status as string — see D20.
+- [x] Sample `03-async-job-hangfire` (Hangfire single-server, in-memory storage).
+- **Acceptance:** AC-9, AC-10. **Demonstrable MVP.** ✅ 8 integration tests via TestServer.
 - **Depends on:** PR 6, PR 4.
 
 ## PR 8 — OSS release polish
