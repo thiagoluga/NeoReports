@@ -8,7 +8,7 @@ propose changes.
 NeoReports v1 is a tightly scoped MVP. The scope, the eight non-negotiable
 architecture rules, and the list of out-of-scope features are documented in
 [`CLAUDE.md`](CLAUDE.md), [`docs/MVP-Spec.md`](docs/MVP-Spec.md), and the
-decision log [`NeoReports-Decisoes.md`](NeoReports-Decisoes.md). Please skim
+decision log [`DECISIONS.md`](DECISIONS.md). Please skim
 them first — a change that conflicts with a recorded decision will need that
 decision revisited before it can be merged.
 
@@ -33,7 +33,7 @@ dotnet format
 - [ ] Tests pass: `dotnet test` — and new behavior is covered by tests.
 - [ ] Style applied: `dotnet format --verify-no-changes` passes.
 - [ ] Public API has XML doc comments (the library ships docs).
-- [ ] If you changed a recorded decision, update `NeoReports-Decisoes.md` in the
+- [ ] If you changed a recorded decision, update `DECISIONS.md` in the
       same PR.
 
 CI (build · test · format on .NET 8 and 9) must be green before a PR is merged.

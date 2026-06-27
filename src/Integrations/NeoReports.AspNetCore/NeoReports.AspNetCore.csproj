@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
+    <Description>ASP.NET Core endpoints to trigger and manage NeoReports reports and jobs.</Description>
+    <PackageTags>reports;reporting;aspnetcore;api;endpoints</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\NeoReports.Abstractions\NeoReports.Abstractions.csproj" />
+    <ProjectReference Include="..\..\NeoReports.Core\NeoReports.Core.csproj" />
+  </ItemGroup>
+
+</Project>
