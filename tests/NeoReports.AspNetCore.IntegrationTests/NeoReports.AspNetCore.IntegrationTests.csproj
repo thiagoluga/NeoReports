@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Integrations\NeoReports.AspNetCore\NeoReports.AspNetCore.csproj" />
+    <ProjectReference Include="..\..\src\Jobs\NeoReports.Jobs\NeoReports.Jobs.csproj" />
+    <ProjectReference Include="..\..\src\NeoReports.Core\NeoReports.Core.csproj" />
+    <ProjectReference Include="..\..\src\Formats\NeoReports.Formats.Csv\NeoReports.Formats.Csv.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Shouldly" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
+  </ItemGroup>
+
+</Project>
