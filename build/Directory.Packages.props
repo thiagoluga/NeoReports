@@ -17,7 +17,7 @@
     <!-- Sources / Formats / Destinations -->
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="5.2.2" />
     <PackageVersion Include="ClosedXML" Version="0.105.0" />
-    <PackageVersion Include="AWSSDK.S3" Version="3.7.405.6" />
+    <PackageVersion Include="AWSSDK.S3" Version="4.0.25.3" />
 
     <!-- Jobs -->
     <PackageVersion Include="Hangfire.Core" Version="1.8.14" />
