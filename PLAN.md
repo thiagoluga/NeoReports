@@ -60,8 +60,9 @@ Small, independent PRs, in order. Each one closes with green tests and closes on
 - **Depends on:** PR 6, PR 4.
 
 ## PR 8 — OSS release polish
-- [ ] README, LICENSE (MIT), CHANGELOG, NuGet packaging (symbols/snupkg), per-package README.
-- **Acceptance:** `dotnet pack` produces all packages; samples documented.
+- [x] README, LICENSE (MIT), CHANGELOG, NuGet packaging (symbols/snupkg), per-package README.
+- [x] Shared package metadata in `build/Directory.Build.props`; tests/samples/benchmarks marked non-packable; `release.yml` workflow publishes to NuGet on a `v*.*.*` tag.
+- **Acceptance:** `dotnet pack` produces all packages; samples documented. ✅ 10 nupkg + 10 snupkg, each with a per-package README; no test/sample/benchmark packages.
 - **Depends on:** PR 7.
 
 ---

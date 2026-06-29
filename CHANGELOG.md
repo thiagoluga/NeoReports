@@ -24,7 +24,20 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 - `NeoReports.Destinations.Local` — local filesystem destination with path
   templating and atomic publish.
 - `NeoReports.Destinations.S3` — Amazon S3 destination with all-or-nothing upload.
-- Multi-output in a single source pass (e.g. CSV + XLSX read once).
-- Samples `01-sql-to-csv-local` and `02-sql-to-xlsx-s3`.
+- `NeoReports.Jobs` — single-worker job execution: shared `ReportJobWorker`,
+  in-memory store and scheduler, no-op checkpoint store; cooperative cancellation
+  and idempotent restart.
+- `NeoReports.Jobs.Hangfire` — Hangfire single-server job backend.
+- `NeoReports.AspNetCore` — Minimal API endpoints to trigger (async/sync), list,
+  query, cancel and download reports/jobs; artifact store for download/sync.
+- Multi-output in a single source pass (e.g. CSV + XLSX read once); same-extension
+  outputs are disambiguated and can be downloaded together as a zip.
+- Constant-memory validation via `NeoReports.Benchmarks` (`MemoryDiagnoser`).
+- Samples `01-sql-to-csv-local`, `02-sql-to-xlsx-s3`, and `03-async-job-hangfire`.
+
+### Packaging
+- All library projects ship as NuGet packages with symbols (`snupkg`),
+  source-link, and a per-package README. Tests, samples and benchmarks are not
+  packable.
 
 [Unreleased]: https://github.com/thiagoluga/NeoReports/commits/master
