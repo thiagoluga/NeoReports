@@ -11,14 +11,14 @@ public class XlsxWriterTests
 {
     private static ReportSchema Schema() => new(new[]
     {
-        new ReportColumn("Id", ColumnType.Integer, DisplayName: "ID Venda"),
-        new ReportColumn("Cliente", ColumnType.String, DisplayName: "Cliente"),
-        new ReportColumn("Valor", ColumnType.Decimal, DisplayName: "Valor", Format: "C2", Culture: "pt-BR"),
-        new ReportColumn("Data", ColumnType.DateTime, DisplayName: "Data Venda", Format: "yyyy-MM-dd"),
+        new ReportColumn("Id", ColumnType.Integer, DisplayName: "Sale ID"),
+        new ReportColumn("Customer", ColumnType.String, DisplayName: "Customer"),
+        new ReportColumn("Amount", ColumnType.Decimal, DisplayName: "Amount", Format: "C2", Culture: "pt-BR"),
+        new ReportColumn("Date", ColumnType.DateTime, DisplayName: "Sale Date", Format: "yyyy-MM-dd"),
     });
 
     private static ReportExecutionContext Exec() =>
-        new("job", "vendas", null, NullLogger.Instance, CancellationToken.None);
+        new("job", "sales", null, NullLogger.Instance, CancellationToken.None);
 
     private static async Task<XLWorkbook> WriteAndReopen(XlsxOptions options, ReportSchema schema, IReadOnlyList<object?[]> rows)
     {
@@ -44,14 +44,14 @@ public class XlsxWriterTests
         };
 
         using var wb = await WriteAndReopen(
-            new XlsxOptions().SheetName("Vendas").AutoFilter(), Schema(), rows);
+            new XlsxOptions().SheetName("Sales").AutoFilter(), Schema(), rows);
 
-        var ws = wb.Worksheet("Vendas");
-        ws.Name.ShouldBe("Vendas");
+        var ws = wb.Worksheet("Sales");
+        ws.Name.ShouldBe("Sales");
 
         // Header row.
-        ws.Cell(1, 1).GetString().ShouldBe("ID Venda");
-        ws.Cell(1, 4).GetString().ShouldBe("Data Venda");
+        ws.Cell(1, 1).GetString().ShouldBe("Sale ID");
+        ws.Cell(1, 4).GetString().ShouldBe("Sale Date");
 
         // Native numeric + date types preserved (not strings).
         ws.Cell(2, 1).Value.IsNumber.ShouldBeTrue();

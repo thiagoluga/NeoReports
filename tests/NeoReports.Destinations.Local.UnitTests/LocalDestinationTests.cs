@@ -11,7 +11,7 @@ public class LocalDestinationTests : IDisposable
     private readonly string _root = Path.Combine(Path.GetTempPath(), "nr-local-tests", Guid.NewGuid().ToString("N"));
 
     private DestinationContext Context() =>
-        new(new ReportExecutionContext("job", "vendas", null,
+        new(new ReportExecutionContext("job", "sales", null,
             Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance, CancellationToken.None), null);
 
     private static ReportFile FileOf(string name, string content)
@@ -26,12 +26,12 @@ public class LocalDestinationTests : IDisposable
         var template = Path.Combine(_root, "{name}-{date:yyyy-MM-dd}.{ext}");
         var destination = new LocalDestination(template);
 
-        var result = await destination.UploadAsync(FileOf("vendas.csv", "a,b\n1,2\n"), Context(), CancellationToken.None);
+        var result = await destination.UploadAsync(FileOf("sales.csv", "a,b\n1,2\n"), Context(), CancellationToken.None);
 
         result.Success.ShouldBeTrue();
         File.Exists(result.RemotePath).ShouldBeTrue();
         (await File.ReadAllTextAsync(result.RemotePath!)).ShouldBe("a,b\n1,2\n");
-        Path.GetFileName(result.RemotePath!).ShouldStartWith("vendas-");
+        Path.GetFileName(result.RemotePath!).ShouldStartWith("sales-");
         Path.GetFileName(result.RemotePath!).ShouldEndWith(".csv");
     }
 

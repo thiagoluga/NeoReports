@@ -11,7 +11,7 @@ public class JobParametersTests
     {
         var original = new Dictionary<string, object?>
         {
-            ["name"] = "vendas",
+            ["name"] = "sales",
             ["count"] = 42L,
             ["ratio"] = 1.5,
             ["active"] = true,
@@ -21,7 +21,7 @@ public class JobParametersTests
         var json = JobParameters.Serialize(original);
         var back = JobParameters.Deserialize(json);
 
-        back["name"].ShouldBe("vendas");
+        back["name"].ShouldBe("sales");
         back["count"].ShouldBe(42L);
         back["ratio"].ShouldBe(1.5);
         back["active"].ShouldBe(true);
@@ -32,12 +32,12 @@ public class JobParametersTests
     public void Round_trips_datetime_as_datetime()
     {
         var date = new DateTime(2026, 1, 15, 0, 0, 0, DateTimeKind.Utc);
-        var json = JobParameters.Serialize(new Dictionary<string, object?> { ["inicio"] = date });
+        var json = JobParameters.Serialize(new Dictionary<string, object?> { ["start"] = date });
 
         var back = JobParameters.Deserialize(json);
 
-        back["inicio"].ShouldBeOfType<DateTime>();
-        ((DateTime)back["inicio"]!).ShouldBe(date);
+        back["start"].ShouldBeOfType<DateTime>();
+        ((DateTime)back["start"]!).ShouldBe(date);
     }
 
     [Fact]

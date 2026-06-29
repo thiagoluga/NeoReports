@@ -23,11 +23,11 @@ public sealed class FileSystemArtifactStoreTests : IDisposable
         var store = new FileSystemArtifactStore(_root);
         var src = MakeSourceFile("id;name\n1;Ana\n");
 
-        await store.SaveAsync("job-1", src, "vendas.csv", "text/csv", Ct);
+        await store.SaveAsync("job-1", src, "sales.csv", "text/csv", Ct);
 
         var artifacts = await store.ListAsync("job-1", Ct);
         var artifact = artifacts.ShouldHaveSingleItem();
-        artifact.FileName.ShouldBe("vendas.csv");
+        artifact.FileName.ShouldBe("sales.csv");
         artifact.MimeType.ShouldBe("text/csv");
         artifact.SizeBytes.ShouldBeGreaterThan(0);
         File.Exists(artifact.Path).ShouldBeTrue();

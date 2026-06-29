@@ -5,7 +5,7 @@ using Xunit;
 
 namespace NeoReports.Sources.Sql.IntegrationTests;
 
-public sealed record Venda(long Id, string Cliente, decimal Valor, DateTime Data);
+public sealed record Sale(long Id, string Customer, decimal Amount, DateTime Date);
 
 public class SqlKeysetSourceTests : IClassFixture<SqlServerFixture>
 {
@@ -14,20 +14,20 @@ public class SqlKeysetSourceTests : IClassFixture<SqlServerFixture>
     public SqlKeysetSourceTests(SqlServerFixture fixture) => _fixture = fixture;
 
     private const string Sql =
-        "SELECT Id, Cliente, Valor, Data FROM Vendas " +
+        "SELECT Id, Customer, Amount, Date FROM Sales " +
         "WHERE (@cursor IS NULL OR Id > @cursor) ORDER BY Id";
 
     private ReportExecutionContext Exec() =>
-        new("job", "vendas", null, NullLogger.Instance, CancellationToken.None);
+        new("job", "sales", null, NullLogger.Instance, CancellationToken.None);
 
     [SkippableFact]
     public async Task Reads_all_pages_in_order_without_gaps_or_duplicates()
     {
         Skip.IfNot(_fixture.Available, "Docker/SQL Server container not available.");
 
-        var source = Source.Sql(_fixture.ConnectionString, Sql).Keyset<Venda, long>(v => v.Id, pageSize: 1000);
+        var source = Source.Sql(_fixture.ConnectionString, Sql).Keyset<Sale, long>(v => v.Id, pageSize: 1000);
 
-        var all = new List<Venda>();
+        var all = new List<Sale>();
         string? cursor = null;
         var pages = 0;
         while (true)
@@ -53,14 +53,14 @@ public class SqlKeysetSourceTests : IClassFixture<SqlServerFixture>
     {
         Skip.IfNot(_fixture.Available, "Docker/SQL Server container not available.");
 
-        var source = Source.Sql(_fixture.ConnectionString, Sql).Keyset<Venda, long>(v => v.Id, pageSize: 10);
+        var source = Source.Sql(_fixture.ConnectionString, Sql).Keyset<Sale, long>(v => v.Id, pageSize: 10);
         var result = await source.ReadBatchAsync(new BatchContext(Exec(), 10, null, 1), CancellationToken.None);
 
         result.Records.Count.ShouldBe(10);
         var first = result.Records[0];
         first.Id.ShouldBe(1);
-        first.Cliente.ShouldBe("C1");
-        first.Data.ShouldBe(new DateTime(2026, 1, 1));
-        first.Valor.ShouldBe(1.5m);
+        first.Customer.ShouldBe("C1");
+        first.Date.ShouldBe(new DateTime(2026, 1, 1));
+        first.Amount.ShouldBe(1.5m);
     }
 }

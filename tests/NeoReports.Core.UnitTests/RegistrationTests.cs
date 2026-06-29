@@ -18,32 +18,32 @@ public class RegistrationTests
         var services = new ServiceCollection();
         services.AddLogging();
 
-        var source = new FakeBatchSource<Venda>(new[]
+        var source = new FakeBatchSource<Sale>(new[]
         {
-            new[] { new Venda(1, "A", 10m, DateTime.UnixEpoch) },
+            new[] { new Sale(1, "A", 10m, DateTime.UnixEpoch) },
         });
 
-        services.AddReport<Venda>("vendas-mensal", b => b
+        services.AddReport<Sale>("monthly-sales", b => b
             .From(source)
-            .Filter(v => v.Valor > 0)
-            .Column(v => v.Id, "ID Venda")
-            .Column(v => v.Cliente, "Cliente")
-            .Column(v => v.Valor, "Valor", format: "C2", culture: "pt-BR")
-            .Column(v => v.Data, "Data Venda", format: "yyyy-MM-dd")
+            .Filter(v => v.Amount > 0)
+            .Column(v => v.Id, "Sale ID")
+            .Column(v => v.Customer, "Customer")
+            .Column(v => v.Amount, "Amount", format: "C2", culture: "pt-BR")
+            .Column(v => v.Date, "Sale Date", format: "yyyy-MM-dd")
             .To(new OutputSpec(new FakeWriterFactory())));
 
         var provider = services.BuildServiceProvider();
         var registry = provider.GetRequiredService<IReportRegistry>();
 
-        registry.Contains("vendas-mensal").ShouldBeTrue();
-        registry.Names.ShouldHaveSingleItem().ShouldBe("vendas-mensal");
+        registry.Contains("monthly-sales").ShouldBeTrue();
+        registry.Names.ShouldHaveSingleItem().ShouldBe("monthly-sales");
 
-        var report = registry.Find("vendas-mensal");
+        var report = registry.Find("monthly-sales");
         report.ShouldNotBeNull();
-        report.Schema.Columns.Select(c => c.Name).ShouldBe(new[] { "Id", "Cliente", "Valor", "Data" });
-        report.Schema.Find("Valor")!.Type.ShouldBe(ColumnType.Decimal);
+        report.Schema.Columns.Select(c => c.Name).ShouldBe(new[] { "Id", "Customer", "Amount", "Date" });
+        report.Schema.Find("Amount")!.Type.ShouldBe(ColumnType.Decimal);
         report.Schema.Find("Id")!.Type.ShouldBe(ColumnType.Integer);
-        report.Schema.Find("Valor")!.DisplayName.ShouldBe("Valor");
+        report.Schema.Find("Amount")!.DisplayName.ShouldBe("Amount");
         report.OutputCount.ShouldBe(1);
 
         provider.GetRequiredService<IReportRunner>().ShouldBeOfType<ReportRunner>();
@@ -54,9 +54,9 @@ public class RegistrationTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        var source = new FakeBatchSource<Venda>(new[] { new[] { new Venda(1, "A", 1m, DateTime.UnixEpoch) } });
+        var source = new FakeBatchSource<Sale>(new[] { new[] { new Sale(1, "A", 1m, DateTime.UnixEpoch) } });
 
-        void Register() => services.AddReport<Venda>("dup", b => b
+        void Register() => services.AddReport<Sale>("dup", b => b
             .From(source)
             .Column(v => v.Id, "Id")
             .To(new OutputSpec(new FakeWriterFactory())));
@@ -68,7 +68,7 @@ public class RegistrationTests
     [Fact]
     public void Build_without_source_throws()
     {
-        var act = () => new ReportBuilder<Venda>("x")
+        var act = () => new ReportBuilder<Sale>("x")
             .Column(v => v.Id, "Id")
             .Build();
 
@@ -78,8 +78,8 @@ public class RegistrationTests
     [Fact]
     public void Build_without_columns_throws()
     {
-        var source = new FakeBatchSource<Venda>(new[] { new[] { new Venda(1, "A", 1m, DateTime.UnixEpoch) } });
-        var act = () => new ReportBuilder<Venda>("x").From(source).Build();
+        var source = new FakeBatchSource<Sale>(new[] { new[] { new Sale(1, "A", 1m, DateTime.UnixEpoch) } });
+        var act = () => new ReportBuilder<Sale>("x").From(source).Build();
 
         Should.Throw<ConfigurationException>(act).Message.ShouldContain("no columns");
     }

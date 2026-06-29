@@ -3,14 +3,14 @@ using NeoReports.Abstractions;
 namespace NeoReports.Jobs.UnitTests;
 
 /// <summary>Reference row type.</summary>
-public sealed record Venda(long Id, string Cliente);
+public sealed record Sale(long Id, string Customer);
 
 /// <summary>
 /// Stateless batch source computed from the cursor (so it is safely re-runnable across enqueues).
 /// Each page optionally waits <see cref="_perPageDelay"/> honoring the cancellation token, which
 /// makes a run long enough to cancel deterministically.
 /// </summary>
-public sealed class ControllableSource : IBatchSource<Venda>
+public sealed class ControllableSource : IBatchSource<Sale>
 {
     private readonly long _totalRows;
     private readonly int _pageSize;
@@ -25,7 +25,7 @@ public sealed class ControllableSource : IBatchSource<Venda>
 
     public ReportSchema Schema { get; } = new(new[] { new ReportColumn("Id", ColumnType.Integer) });
 
-    public async Task<BatchResult<Venda>> ReadBatchAsync(BatchContext context, CancellationToken cancellationToken)
+    public async Task<BatchResult<Sale>> ReadBatchAsync(BatchContext context, CancellationToken cancellationToken)
     {
         if (_perPageDelay > TimeSpan.Zero)
             await Task.Delay(_perPageDelay, cancellationToken).ConfigureAwait(false);
@@ -33,29 +33,29 @@ public sealed class ControllableSource : IBatchSource<Venda>
         var lastId = context.Cursor is null ? 0L : long.Parse(context.Cursor, System.Globalization.CultureInfo.InvariantCulture);
         var start = lastId + 1;
         if (start > _totalRows)
-            return BatchResult<Venda>.Empty;
+            return BatchResult<Sale>.Empty;
 
         var end = Math.Min(start + _pageSize - 1, _totalRows);
         var count = (int)(end - start + 1);
-        var rows = new Venda[count];
+        var rows = new Sale[count];
         for (var i = 0; i < count; i++)
         {
             var id = start + i;
-            rows[i] = new Venda(id, $"C{id}");
+            rows[i] = new Sale(id, $"C{id}");
         }
 
         var hasMore = end < _totalRows;
         var nextCursor = hasMore ? end.ToString(System.Globalization.CultureInfo.InvariantCulture) : null;
-        return new BatchResult<Venda>(rows, nextCursor, hasMore);
+        return new BatchResult<Sale>(rows, nextCursor, hasMore);
     }
 }
 
 /// <summary>Source whose first read always throws — drives the failed-job path (default Abort).</summary>
-public sealed class ThrowingSource : IBatchSource<Venda>
+public sealed class ThrowingSource : IBatchSource<Sale>
 {
     public ReportSchema Schema { get; } = new(new[] { new ReportColumn("Id", ColumnType.Integer) });
 
-    public Task<BatchResult<Venda>> ReadBatchAsync(BatchContext context, CancellationToken cancellationToken) =>
+    public Task<BatchResult<Sale>> ReadBatchAsync(BatchContext context, CancellationToken cancellationToken) =>
         throw new InvalidOperationException("source exploded");
 }
 

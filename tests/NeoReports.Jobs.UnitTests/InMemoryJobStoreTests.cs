@@ -14,10 +14,10 @@ public class InMemoryJobStoreTests
     {
         var store = new InMemoryJobStore();
 
-        var job = await store.CreateAsync(new ReportJobRequest("vendas", requestedBy: "alice"), Ct);
+        var job = await store.CreateAsync(new ReportJobRequest("sales", requestedBy: "alice"), Ct);
 
         job.Id.ShouldNotBeNullOrWhiteSpace();
-        job.ReportName.ShouldBe("vendas");
+        job.ReportName.ShouldBe("sales");
         job.Status.ShouldBe(ReportJobStatus.Queued);
         job.RequestedBy.ShouldBe("alice");
         job.StartedAt.ShouldBeNull();
@@ -28,7 +28,7 @@ public class InMemoryJobStoreTests
     public async Task Status_transitions_set_started_and_completed_timestamps()
     {
         var store = new InMemoryJobStore();
-        var job = await store.CreateAsync(new ReportJobRequest("vendas"), Ct);
+        var job = await store.CreateAsync(new ReportJobRequest("sales"), Ct);
 
         await store.UpdateStatusAsync(job.Id, ReportJobStatus.Running, null, Ct);
         var running = await store.GetAsync(job.Id, Ct);
@@ -47,7 +47,7 @@ public class InMemoryJobStoreTests
     public async Task Update_stats_is_persisted()
     {
         var store = new InMemoryJobStore();
-        var job = await store.CreateAsync(new ReportJobRequest("vendas"), Ct);
+        var job = await store.CreateAsync(new ReportJobRequest("sales"), Ct);
 
         await store.UpdateStatsAsync(job.Id, new JobStats(RecordsRead: 10, RecordsWritten: 9), Ct);
 

@@ -1,7 +1,7 @@
 namespace NeoReports.Formats.Xlsx;
 
 /// <summary>
-/// Fluent options for the XLSX writer (<c>o.SheetName("Vendas").AutoFilter()</c>).
+/// Fluent options for the XLSX writer (<c>o.SheetName("Sales").AutoFilter()</c>).
 /// Defaults: sheet "Sheet1", a header row from each column's <c>DisplayName</c>, auto-filter off.
 /// </summary>
 public sealed class XlsxOptions

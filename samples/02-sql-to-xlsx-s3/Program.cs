@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using NeoReports.Core.DependencyInjection;
 using NeoReports.Core.Pipeline;
 using NeoReports.Destinations.S3;
+using NeoReports.Samples.SqlToXlsxS3;
 using NeoReports.Sources.Sql;
 using static NeoReports.Core.Building.ReportColumns;
 // Import the format entry methods directly so Csv(...) and Xlsx(...) read cleanly and avoid the
@@ -25,26 +26,26 @@ var bucket = args.Length > 1 ? args[1] : "my-reports-bucket";
 var services = new ServiceCollection();
 services.AddLogging(b => b.AddConsole().SetMinimumLevel(LogLevel.Information));
 
-services.AddReport<Venda>("vendas-mensal", b => b
+services.AddReport<Sale>("monthly-sales", b => b
     .From(Source.Sql(
             connectionString,
-            "SELECT Id, Cliente, Valor, Data FROM Vendas " +
+            "SELECT Id, Customer, Amount, Date FROM Sales " +
             "WHERE (@cursor IS NULL OR Id > @cursor) ORDER BY Id")
-        .Keyset<Venda, long>(v => v.Id, pageSize: 1000))
-    .Filter(v => v.Valor > 0)
+        .Keyset<Sale, long>(v => v.Id, pageSize: 1000))
+    .Filter(v => v.Amount > 0)
     .Columns(
-        Col<Venda, long>(v => v.Id, "ID Venda"),
-        Col<Venda, string>(v => v.Cliente, "Cliente"),
-        Col<Venda, decimal>(v => v.Valor, "Valor", format: "C2", culture: "pt-BR"),
-        Col<Venda, DateTime>(v => v.Data, "Data Venda", format: "yyyy-MM-dd"))
+        Col<Sale, long>(v => v.Id, "Sale ID"),
+        Col<Sale, string>(v => v.Customer, "Customer"),
+        Col<Sale, decimal>(v => v.Amount, "Amount", format: "C2", culture: "pt-BR"),
+        Col<Sale, DateTime>(v => v.Date, "Sale Date", format: "yyyy-MM-dd"))
     .To(Csv(o => o.Delimiter(';').Encoding(Encoding.UTF8)))
-    .To(Xlsx(o => o.SheetName("Vendas").AutoFilter()))
+    .To(Xlsx(o => o.SheetName("Sales").AutoFilter()))
     .UploadTo(Destination.S3(bucket, "reports/{name}/{date:yyyy-MM-dd}.{ext}")));
 
 var provider = services.BuildServiceProvider();
 var runner = provider.GetRequiredService<IReportRunner>();
 
-var result = await runner.RunAsync("vendas-mensal");
+var result = await runner.RunAsync("monthly-sales");
 
 Console.WriteLine($"Status: {result.Status}");
 Console.WriteLine($"Records read/written: {result.Stats.RecordsRead}/{result.Stats.RecordsWritten}");
@@ -52,5 +53,3 @@ foreach (var upload in result.Uploads)
     Console.WriteLine($"Uploaded: {upload.Url} (success={upload.Success})");
 
 return result.Status == ReportRunStatus.Failed ? 1 : 0;
-
-internal sealed record Venda(long Id, string Cliente, decimal Valor, DateTime Data);
