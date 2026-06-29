@@ -9,10 +9,12 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
-  <!-- Metadados de pacote (NuGet) -->
+  <!-- NuGet package metadata (shared by every packable project) -->
   <PropertyGroup>
     <Authors>NeoReports Contributors</Authors>
     <Company>NeoReports</Company>
+    <Product>NeoReports</Product>
+    <Copyright>Copyright (c) NeoReports Contributors</Copyright>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/thiagoluga/NeoReports</PackageProjectUrl>
     <RepositoryUrl>https://github.com/thiagoluga/NeoReports</RepositoryUrl>
@@ -22,6 +24,23 @@
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+    <!-- A per-project README.md is packed when present (see the conditional ItemGroup below). -->
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+
+  <!-- Pack the project's own README.md (and the repo LICENSE) into the package when they exist.
+       Projects without a README.md simply don't set PackageReadmeFile (cleared below). -->
+  <Choose>
+    <When Condition="Exists('$(MSBuildProjectDirectory)/README.md')">
+      <ItemGroup>
+        <None Include="$(MSBuildProjectDirectory)/README.md" Pack="true" PackagePath="/" />
+      </ItemGroup>
+    </When>
+    <Otherwise>
+      <PropertyGroup>
+        <PackageReadmeFile />
+      </PropertyGroup>
+    </Otherwise>
+  </Choose>
 
 </Project>

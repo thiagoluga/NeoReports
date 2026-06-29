@@ -1,0 +1,11 @@
+<Project>
+
+  <!-- Import the repo-root shared props, then opt every sample out of packaging. -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsPublishable>false</IsPublishable>
+  </PropertyGroup>
+
+</Project>
