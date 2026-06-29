@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using NeoReports.Core.DependencyInjection;
 using NeoReports.Core.Pipeline;
 using NeoReports.Destinations.S3;
+using NeoReports.Samples.SqlToXlsxS3;
 using NeoReports.Sources.Sql;
 using static NeoReports.Core.Building.ReportColumns;
 // Import the format entry methods directly so Csv(...) and Xlsx(...) read cleanly and avoid the
@@ -52,5 +53,3 @@ foreach (var upload in result.Uploads)
     Console.WriteLine($"Uploaded: {upload.Url} (success={upload.Success})");
 
 return result.Status == ReportRunStatus.Failed ? 1 : 0;
-
-internal sealed record Sale(long Id, string Customer, decimal Amount, DateTime Date);

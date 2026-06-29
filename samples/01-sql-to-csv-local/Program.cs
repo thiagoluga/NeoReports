@@ -5,6 +5,7 @@ using NeoReports.Core.DependencyInjection;
 using NeoReports.Core.Pipeline;
 using NeoReports.Destinations.Local;
 using NeoReports.Formats.Csv;
+using NeoReports.Samples.SqlToCsvLocal;
 using NeoReports.Sources.Sql;
 using static NeoReports.Core.Building.ReportColumns;
 
@@ -48,5 +49,3 @@ foreach (var upload in result.Uploads)
     Console.WriteLine($"Uploaded: {upload.RemotePath} (success={upload.Success})");
 
 return result.Status == ReportRunStatus.Failed ? 1 : 0;
-
-internal sealed record Sale(long Id, string Customer, decimal Amount, DateTime Date);

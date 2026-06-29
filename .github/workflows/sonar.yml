@@ -62,6 +62,7 @@ jobs:
             /d:sonar.token="${SONAR_TOKEN}" \
             /d:sonar.cs.vscoveragexml.reportsPaths=coverage.xml \
             /d:sonar.coverage.exclusions="benchmarks/**,samples/**" \
+            /d:sonar.cpd.exclusions="benchmarks/**,samples/**" \
             /d:sonar.qualitygate.wait=true
           dotnet build NeoReports.sln --configuration Release
           dotnet-coverage collect "dotnet test NeoReports.sln --configuration Release --no-build" -f xml -o coverage.xml
