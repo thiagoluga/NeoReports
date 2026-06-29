@@ -29,7 +29,7 @@ public class EndpointsTests
         var reports = await client.GetFromJsonAsync<List<JsonElement>>("/api/reports", Json);
 
         reports.ShouldNotBeNull();
-        reports.ShouldContain(r => r.GetProperty("name").GetString() == "vendas");
+        reports.ShouldContain(r => r.GetProperty("name").GetString() == "sales");
     }
 
     [Fact]
@@ -39,7 +39,7 @@ public class EndpointsTests
         var client = host.GetTestClient();
 
         // CA-9: async trigger returns 202 + jobId.
-        var run = await client.PostAsJsonAsync("/api/reports/vendas/run", new { parameters = (object?)null }, Json);
+        var run = await client.PostAsJsonAsync("/api/reports/sales/run", new { parameters = (object?)null }, Json);
         run.StatusCode.ShouldBe(HttpStatusCode.Accepted);
 
         var accepted = await run.Content.ReadFromJsonAsync<JsonElement>(Json);
@@ -65,7 +65,7 @@ public class EndpointsTests
         download.Content.Headers.ContentDisposition!.FileName!.Trim('"').ShouldEndWith(".csv");
 
         var text = await download.Content.ReadAsStringAsync();
-        text.ShouldContain("ID;Cliente");   // header
+        text.ShouldContain("ID;Customer");   // header
         text.ShouldContain("1;C1");          // first row
         var dataLines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries);
         dataLines.Length.ShouldBe(31);       // header + 30 rows
@@ -78,14 +78,14 @@ public class EndpointsTests
         var client = host.GetTestClient();
 
         // CA-10: sync streams the file directly.
-        var response = await client.PostAsJsonAsync("/api/reports/vendas/run?mode=sync", new { }, Json);
+        var response = await client.PostAsJsonAsync("/api/reports/sales/run?mode=sync", new { }, Json);
 
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         response.Content.Headers.ContentType!.MediaType.ShouldBe("text/csv");
         response.Content.Headers.ContentDisposition!.FileName!.Trim('"').ShouldEndWith(".csv");
 
         var text = await response.Content.ReadAsStringAsync();
-        text.ShouldContain("ID;Cliente");
+        text.ShouldContain("ID;Customer");
         text.ShouldContain("30;C30");
     }
 
@@ -94,7 +94,7 @@ public class EndpointsTests
     {
         using var host = await TestApp.StartAsync(services =>
         {
-            services.AddReport<Venda>("multi", b => b
+            services.AddReport<Sale>("multi", b => b
                 .From(new InMemorySource(rows: 5, pageSize: 10))
                 .Column(v => v.Id, "ID")
                 .To(Csv(o => o.Delimiter(';')))
@@ -157,7 +157,7 @@ public class EndpointsTests
         // A slow source keeps the job running long enough to cancel it deterministically.
         using var host = await TestApp.StartAsync(services =>
         {
-            services.AddReport<Venda>("slow", b => b
+            services.AddReport<Sale>("slow", b => b
                 .From(new InMemorySource(rows: 100_000, pageSize: 10, delay: TimeSpan.FromMilliseconds(20)))
                 .Column(v => v.Id, "ID")
                 .To(Csv(o => o.Delimiter(';'))));
@@ -185,7 +185,7 @@ public class EndpointsTests
     {
         using var host = await TestApp.StartAsync(services =>
         {
-            services.AddReport<Venda>("multi", b => b
+            services.AddReport<Sale>("multi", b => b
                 .From(new InMemorySource(rows: 5, pageSize: 10))
                 .Column(v => v.Id, "ID")
                 .To(Csv(o => o.Delimiter(';')))

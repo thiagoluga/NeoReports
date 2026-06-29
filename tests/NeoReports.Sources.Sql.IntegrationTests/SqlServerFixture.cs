@@ -5,7 +5,7 @@ using Xunit;
 namespace NeoReports.Sources.Sql.IntegrationTests;
 
 /// <summary>
-/// Spins up an ephemeral SQL Server container once per test class and seeds a Vendas table.
+/// Spins up an ephemeral SQL Server container once per test class and seeds a Sales table.
 /// Skipped automatically when Docker is unavailable.
 /// </summary>
 public sealed class SqlServerFixture : IAsyncLifetime
@@ -43,8 +43,8 @@ public sealed class SqlServerFixture : IAsyncLifetime
         await connection.OpenAsync();
 
         await Execute(connection,
-            "CREATE TABLE Vendas (Id BIGINT PRIMARY KEY, Cliente NVARCHAR(100) NOT NULL, " +
-            "Valor DECIMAL(18,2) NOT NULL, Data DATETIME2 NOT NULL);");
+            "CREATE TABLE Sales (Id BIGINT PRIMARY KEY, Customer NVARCHAR(100) NOT NULL, " +
+            "Amount DECIMAL(18,2) NOT NULL, Date DATETIME2 NOT NULL);");
 
         // 2500 rows so a pageSize of 1000 yields 3 pages (2 full + 1 partial).
         const int total = 2500;
@@ -53,7 +53,7 @@ public sealed class SqlServerFixture : IAsyncLifetime
             var values = new List<string>();
             for (var id = start; id < start + 500 && id <= total; id++)
                 values.Add($"({id}, N'C{id}', {(id % 7 == 0 ? "0.00" : (id * 1.5m).ToString(System.Globalization.CultureInfo.InvariantCulture))}, '2026-01-01')");
-            await Execute(connection, "INSERT INTO Vendas (Id, Cliente, Valor, Data) VALUES " + string.Join(",", values) + ";");
+            await Execute(connection, "INSERT INTO Sales (Id, Customer, Amount, Date) VALUES " + string.Join(",", values) + ";");
         }
 
         SeededRows = total;

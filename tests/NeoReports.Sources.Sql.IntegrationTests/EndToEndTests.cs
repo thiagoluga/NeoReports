@@ -24,18 +24,18 @@ public class EndToEndTests : IClassFixture<SqlServerFixture>, IDisposable
     {
         Skip.IfNot(_fixture.Available, "Docker/SQL Server container not available.");
 
-        var report = new ReportBuilder<Venda>("vendas-mensal")
+        var report = new ReportBuilder<Sale>("monthly-sales")
             .From(Source.Sql(
                     _fixture.ConnectionString,
-                    "SELECT Id, Cliente, Valor, Data FROM Vendas " +
+                    "SELECT Id, Customer, Amount, Date FROM Sales " +
                     "WHERE (@cursor IS NULL OR Id > @cursor) ORDER BY Id")
-                .Keyset<Venda, long>(v => v.Id, pageSize: 1000))
-            .Filter(v => v.Valor > 0)
+                .Keyset<Sale, long>(v => v.Id, pageSize: 1000))
+            .Filter(v => v.Amount > 0)
             .Columns(
-                Col<Venda, long>(v => v.Id, "ID Venda"),
-                Col<Venda, string>(v => v.Cliente, "Cliente"),
-                Col<Venda, decimal>(v => v.Valor, "Valor", format: "C2", culture: "pt-BR"),
-                Col<Venda, DateTime>(v => v.Data, "Data Venda", format: "yyyy-MM-dd"))
+                Col<Sale, long>(v => v.Id, "Sale ID"),
+                Col<Sale, string>(v => v.Customer, "Customer"),
+                Col<Sale, decimal>(v => v.Amount, "Amount", format: "C2", culture: "pt-BR"),
+                Col<Sale, DateTime>(v => v.Date, "Sale Date", format: "yyyy-MM-dd"))
             .To(Csv(o => o.Delimiter(';').Encoding(Encoding.UTF8)))
             .UploadTo(Destination.Local(Path.Combine(_outDir, "{name}-{date:yyyy-MM-dd}.{ext}")))
             .Build();
@@ -45,7 +45,7 @@ public class EndToEndTests : IClassFixture<SqlServerFixture>, IDisposable
         var result = await ReportRunner.ExecuteAsync(report, exec, new EmptyServices(), CancellationToken.None);
 
         result.Status.ShouldBe(ReportRunStatus.Completed);
-        // Filter removes rows where Valor == 0 (every 7th id).
+        // Filter removes rows where Amount == 0 (every 7th id).
         var expectedWritten = _fixture.SeededRows - _fixture.SeededRows / 7;
         result.Stats.RecordsRead.ShouldBe(_fixture.SeededRows);
         result.Stats.RecordsWritten.ShouldBe(expectedWritten);
@@ -55,12 +55,12 @@ public class EndToEndTests : IClassFixture<SqlServerFixture>, IDisposable
         File.Exists(upload.RemotePath).ShouldBeTrue();
 
         var lines = await File.ReadAllLinesAsync(upload.RemotePath!, new UTF8Encoding(false));
-        lines[0].ShouldBe("ID Venda;Cliente;Valor;Data Venda");
+        lines[0].ShouldBe("Sale ID;Customer;Amount;Sale Date");
         lines.Length.ShouldBe(expectedWritten + 1); // header + data
 
-        // First data row is Id=1 (Valor 1.5 > 0), formatted pt-BR.
-        var valor = 1.5m.ToString("C2", CultureInfo.GetCultureInfo("pt-BR"));
-        lines[1].ShouldBe($"1;C1;{valor};2026-01-01");
+        // First data row is Id=1 (Amount 1.5 > 0), formatted pt-BR.
+        var amount = 1.5m.ToString("C2", CultureInfo.GetCultureInfo("pt-BR"));
+        lines[1].ShouldBe($"1;C1;{amount};2026-01-01");
     }
 
     private sealed class EmptyServices : IServiceProvider

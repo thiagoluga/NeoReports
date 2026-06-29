@@ -17,16 +17,16 @@ namespace NeoReports.Jobs.UnitTests;
 public class JobLifecycleTests
 {
     private static ServiceProvider BuildProvider(
-        IBatchSource<Venda> source,
+        IBatchSource<Sale> source,
         out CapturingDestinationFactory destinationFactory,
-        Action<ReportBuilder<Venda>>? extra = null)
+        Action<ReportBuilder<Sale>>? extra = null)
     {
         var destFactory = new CapturingDestinationFactory();
         destinationFactory = destFactory;
 
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddReport<Venda>("vendas", b =>
+        services.AddReport<Sale>("sales", b =>
         {
             b.From(source)
                 .WithPageSize(10)
@@ -63,7 +63,7 @@ public class JobLifecycleTests
         await using var provider = BuildProvider(source, out var dest);
         var scheduler = provider.GetRequiredService<IReportJobScheduler>();
 
-        var jobId = await scheduler.EnqueueAsync(new ReportJobRequest("vendas"), CancellationToken.None);
+        var jobId = await scheduler.EnqueueAsync(new ReportJobRequest("sales"), CancellationToken.None);
 
         var job = await WaitForAsync(scheduler, jobId, s => s is ReportJobStatus.Completed);
         job.Status.ShouldBe(ReportJobStatus.Completed);
@@ -81,7 +81,7 @@ public class JobLifecycleTests
         await using var provider = BuildProvider(source, out var dest);
         var scheduler = provider.GetRequiredService<IReportJobScheduler>();
 
-        var jobId = await scheduler.EnqueueAsync(new ReportJobRequest("vendas"), CancellationToken.None);
+        var jobId = await scheduler.EnqueueAsync(new ReportJobRequest("sales"), CancellationToken.None);
         await WaitForAsync(scheduler, jobId, s => s is ReportJobStatus.Running);
 
         var accepted = await scheduler.CancelAsync(jobId, CancellationToken.None);
@@ -100,7 +100,7 @@ public class JobLifecycleTests
         await using var provider = BuildProvider(slow, out var dest);
         var scheduler = provider.GetRequiredService<IReportJobScheduler>();
 
-        var cancelledId = await scheduler.EnqueueAsync(new ReportJobRequest("vendas"), CancellationToken.None);
+        var cancelledId = await scheduler.EnqueueAsync(new ReportJobRequest("sales"), CancellationToken.None);
         await WaitForAsync(scheduler, cancelledId, s => s is ReportJobStatus.Running);
         await scheduler.CancelAsync(cancelledId, CancellationToken.None);
         await WaitForAsync(scheduler, cancelledId, s => s is ReportJobStatus.Cancelled);
@@ -115,7 +115,7 @@ public class JobLifecycleTests
         await using var provider2 = BuildProvider(fast, out var dest2);
         var scheduler2 = provider2.GetRequiredService<IReportJobScheduler>();
 
-        var okId = await scheduler2.EnqueueAsync(new ReportJobRequest("vendas"), CancellationToken.None);
+        var okId = await scheduler2.EnqueueAsync(new ReportJobRequest("sales"), CancellationToken.None);
         var done = await WaitForAsync(scheduler2, okId, s => s is ReportJobStatus.Completed);
         done.Stats.RecordsWritten.ShouldBe(30);
         dest2.Last!.UploadedFiles.ShouldHaveSingleItem();
@@ -127,7 +127,7 @@ public class JobLifecycleTests
         await using var provider = BuildProvider(new ThrowingSource(), out _);
         var scheduler = provider.GetRequiredService<IReportJobScheduler>();
 
-        var jobId = await scheduler.EnqueueAsync(new ReportJobRequest("vendas"), CancellationToken.None);
+        var jobId = await scheduler.EnqueueAsync(new ReportJobRequest("sales"), CancellationToken.None);
 
         var job = await WaitForAsync(scheduler, jobId, s => s is ReportJobStatus.Failed);
         job.Status.ShouldBe(ReportJobStatus.Failed);

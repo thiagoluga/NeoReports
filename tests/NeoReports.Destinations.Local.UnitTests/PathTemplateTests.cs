@@ -11,8 +11,8 @@ public class PathTemplateTests
     [Fact]
     public void Expands_name_ext_and_default_date()
     {
-        var result = PathTemplate.Expand("{name}-{date}.{ext}", "vendas", "csv", Ts);
-        result.ShouldBe("vendas-2026-03-07.csv");
+        var result = PathTemplate.Expand("{name}-{date}.{ext}", "sales", "csv", Ts);
+        result.ShouldBe("sales-2026-03-07.csv");
     }
 
     [Fact]
@@ -25,9 +25,9 @@ public class PathTemplateTests
     [Fact]
     public void Expands_parameter_tokens()
     {
-        var parameters = new Dictionary<string, object?> { ["regiao"] = "sul" };
-        var result = PathTemplate.Expand("{name}-{regiao}.{ext}", "rel", "csv", Ts, parameters);
-        result.ShouldBe("rel-sul.csv");
+        var parameters = new Dictionary<string, object?> { ["region"] = "south" };
+        var result = PathTemplate.Expand("{name}-{region}.{ext}", "rel", "csv", Ts, parameters);
+        result.ShouldBe("rel-south.csv");
     }
 
     [Fact]

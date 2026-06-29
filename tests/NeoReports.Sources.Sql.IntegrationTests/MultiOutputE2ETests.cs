@@ -24,18 +24,18 @@ public class MultiOutputE2ETests : IClassFixture<SqlServerFixture>, IDisposable
     {
         Skip.IfNot(_fixture.Available, "Docker/SQL Server container not available.");
 
-        var report = new ReportBuilder<Venda>("vendas-multi")
+        var report = new ReportBuilder<Sale>("sales-multi")
             .From(Source.Sql(
                     _fixture.ConnectionString,
-                    "SELECT Id, Cliente, Valor, Data FROM Vendas " +
+                    "SELECT Id, Customer, Amount, Date FROM Sales " +
                     "WHERE (@cursor IS NULL OR Id > @cursor) ORDER BY Id")
-                .Keyset<Venda, long>(v => v.Id, pageSize: 1000))
-            .Column(v => v.Id, "ID Venda")
-            .Column(v => v.Cliente, "Cliente")
-            .Column(v => v.Valor, "Valor", format: "C2", culture: "pt-BR")
-            .Column(v => v.Data, "Data Venda", format: "yyyy-MM-dd")
+                .Keyset<Sale, long>(v => v.Id, pageSize: 1000))
+            .Column(v => v.Id, "Sale ID")
+            .Column(v => v.Customer, "Customer")
+            .Column(v => v.Amount, "Amount", format: "C2", culture: "pt-BR")
+            .Column(v => v.Date, "Sale Date", format: "yyyy-MM-dd")
             .To(Csv(o => o.Delimiter(';')))
-            .To(Xlsx(o => o.SheetName("Vendas").AutoFilter()))
+            .To(Xlsx(o => o.SheetName("Sales").AutoFilter()))
             .UploadTo(Destination.Local(Path.Combine(_outDir, "{name}.{ext}")))
             .Build();
 
@@ -53,21 +53,21 @@ public class MultiOutputE2ETests : IClassFixture<SqlServerFixture>, IDisposable
         result.Uploads.Count.ShouldBe(2);
         result.Uploads.ShouldAllBe(u => u.Success);
 
-        var csvPath = Path.Combine(_outDir, "vendas-multi.csv");
-        var xlsxPath = Path.Combine(_outDir, "vendas-multi.xlsx");
+        var csvPath = Path.Combine(_outDir, "sales-multi.csv");
+        var xlsxPath = Path.Combine(_outDir, "sales-multi.xlsx");
         File.Exists(csvPath).ShouldBeTrue();
         File.Exists(xlsxPath).ShouldBeTrue();
 
         // CSV: header + all data rows.
         var csvLines = await File.ReadAllLinesAsync(csvPath);
-        csvLines[0].ShouldBe("ID Venda;Cliente;Valor;Data Venda");
+        csvLines[0].ShouldBe("Sale ID;Customer;Amount;Sale Date");
         csvLines.Length.ShouldBe(_fixture.SeededRows + 1);
 
         // XLSX: named sheet, auto-filter, native types, header + data rows.
         using var wb = new XLWorkbook(xlsxPath);
-        var ws = wb.Worksheet("Vendas");
+        var ws = wb.Worksheet("Sales");
         ws.AutoFilter.IsEnabled.ShouldBeTrue();
-        ws.Cell(1, 1).GetString().ShouldBe("ID Venda");
+        ws.Cell(1, 1).GetString().ShouldBe("Sale ID");
         ws.Cell(2, 1).GetDouble().ShouldBe(1);
         ws.LastRowUsed()!.RowNumber().ShouldBe(_fixture.SeededRows + 1);
     }

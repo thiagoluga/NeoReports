@@ -11,8 +11,8 @@ namespace NeoReports.Core.UnitTests;
 
 public class PipelineTests
 {
-    private static IReadOnlyList<Venda> Page(params long[] ids) =>
-        ids.Select(id => new Venda(id, $"C{id}", id * 10m, DateTime.UnixEpoch)).ToArray();
+    private static IReadOnlyList<Sale> Page(params long[] ids) =>
+        ids.Select(id => new Sale(id, $"C{id}", id * 10m, DateTime.UnixEpoch)).ToArray();
 
     private static ReportExecutionContext Exec() =>
         new(Guid.NewGuid().ToString("N"), "r", null, NullLogger.Instance, CancellationToken.None);
@@ -23,11 +23,11 @@ public class PipelineTests
     [Fact]
     public async Task Reads_all_pages_writes_rows_and_uploads_file()
     {
-        var source = new FakeBatchSource<Venda>(new[] { Page(1, 2), Page(3) });
+        var source = new FakeBatchSource<Sale>(new[] { Page(1, 2), Page(3) });
         var writer = new FakeWriterFactory();
         var destination = new CapturingDestinationFactory();
 
-        var report = new ReportBuilder<Venda>("r")
+        var report = new ReportBuilder<Sale>("r")
             .From(source)
             .Column(v => v.Id, "Id")
             .To(new OutputSpec(writer))
@@ -51,11 +51,11 @@ public class PipelineTests
     [Fact]
     public async Task Multi_output_reads_source_only_once_per_page()
     {
-        var source = new FakeBatchSource<Venda>(new[] { Page(1, 2), Page(3, 4) });
+        var source = new FakeBatchSource<Sale>(new[] { Page(1, 2), Page(3, 4) });
         var csvLike = new FakeWriterFactory("csv", "csv");
         var xlsxLike = new FakeWriterFactory("xlsx", "xlsx");
 
-        var report = new ReportBuilder<Venda>("r")
+        var report = new ReportBuilder<Sale>("r")
             .From(source)
             .Column(v => v.Id, "Id")
             .To(new OutputSpec(csvLike))
@@ -74,10 +74,10 @@ public class PipelineTests
     [Fact]
     public async Task Filter_excludes_non_matching_rows()
     {
-        var source = new FakeBatchSource<Venda>(new[] { Page(1, 2, 3, 4) });
+        var source = new FakeBatchSource<Sale>(new[] { Page(1, 2, 3, 4) });
         var writer = new FakeWriterFactory();
 
-        var report = new ReportBuilder<Venda>("r")
+        var report = new ReportBuilder<Sale>("r")
             .From(source)
             .Filter(v => v.Id % 2 == 0)
             .Column(v => v.Id, "Id")
@@ -94,11 +94,11 @@ public class PipelineTests
     [Fact]
     public async Task Streaming_source_is_sliced_into_batches()
     {
-        var items = Enumerable.Range(1, 5).Select(i => new Venda(i, $"C{i}", i, DateTime.UnixEpoch)).ToArray();
-        var source = new FakeStreamingSource<Venda>(items);
+        var items = Enumerable.Range(1, 5).Select(i => new Sale(i, $"C{i}", i, DateTime.UnixEpoch)).ToArray();
+        var source = new FakeStreamingSource<Sale>(items);
         var writer = new FakeWriterFactory();
 
-        var report = new ReportBuilder<Venda>("r")
+        var report = new ReportBuilder<Sale>("r")
             .From(source)
             .WithPageSize(2)
             .Column(v => v.Id, "Id")
@@ -122,10 +122,10 @@ public class PipelineTests
         });
         var writer = new FakeWriterFactory();
 
-        var report = new ReportBuilder<Venda>("r")
-            .From(source, t => new Venda(t.Id, t.Name, t.Id, DateTime.UnixEpoch))
+        var report = new ReportBuilder<Sale>("r")
+            .From(source, t => new Sale(t.Id, t.Name, t.Id, DateTime.UnixEpoch))
             .Column(v => v.Id, "Id")
-            .Column(v => v.Cliente, "Cliente")
+            .Column(v => v.Customer, "Customer")
             .To(new OutputSpec(writer))
             .Build();
 

@@ -16,10 +16,10 @@ using static NeoReports.Formats.Csv.Format;
 namespace NeoReports.AspNetCore.IntegrationTests;
 
 /// <summary>Reference row type for the API tests.</summary>
-public sealed record Venda(long Id, string Cliente);
+public sealed record Sale(long Id, string Customer);
 
 /// <summary>In-memory batch source synthesizing a fixed number of rows, one page at a time.</summary>
-public sealed class InMemorySource : IBatchSource<Venda>
+public sealed class InMemorySource : IBatchSource<Sale>
 {
     private readonly long _rows;
     private readonly int _pageSize;
@@ -34,7 +34,7 @@ public sealed class InMemorySource : IBatchSource<Venda>
 
     public ReportSchema Schema { get; } = new(new[] { new ReportColumn("Id", ColumnType.Integer) });
 
-    public async Task<BatchResult<Venda>> ReadBatchAsync(BatchContext context, CancellationToken cancellationToken)
+    public async Task<BatchResult<Sale>> ReadBatchAsync(BatchContext context, CancellationToken cancellationToken)
     {
         if (_delay > TimeSpan.Zero)
             await Task.Delay(_delay, cancellationToken).ConfigureAwait(false);
@@ -42,15 +42,15 @@ public sealed class InMemorySource : IBatchSource<Venda>
         var last = context.Cursor is null ? 0L : long.Parse(context.Cursor, System.Globalization.CultureInfo.InvariantCulture);
         var start = last + 1;
         if (start > _rows)
-            return BatchResult<Venda>.Empty;
+            return BatchResult<Sale>.Empty;
 
         var end = Math.Min(start + _pageSize - 1, _rows);
-        var rows = new List<Venda>();
+        var rows = new List<Sale>();
         for (var id = start; id <= end; id++)
-            rows.Add(new Venda(id, $"C{id}"));
+            rows.Add(new Sale(id, $"C{id}"));
 
         var hasMore = end < _rows;
-        return new BatchResult<Venda>(rows, hasMore ? end.ToString(System.Globalization.CultureInfo.InvariantCulture) : null, hasMore);
+        return new BatchResult<Sale>(rows, hasMore ? end.ToString(System.Globalization.CultureInfo.InvariantCulture) : null, hasMore);
     }
 }
 
@@ -76,10 +76,10 @@ public static class TestApp
                     }
                     else
                     {
-                        services.AddReport<Venda>("vendas", b => b
+                        services.AddReport<Sale>("sales", b => b
                             .From(new InMemorySource(rows: 30, pageSize: 10))
                             .Column(v => v.Id, "ID")
-                            .Column(v => v.Cliente, "Cliente")
+                            .Column(v => v.Customer, "Customer")
                             .To(Csv(o => o.Delimiter(';'))));
                     }
 

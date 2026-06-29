@@ -32,11 +32,11 @@ public class HangfireSchedulerTests
         var scheduler = new HangfireJobScheduler(client, store);
 
         var jobId = await scheduler.EnqueueAsync(
-            new ReportJobRequest("vendas", new Dictionary<string, object?> { ["inicio"] = "2026-01-01" }), Ct);
+            new ReportJobRequest("sales", new Dictionary<string, object?> { ["start"] = "2026-01-01" }), Ct);
 
         var tracked = await scheduler.GetAsync(jobId, Ct);
         tracked!.Status.ShouldBe(ReportJobStatus.Queued);
-        tracked.ReportName.ShouldBe("vendas");
+        tracked.ReportName.ShouldBe("sales");
 
         // The Hangfire enqueued set has exactly one job.
         var monitoring = storage.GetMonitoringApi();
@@ -50,7 +50,7 @@ public class HangfireSchedulerTests
         var client = new BackgroundJobClient(storage);
         var scheduler = new HangfireJobScheduler(client, new InMemoryJobStore());
 
-        var jobId = await scheduler.EnqueueAsync(new ReportJobRequest("vendas"), Ct);
+        var jobId = await scheduler.EnqueueAsync(new ReportJobRequest("sales"), Ct);
 
         var cancelled = await scheduler.CancelAsync(jobId, Ct);
         cancelled.ShouldBeTrue();
@@ -67,7 +67,7 @@ public class HangfireSchedulerTests
 
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddReport<Venda>("vendas", b => b
+        services.AddReport<Sale>("sales", b => b
             .From(source)
             .WithPageSize(10)
             .Column(v => v.Id, "Id")
@@ -79,10 +79,10 @@ public class HangfireSchedulerTests
         await using var provider = services.BuildServiceProvider();
 
         var store = provider.GetRequiredService<IJobStore>();
-        var job = await store.CreateAsync(new ReportJobRequest("vendas"), Ct);
+        var job = await store.CreateAsync(new ReportJobRequest("sales"), Ct);
 
         var invoker = provider.GetRequiredService<HangfireReportJobInvoker>();
-        await invoker.ExecuteAsync(job.Id, "vendas", JobParameters.Serialize(null), Ct);
+        await invoker.ExecuteAsync(job.Id, "sales", JobParameters.Serialize(null), Ct);
 
         var finished = await store.GetAsync(job.Id, Ct);
         finished!.Status.ShouldBe(ReportJobStatus.Completed);

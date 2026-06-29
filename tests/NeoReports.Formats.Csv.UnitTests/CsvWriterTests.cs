@@ -9,16 +9,16 @@ namespace NeoReports.Formats.Csv.UnitTests;
 
 public class CsvWriterTests
 {
-    private static ReportSchema VendasSchema() => new(new[]
+    private static ReportSchema SalesSchema() => new(new[]
     {
-        new ReportColumn("Id", ColumnType.Integer, DisplayName: "ID Venda"),
-        new ReportColumn("Cliente", ColumnType.String, DisplayName: "Cliente"),
-        new ReportColumn("Valor", ColumnType.Decimal, DisplayName: "Valor", Format: "C2", Culture: "pt-BR"),
-        new ReportColumn("Data", ColumnType.DateTime, DisplayName: "Data Venda", Format: "yyyy-MM-dd"),
+        new ReportColumn("Id", ColumnType.Integer, DisplayName: "Sale ID"),
+        new ReportColumn("Customer", ColumnType.String, DisplayName: "Customer"),
+        new ReportColumn("Amount", ColumnType.Decimal, DisplayName: "Amount", Format: "C2", Culture: "pt-BR"),
+        new ReportColumn("Date", ColumnType.DateTime, DisplayName: "Sale Date", Format: "yyyy-MM-dd"),
     });
 
     private static ReportExecutionContext Exec() =>
-        new("job", "vendas", null, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance, CancellationToken.None);
+        new("job", "sales", null, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance, CancellationToken.None);
 
     private static async Task<byte[]> WriteAsync(CsvOptions options, ReportSchema schema, IReadOnlyList<object?[]> rows)
     {
@@ -42,13 +42,13 @@ public class CsvWriterTests
             new object?[] { 2L, "João", 0.99m, new DateTime(2026, 2, 1) },
         };
 
-        var bytes = await WriteAsync(new CsvOptions().Delimiter(';'), VendasSchema(), rows);
+        var bytes = await WriteAsync(new CsvOptions().Delimiter(';'), SalesSchema(), rows);
         var text = Encoding.UTF8.GetString(bytes);
 
-        var valor = 1234.5m.ToString("C2", CultureInfo.GetCultureInfo("pt-BR"));
+        var amount = 1234.5m.ToString("C2", CultureInfo.GetCultureInfo("pt-BR"));
         text.ShouldBe(
-            "ID Venda;Cliente;Valor;Data Venda\r\n" +
-            $"1;Ana;{valor};2026-01-15\r\n" +
+            "Sale ID;Customer;Amount;Sale Date\r\n" +
+            $"1;Ana;{amount};2026-01-15\r\n" +
             $"2;João;{0.99m.ToString("C2", CultureInfo.GetCultureInfo("pt-BR"))};2026-02-01\r\n");
     }
 

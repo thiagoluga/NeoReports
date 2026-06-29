@@ -14,7 +14,7 @@ namespace NeoReports.Destinations.S3.UnitTests;
 public class S3DestinationTests
 {
     private static DestinationContext Context() =>
-        new(new ReportExecutionContext("job", "vendas", null, NullLogger.Instance, CancellationToken.None), null);
+        new(new ReportExecutionContext("job", "sales", null, NullLogger.Instance, CancellationToken.None), null);
 
     private static ReportFile FileOf(string name, string content)
     {
@@ -31,12 +31,12 @@ public class S3DestinationTests
             .Returns(new PutObjectResponse { HttpStatusCode = HttpStatusCode.OK });
 
         var destination = new S3Destination(client, "my-bucket", "reports/{name}/{date:yyyy-MM-dd}.{ext}");
-        var result = await destination.UploadAsync(FileOf("vendas.csv", "a,b\n1,2\n"), Context(), CancellationToken.None);
+        var result = await destination.UploadAsync(FileOf("sales.csv", "a,b\n1,2\n"), Context(), CancellationToken.None);
 
         result.Success.ShouldBeTrue();
         captured.ShouldNotBeNull();
         captured.BucketName.ShouldBe("my-bucket");
-        captured.Key.ShouldStartWith("reports/vendas/");
+        captured.Key.ShouldStartWith("reports/sales/");
         captured.Key.ShouldEndWith(".csv");
         result.RemotePath.ShouldBe(captured.Key);
         result.Url.ShouldBe($"s3://my-bucket/{captured.Key}");

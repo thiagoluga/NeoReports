@@ -4,7 +4,7 @@ using NeoReports.Abstractions;
 namespace NeoReports.Core.UnitTests.Fakes;
 
 /// <summary>Reference row type used across the tests.</summary>
-public sealed record Venda(long Id, string Cliente, decimal Valor, DateTime Data);
+public sealed record Sale(long Id, string Customer, decimal Amount, DateTime Date);
 
 /// <summary>Minimal service provider that resolves nothing (factories under test ignore it).</summary>
 public sealed class EmptyServiceProvider : IServiceProvider
