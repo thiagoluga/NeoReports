@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using NeoReports.Abstractions;
 using NeoReports.Core.Building;
+using NeoReports.Core.Configuration;
 using NeoReports.Core.Pipeline;
 using NeoReports.Core.Registry;
 
@@ -47,11 +49,59 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>
+    /// Registers a config-driven (dynamic) report from a JSON document. The config is parsed now and
+    /// compiled lazily when the registry is first resolved, so the source/format/destination
+    /// providers it references (e.g. <c>AddSqlConfigSource()</c>) only need to be registered by then.
+    /// The report is then runnable by name like any code-first report.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configJson">The report configuration as a JSON string.</param>
+    public static IServiceCollection AddReportFromConfig(this IServiceCollection services, string configJson)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configJson);
+
+        services.AddNeoReports();
+        var config = new JsonReportConfigParser().Parse(configJson);
+        services.AddSingleton(config);
+        return services;
+    }
+
+    /// <summary>Registers a config-driven report read from a JSON file.</summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="path">Path to the JSON configuration file.</param>
+    public static IServiceCollection AddReportFromConfigFile(this IServiceCollection services, string path)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(path);
+        return services.AddReportFromConfig(File.ReadAllText(path));
+    }
+
+    /// <summary>Registers every JSON report configuration found in a directory (non-recursive).</summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="directory">Directory to scan.</param>
+    /// <param name="searchPattern">File search pattern; defaults to <c>*.json</c>.</param>
+    /// <exception cref="DirectoryNotFoundException">Thrown when the directory does not exist.</exception>
+    public static IServiceCollection AddReportsFromConfigDirectory(
+        this IServiceCollection services, string directory, string searchPattern = "*.json")
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(directory);
+        if (!Directory.Exists(directory))
+            throw new DirectoryNotFoundException($"Report config directory not found: {directory}");
+
+        foreach (var file in Directory.EnumerateFiles(directory, searchPattern).OrderBy(f => f, StringComparer.Ordinal))
+            services.AddReportFromConfig(File.ReadAllText(file));
+
+        return services;
+    }
+
     private static ReportRegistry GetOrAddRegistry(IServiceCollection services)
     {
         foreach (var descriptor in services)
         {
-            if (descriptor.ServiceType == typeof(IReportRegistry) &&
+            if (descriptor.ServiceType == typeof(ReportRegistry) &&
                 descriptor.ImplementationInstance is ReportRegistry existing)
             {
                 return existing;
@@ -59,7 +109,19 @@ public static class ServiceCollectionExtensions
         }
 
         var registry = new ReportRegistry();
-        services.AddSingleton<IReportRegistry>(registry);
+
+        // Concrete instance: the dedup anchor and the eager target for typed AddReport calls.
+        services.AddSingleton(registry);
+
+        // The public registry compiles any config-registered reports on first resolution, when the
+        // service provider — and thus the source/format/destination providers — is available.
+        services.AddSingleton<IReportRegistry>(serviceProvider =>
+        {
+            foreach (var config in serviceProvider.GetServices<ReportConfig>())
+                registry.Register(ReportConfigCompiler.Compile(config, serviceProvider));
+            return registry;
+        });
+
         return registry;
     }
 }

@@ -14,9 +14,9 @@ as sample 01). The connection string passed on the command line is injected into
 
 How it works:
 
-- `services.AddSqlConfigSource()` registers the `"sql"` source provider.
-- `JsonReportConfigParser` parses the document; `ReportConfigCompiler` compiles it into the same
-  runnable report the fluent builder produces.
+- `services.AddReportFromConfig(...)` registers the config report; `services.AddSqlConfigSource()`
+  registers the `"sql"` source provider. The report is then **run by name** through the standard
+  runner.
 - The SQL source materializes positional `ReportRecord`s by matching each schema column to the
   result-set column by name, reusing the v1 keyset engine (connection-per-page, opaque cursor).
 

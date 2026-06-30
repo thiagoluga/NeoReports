@@ -194,6 +194,7 @@ Removed from v1 vs. Ch. 16: `IRetryPolicy`, `IExceptionClassifier`, `IAuthProvid
 | D23 | Multi-source | Planned for v2 (Epic B). Any report assembled from several sources (join/enrich). Likely paid. Design recorded before coding |
 | D24 | UI ordering | Blazor UI is the **last** v2 epic (after dynamic path + multi-source + a user-validation gate), per the maintainer. Always built from the Claude Design handoff, never invented |
 | D25 | v2 additivity | Every v2 addition is additive and SemVer-minor on `Abstractions`; v1's frozen surface is never broken, only extended. Removing anything stays SemVer-major |
+| D26 | Config trigger | Config reports are registered at startup (`AddReportFromConfig`/`File`/`Directory`) and compiled lazily on first registry resolution, then run **by name** through the standard runner/endpoints. v2 does **not** add an endpoint that runs arbitrary config (connection string + SQL) from a request body — that is an injection/SSRF surface; ad-hoc config execution stays out until there's a vetted, authorized design |
 | — | Design | Already done in Claude Design; export per the handoff; UI post-MVP |
 
 ---
