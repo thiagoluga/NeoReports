@@ -189,6 +189,11 @@ Removed from v1 vs. Ch. 16: `IRetryPolicy`, `IExceptionClassifier`, `IAuthProvid
 | D18 | Jobs packaging | Base package `NeoReports.Jobs` (shared worker `ReportJobWorker` + `InMemoryJobStore` + `InMemoryJobScheduler` + `NoOpCheckpointStore` + DI) and `NeoReports.Jobs.Hangfire` extending it. Avoids a 3rd package just to share the worker; the plan's "InMemory" lives in the base package |
 | D19 | Worker and cancellation | `ReportJobWorker` is the single lifecycle core (running→completed/failed/cancelled), used by both schedulers. Idempotent restart (AC-16) comes from the pipeline (per-job temp + upload only at the end; temp cleanup is best-effort and never changes the status). InMemory: cancels via a per-job `CancellationTokenSource`. Hangfire: `CancellationToken` injected into the invoker; `CancelAsync` deletes the job; in-process id↔hangfire-id map (single-server; cross-restart is post-MVP, D2). Parameters travel as JSON (`JobParameters`, dates as ISO-8601 round-trip) |
 | D20 | Endpoints + artifact store | `MapNeoReports("/api")` (Minimal API). Download/sync need to retain the file beyond the pipeline's temp: `IReportArtifactStore` (+ `FileSystemArtifactStore`) in **Core** (an engine concern, not a plugin contract → outside `Abstractions`); the `ReportRunner` saves into it only if registered (opt-in via DI). Sync = single-output (multi → 400, AC-10); multi-output on download becomes a zip. Job status serialized as a **string** (`JsonStringEnumConverter` on the DTOs, without touching the enum in `Abstractions`). Auth inherits from the host (`RequireAuthorization` optional; no auth chain). Outputs with the same extension (e.g. two CSVs) get a **disambiguated** file name in the pipeline (`name.csv`, `name-2.csv`) so they don't collide on disk/artifact and can go together in the zip |
+| D21 | Dynamic path | Reopened in v2. Row type = positional `ReportRecord` (`object?[]` + `ReportSchema`), not a dictionary; reuses the whole v1 pipeline because the writer edge already speaks `object?[]` + schema. Config (JSON) + `IReportConfigParser` + JsonLogic filter return additively to `Abstractions` (SemVer-minor) |
+| D22 | Multi-sheet XLSX | Planned for v2 (Epic B). One workbook, several named sheets from different filters/sources. Monetization TBD. Design recorded before coding |
+| D23 | Multi-source | Planned for v2 (Epic B). Any report assembled from several sources (join/enrich). Likely paid. Design recorded before coding |
+| D24 | UI ordering | Blazor UI is the **last** v2 epic (after dynamic path + multi-source + a user-validation gate), per the maintainer. Always built from the Claude Design handoff, never invented |
+| D25 | v2 additivity | Every v2 addition is additive and SemVer-minor on `Abstractions`; v1's frozen surface is never broken, only extended. Removing anything stays SemVer-major |
 | — | Design | Already done in Claude Design; export per the handoff; UI post-MVP |
 
 ---
@@ -225,3 +230,37 @@ Removed from v1 vs. Ch. 16: `IRetryPolicy`, `IExceptionClassifier`, `IAuthProvid
 - The `Schema` declared by the source is a minimal placeholder — the pipeline's projection uses the builder's columns (D1), not the source's schema.
 
 **Why.** Keyset with an opaque `@cursor` and connection-per-page satisfies AC-2 (reads all pages in order, without skipping/repeating) and keeps constant memory, leaving checkpoint/multi-worker viable later without rework. Connection-by-name is configuration sugar that doesn't change the contract — cut from v1.
+
+---
+
+# v2 decisions (post-MVP — reopening scope)
+
+> v1 (1.0.0) is published. The decisions below reopen scope **deliberately and additively**.
+> Locked order with the maintainer: **Epic A (dynamic path) → Epic B (multi-source / multi-sheet) → validation gate → Epic C (Blazor UI) last.** Nothing here breaks v1's frozen `Abstractions` (D25) — it only extends it.
+
+## D21 — Dynamic path: positional `ReportRecord`, config + JsonLogic (v2 / Epic A)
+
+**Decision.** The dynamic (config-driven) path returns in v2. It does **not** revisit rule 1 ("never a dictionary as the row type"): the dynamic row is a **positional `ReportRecord`** — an `object?[]` aligned to a declared `ReportSchema`, exactly the shape the writer edge already consumes (D1). The pipeline stays generic over `T`; the dynamic path simply runs with `T = ReportRecord`. Writers, destinations, jobs and resilience are **untouched**.
+
+- `ReportRecord` and a `ReportRecord` `IBatchSource` return to `Abstractions` (additive, SemVer-minor — D25).
+- Config is **JSON**, parsed by `IReportConfigParser` into a runnable registration (the same internal model `AddReport<T>` produces). Columns/source/outputs/destinations/retry/onFailure mirror the fluent builder one-to-one.
+- The dynamic **filter** is a **JsonLogic** expression compiled to `Func<ReportRecord,bool>` (D10's deferred half). Typed delegates remain the code-first option; JsonLogic is the dynamic one. DynamicLinq stays out unless a concrete need appears.
+- No new execution path: a config report is just another registration. Same `ReportRunner`, same jobs, same endpoints.
+
+**Why.** Reusing the positional edge means the dynamic path is *configuration on top of the existing engine*, not a parallel engine. Constant memory, resilience and the writer contract all carry over for free. This is the single biggest reason `Abstractions` was kept minimal-but-open in v1.
+
+## D22 — Multi-sheet XLSX (v2 / Epic B — design before code)
+
+**Decision (directional).** A single XLSX workbook with several **named sheets**, each fed by a different filter (and later a different source), without breaking the single-pass read (D14's ClosedXML in-memory model already holds the whole workbook, so multi-sheet fits naturally). Exact API and whether it is a **paid** capability are **TBD with the maintainer**; a concrete decision is recorded here before coding. Tracked in `memory/open-questions.md`.
+
+## D23 — Multi-source reports (v2 / Epic B — design before code)
+
+**Decision (directional).** Any report assembled from **several sources** (join/enrich) into one output — likely the headline **paid** feature. Monetization model (free core vs paid) and the join semantics are **TBD with the maintainer**; recorded before coding. Tracked in `memory/open-questions.md`.
+
+## D24 — UI is the last v2 epic (Blazor + Claude Design handoff)
+
+**Decision.** The Blazor Server + MudBlazor UI is built **last** in v2, after the dynamic path, multi-source, and a real user-validation gate — by the maintainer's explicit ordering. It is built **only** from the Claude Design handoff (`tokens.css`, `components.html`, per-screen `.html`, `handoff.md`); design is never invented or diverged from the Design System tokens.
+
+## D25 — v2 additivity / SemVer discipline
+
+**Decision.** Every v2 addition to `Abstractions` is **additive** (new types/members) and ships as **SemVer-minor**. v1's published surface is never changed in place; removing or changing a signature would be SemVer-major and is avoided. External plugins built against 1.x keep compiling against any 1.y.
