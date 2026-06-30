@@ -20,7 +20,7 @@ public sealed class SqlKeysetSource<T> : IBatchSource<T>
     private readonly string _keyColumn;
     private readonly int _pageSize;
     private readonly IReadOnlyDictionary<string, object?> _parameters;
-    private readonly RecordMaterializer<T> _materializer = new();
+    private readonly Func<DbDataReader, IReadOnlyDictionary<string, int>, T> _materialize;
 
     /// <summary>Creates the source.</summary>
     /// <param name="connectionString">SQL Server connection string.</param>
@@ -36,6 +36,23 @@ public sealed class SqlKeysetSource<T> : IBatchSource<T>
         int pageSize,
         ReportSchema schema,
         IReadOnlyDictionary<string, object?>? parameters = null)
+        : this(connectionString, sql, keyColumn, pageSize, schema, parameters, materialize: null)
+    {
+    }
+
+    /// <summary>
+    /// Creates the source with a custom row materializer. Used by the dynamic path to materialize a
+    /// positional <c>ReportRecord</c> by schema name; when <paramref name="materialize"/> is null the
+    /// reflection-based <see cref="RecordMaterializer{T}"/> (typed POCO) is used.
+    /// </summary>
+    internal SqlKeysetSource(
+        string connectionString,
+        string sql,
+        string keyColumn,
+        int pageSize,
+        ReportSchema schema,
+        IReadOnlyDictionary<string, object?>? parameters,
+        Func<DbDataReader, IReadOnlyDictionary<string, int>, T>? materialize)
     {
         _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
         _sql = sql ?? throw new ArgumentNullException(nameof(sql));
@@ -44,6 +61,7 @@ public sealed class SqlKeysetSource<T> : IBatchSource<T>
         _pageSize = pageSize;
         Schema = schema ?? throw new ArgumentNullException(nameof(schema));
         _parameters = parameters ?? new Dictionary<string, object?>();
+        _materialize = materialize ?? new RecordMaterializer<T>().Materialize;
     }
 
     /// <inheritdoc />
@@ -86,7 +104,7 @@ public sealed class SqlKeysetSource<T> : IBatchSource<T>
 
         while (read < _pageSize && await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            records.Add(_materializer.Materialize(reader, ordinals));
+            records.Add(_materialize(reader, ordinals));
             if (keyOrdinal >= 0 && !reader.IsDBNull(keyOrdinal))
                 lastKey = Convert.ToString(reader.GetValue(keyOrdinal), CultureInfo.InvariantCulture);
             read++;
