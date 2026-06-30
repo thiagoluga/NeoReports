@@ -1,0 +1,23 @@
+{
+  "name": "monthly-sales",
+  "pageSize": 1000,
+  "source": {
+    "type": "sql",
+    "properties": {
+      "connectionString": "__CONNECTION_STRING__",
+      "sql": "SELECT Id, Customer, Amount, Date FROM Sales WHERE (@cursor IS NULL OR Id > @cursor) ORDER BY Id",
+      "key": "Id",
+      "pageSize": 1000
+    }
+  },
+  "columns": [
+    { "name": "Id", "type": "Integer", "displayName": "Sale ID", "nullable": false },
+    { "name": "Customer", "type": "String" },
+    { "name": "Amount", "type": "Decimal", "displayName": "Amount", "format": "C2", "culture": "pt-BR" },
+    { "name": "Date", "type": "DateTime", "displayName": "Sale Date", "format": "yyyy-MM-dd" }
+  ],
+  "outputs": [ { "format": "csv" } ],
+  "destinations": [
+    { "type": "local", "properties": { "path": "./out/{name}-{date:yyyy-MM-dd}.{ext}" } }
+  ]
+}
