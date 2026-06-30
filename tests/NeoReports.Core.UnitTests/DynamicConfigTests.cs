@@ -124,22 +124,37 @@ public class DynamicConfigTests
     }
 
     [Fact]
-    public void Compile_rejects_a_filter_until_the_jsonlogic_epic()
+    public async Task Compiles_and_applies_a_jsonlogic_filter()
     {
-        const string withFilter = """
+        // The filter is written as a JsonLogic object (captured as raw JSON by the parser) and keeps
+        // only rows where Id > 1.
+        const string filtered = """
         {
-          "name": "r",
+          "name": "sales",
           "source": { "type": "inmemory" },
-          "columns": [ { "name": "Id", "type": "Integer" } ],
+          "columns": [
+            { "name": "Id", "type": "Integer" },
+            { "name": "Customer", "type": "String" }
+          ],
           "outputs": [ { "format": "csv" } ],
-          "filter": "{\"==\":[{\"var\":\"Id\"},1]}"
+          "destinations": [ { "type": "capture" } ],
+          "filter": { ">": [ { "var": "Id" }, 1 ] }
         }
         """;
-        var config = Parser.Parse(withFilter);
-        var services = BuildServices(out _, out _, (1, "x"));
+        var config = Parser.Parse(filtered);
+        config.Filter.ShouldNotBeNull(); // object syntax captured as raw JSON text
+        var services = BuildServices(out _, out var destination, (1, "Acme"), (2, "Globex"), (3, "Initech"));
 
-        var ex = Should.Throw<ConfigurationException>(() => ReportConfigCompiler.Compile(config, services));
-        ex.Message.ShouldContain("filter");
+        var report = ReportConfigCompiler.Compile(config, services);
+        var result = await ReportRunner.ExecuteAsync(report, Exec(), services, CancellationToken.None);
+
+        result.Stats.RecordsRead.ShouldBe(3);
+        result.Stats.RecordsWritten.ShouldBe(2); // Ids 2 and 3
+
+        var content = Encoding.UTF8.GetString(destination.LastDestination!.Files["sales.csv"]);
+        content.ShouldNotContain("Acme");
+        content.ShouldContain("Globex");
+        content.ShouldContain("Initech");
     }
 
     [Fact]

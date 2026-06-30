@@ -48,7 +48,28 @@ public sealed class JsonReportConfigParser : IReportConfigParser
         };
         options.Converters.Add(new JsonStringEnumConverter());
         options.Converters.Add(new PrimitiveObjectConverter());
+        options.Converters.Add(new RawJsonStringConverter());
         return options;
+    }
+
+    /// <summary>
+    /// Reads <c>string</c> properties, additionally allowing an object/array token to be captured as
+    /// its raw JSON text. This lets the <c>filter</c> field be written as a JsonLogic object
+    /// (<c>"filter": { "==": [...] }</c>) instead of an escaped string; plain string fields are
+    /// unaffected.
+    /// </summary>
+    private sealed class RawJsonStringConverter : JsonConverter<string>
+    {
+        public override string? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+            reader.TokenType switch
+            {
+                JsonTokenType.Null => null,
+                JsonTokenType.String => reader.GetString(),
+                _ => JsonDocument.ParseValue(ref reader).RootElement.GetRawText(),
+            };
+
+        public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options) =>
+            writer.WriteStringValue(value);
     }
 
     /// <summary>

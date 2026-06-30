@@ -104,9 +104,13 @@ destinations and jobs are untouched. See **D21**.
   materializer overload on `SqlKeysetSource<T>`); `AddSqlConfigSource()` DI helper.
   **Acceptance:** Testcontainers E2E config→SQL→CSV. ✅ 6 green SQL integration tests
   (4 typed + 2 dynamic). **Depends on:** A2, reuses v1 keyset.
-- [ ] **A4 — JsonLogic filter.** Compile a JsonLogic expression to
-  `Func<ReportRecord,bool>` evaluated on the dynamic row. **Acceptance:** operator
-  coverage + a filtered E2E. **Depends on:** A1.
+- [x] **A4 — JsonLogic filter.** `JsonLogicFilter` compiles a JsonLogic expression to
+  `Func<ReportRecord,bool>` (operators `var`, `==`/`===`/`!=`/`!==`, `>`/`>=`/`<`/`<=`,
+  `and`/`or`/`!`/`!!`, `in`); unsupported ops raise a clear error. No new dependency —
+  a lean evaluator in Core. The parser accepts `"filter"` as a JsonLogic **object** (raw
+  JSON captured into the config), and the compiler applies it. **Acceptance:** operator
+  coverage + a filtered E2E. ✅ 48 green Core tests (+15); sample 04 now filters
+  (`Amount > 250` → 3 of 5 rows). **Depends on:** A1.
 - [ ] **A5 — DI + dynamic trigger.** `AddReportsFromConfig(...)` (file/dir/json) and an
   optional dynamic-config trigger endpoint. **Acceptance:** register from JSON and run
   via the AspNetCore endpoints. **Depends on:** A2, A4, PR 7.
