@@ -27,7 +27,7 @@ public static class JsonLogicFilter
         JsonElement root;
         try
         {
-            using JsonDocument document = JsonDocument.Parse(expression);
+            using var document = JsonDocument.Parse(expression);
             root = document.RootElement.Clone();
         }
         catch (JsonException ex)
