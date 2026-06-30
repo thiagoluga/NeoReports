@@ -85,11 +85,12 @@ pipeline. The row type is a positional `ReportRecord` (`object?[]` aligned to a 
 `ReportSchema`); the writer edge already speaks `object?[]` + schema (D1), so writers,
 destinations and jobs are untouched. See **D21**.
 
-- [ ] **A1 — `ReportRecord` + dynamic pipeline.** Reintroduce the positional row type
-  (Abstractions, additive) and a `ReportRecord` `IBatchSource`. Prove the existing
-  pipeline runs end-to-end with `T = ReportRecord` against an in-memory source.
-  **Acceptance:** dynamic rows reach CSV/XLSX byte-identically to the typed path for the
-  same data. **Depends on:** v1.
+- [x] **A1 — `ReportRecord` + dynamic pipeline.** Positional row type `ReportRecord`
+  (`object?[]` + schema) added to Abstractions (additive); `ReportColumns.Positional(...)`
+  declares dynamic columns over the existing `ReportBuilder<ReportRecord>`, so the whole
+  v1 pipeline runs with `T = ReportRecord` unchanged. **Acceptance:** dynamic rows reach
+  CSV byte-identically to the typed path for the same data. ✅ 26 green Core tests (+4).
+  **Depends on:** v1.
 - [ ] **A2 — Config model + parser.** `ReportConfig` DTOs (source · columns ·
   filter · outputs · destinations · retry · onFailure) + `IReportConfigParser` (JSON).
   Maps a parsed config to a runnable registration. **Acceptance:** golden config →

@@ -48,6 +48,45 @@ public static class ReportColumns
         return new ColumnDefinition<T>(column, row => getter(row));
     }
 
+    /// <summary>
+    /// Declares a column for the dynamic path that reads a <see cref="ReportRecord"/> by position.
+    /// The schema (name and <see cref="ColumnType"/>) is supplied explicitly because a positional
+    /// record has no compile-time member to infer from. The getter reads <c>record[index]</c>.
+    /// </summary>
+    /// <param name="index">Zero-based position of the value within the record.</param>
+    /// <param name="name">Stable column key, unique within the schema.</param>
+    /// <param name="type">Semantic column type used for formatting and projection.</param>
+    /// <param name="nullable">Whether the column may contain null values.</param>
+    /// <param name="displayName">Optional header label; defaults to <paramref name="name"/>.</param>
+    /// <param name="format">Optional .NET format string for rendering.</param>
+    /// <param name="culture">Optional culture name (e.g. "pt-BR") for rendering.</param>
+    /// <returns>A column definition over <see cref="ReportRecord"/>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="index"/> is negative.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is null or whitespace.</exception>
+    public static ColumnDefinition<ReportRecord> Positional(
+        int index,
+        string name,
+        ColumnType type,
+        bool nullable = true,
+        string? displayName = null,
+        string? format = null,
+        string? culture = null)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(index);
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ArgumentException("Column name must be provided.", nameof(name));
+
+        var column = new ReportColumn(
+            Name: name,
+            Type: type,
+            Nullable: nullable,
+            DisplayName: displayName ?? name,
+            Format: format,
+            Culture: culture);
+
+        return new ColumnDefinition<ReportRecord>(column, record => record[index]);
+    }
+
     private static MemberInfo GetMember<T, TProp>(Expression<Func<T, TProp>> selector)
     {
         var body = selector.Body;
