@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NeoReports.Abstractions;
@@ -23,7 +24,16 @@ public class DynamicConfigTests
       "pageSize": 500,
       "source": {
         "type": "inmemory",
-        "properties": { "connectionString": "Server=.", "limit": 10 }
+        "properties": {
+          "connectionString": "Server=.",
+          "limit": 10,
+          "ratio": 1.5,
+          "active": true,
+          "disabled": false,
+          "since": "2026-01-15T00:00:00Z",
+          "missing": null,
+          "nested": { "a": 1 }
+        }
       },
       "columns": [
         { "name": "Id", "type": "Integer", "displayName": "Sale ID", "nullable": false },
@@ -64,8 +74,15 @@ public class DynamicConfigTests
         config.PageSize.ShouldBe(500);
 
         config.Source.Type.ShouldBe("inmemory");
-        config.Source.Properties!["connectionString"].ShouldBe("Server=.");
-        config.Source.Properties["limit"].ShouldBe(10L); // JSON number → long, not JsonElement
+        var props = config.Source.Properties!;
+        props["connectionString"].ShouldBe("Server=.");
+        props["limit"].ShouldBe(10L);   // integer JSON number → long
+        props["ratio"].ShouldBe(1.5);   // fractional JSON number → double
+        props["active"].ShouldBe(true);
+        props["disabled"].ShouldBe(false);
+        props["since"].ShouldBe(new DateTime(2026, 1, 15, 0, 0, 0, DateTimeKind.Utc)); // ISO string → DateTime
+        props["missing"].ShouldBeNull();
+        props["nested"].ShouldBeOfType<JsonElement>(); // nested object preserved as raw element
 
         config.Columns.Count.ShouldBe(2);
         config.Columns[0].Type.ShouldBe(ColumnType.Integer); // enum read from string

@@ -68,33 +68,10 @@ public sealed class JsonReportConfigParser : IReportConfigParser
                 _ => JsonDocument.ParseValue(ref reader).RootElement.Clone(),
             };
 
-        public override void Write(Utf8JsonWriter writer, object? value, JsonSerializerOptions options)
-        {
-            switch (value)
-            {
-                case null:
-                    writer.WriteNullValue();
-                    break;
-                case string s:
-                    writer.WriteStringValue(s);
-                    break;
-                case bool b:
-                    writer.WriteBooleanValue(b);
-                    break;
-                case long l:
-                    writer.WriteNumberValue(l);
-                    break;
-                case double d:
-                    writer.WriteNumberValue(d);
-                    break;
-                case DateTime dt:
-                    writer.WriteStringValue(dt.ToString("O", CultureInfo.InvariantCulture));
-                    break;
-                default:
-                    JsonSerializer.Serialize(writer, value, value.GetType(), options);
-                    break;
-            }
-        }
+        // Report configurations are read-only data: the parser never serializes them, so the
+        // write direction is intentionally unsupported (IReportConfigParser exposes only Parse).
+        public override void Write(Utf8JsonWriter writer, object? value, JsonSerializerOptions options) =>
+            throw new NotSupportedException("Report configurations are parsed, not serialized.");
 
         private static object? ConvertString(string? text)
         {
