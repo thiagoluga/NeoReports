@@ -111,9 +111,13 @@ destinations and jobs are untouched. See **D21**.
   JSON captured into the config), and the compiler applies it. **Acceptance:** operator
   coverage + a filtered E2E. ✅ 48 green Core tests (+15); sample 04 now filters
   (`Amount > 250` → 3 of 5 rows). **Depends on:** A1.
-- [ ] **A5 — DI + dynamic trigger.** `AddReportsFromConfig(...)` (file/dir/json) and an
-  optional dynamic-config trigger endpoint. **Acceptance:** register from JSON and run
-  via the AspNetCore endpoints. **Depends on:** A2, A4, PR 7.
+- [x] **A5 — DI + dynamic trigger.** `AddReportFromConfig` / `AddReportFromConfigFile` /
+  `AddReportsFromConfigDirectory` register config reports; they compile lazily on first
+  registry resolution (so providers/factories need only be present by then) and are
+  runnable **by name** through the standard runner and the existing AspNetCore endpoints —
+  no separate endpoint, and no running arbitrary config from a request body (a deliberate
+  safety choice). **Acceptance:** register from JSON/file/dir and run by name. ✅ 51 green
+  Core tests (+3); samples 04 and 05 now use the DI sugar. **Depends on:** A2, A4, PR 7.
 
 ## Epic B — Multi-source & multi-sheet XLSX (possibly paid)
 

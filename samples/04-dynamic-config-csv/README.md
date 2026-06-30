@@ -1,8 +1,9 @@
 # 04 — dynamic config → CSV (the dynamic path)
 
-Defines a report entirely in [`report.json`](report.json) — **no typed POCO**. The JSON is parsed
-into a `ReportConfig` and compiled into the same runnable report the fluent builder produces; rows
-flow through the existing pipeline as positional `ReportRecord`s.
+Defines a report entirely in [`report.json`](report.json) — **no typed POCO**. The config is
+registered with `services.AddReportFromConfigFile(...)` and then **run by name** like any code-first
+report; under the hood it compiles into the same runnable report the fluent builder produces, and
+rows flow through the existing pipeline as positional `ReportRecord`s.
 
 ```bash
 dotnet run --project samples/04-dynamic-config-csv
