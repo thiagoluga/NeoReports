@@ -24,6 +24,7 @@
     <PackageReference Include="ClosedXML" />
     <PackageReference Include="Xunit.SkippableFact" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
   </ItemGroup>
 
 </Project>

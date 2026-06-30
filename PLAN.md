@@ -98,9 +98,12 @@ destinations and jobs are untouched. See **D21**.
   `IWriterFactory`, `IDestinationFactory`). Filter is parsed but deferred to A4 (compiler
   rejects it explicitly). **Acceptance:** golden config → compiled, runnable report. ✅ 33
   green Core tests (+7). **Depends on:** A1.
-- [ ] **A3 — SQL source from config.** Keyset SQL source driven by config (connection
-  name/string · sql · key · pageSize), materializing columns to `ReportRecord` by
-  name/ordinal. **Acceptance:** Testcontainers E2E config→SQL→CSV. **Depends on:** A2, A3 reuses v1 keyset.
+- [x] **A3 — SQL source from config.** `SqlConfigSourceProvider` (`type: "sql"`) reads
+  connectionString/sql/key/pageSize from the source properties and materializes
+  `ReportRecord`s by schema-column name, reusing the v1 keyset engine (an additive internal
+  materializer overload on `SqlKeysetSource<T>`); `AddSqlConfigSource()` DI helper.
+  **Acceptance:** Testcontainers E2E config→SQL→CSV. ✅ 6 green SQL integration tests
+  (4 typed + 2 dynamic). **Depends on:** A2, reuses v1 keyset.
 - [ ] **A4 — JsonLogic filter.** Compile a JsonLogic expression to
   `Func<ReportRecord,bool>` evaluated on the dynamic row. **Acceptance:** operator
   coverage + a filtered E2E. **Depends on:** A1.
