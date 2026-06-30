@@ -117,7 +117,7 @@ public static class ServiceCollectionExtensions
         // service provider — and thus the source/format/destination providers — is available.
         services.AddSingleton<IReportRegistry>(serviceProvider =>
         {
-            foreach (var config in serviceProvider.GetServices<ReportConfig>())
+            foreach (ReportConfig config in serviceProvider.GetServices<ReportConfig>())
                 registry.Register(ReportConfigCompiler.Compile(config, serviceProvider));
             return registry;
         });
