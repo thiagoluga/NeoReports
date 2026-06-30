@@ -1,0 +1,18 @@
+{
+  "name": "monthly-sales",
+  "pageSize": 100,
+  "source": {
+    "type": "inmemory",
+    "properties": { "rows": 5 }
+  },
+  "columns": [
+    { "name": "Id", "type": "Integer", "displayName": "Sale ID", "nullable": false },
+    { "name": "Customer", "type": "String" },
+    { "name": "Amount", "type": "Decimal", "displayName": "Amount", "format": "C2", "culture": "pt-BR" },
+    { "name": "Date", "type": "DateTime", "displayName": "Sale Date", "format": "yyyy-MM-dd" }
+  ],
+  "outputs": [ { "format": "csv" } ],
+  "destinations": [
+    { "type": "local", "properties": { "path": "./out/{name}-{date:yyyy-MM-dd}.{ext}" } }
+  ]
+}

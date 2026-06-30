@@ -91,10 +91,13 @@ destinations and jobs are untouched. See **D21**.
   v1 pipeline runs with `T = ReportRecord` unchanged. **Acceptance:** dynamic rows reach
   CSV byte-identically to the typed path for the same data. ✅ 26 green Core tests (+4).
   **Depends on:** v1.
-- [ ] **A2 — Config model + parser.** `ReportConfig` DTOs (source · columns ·
-  filter · outputs · destinations · retry · onFailure) + `IReportConfigParser` (JSON).
-  Maps a parsed config to a runnable registration. **Acceptance:** golden config →
-  registered, runnable report. **Depends on:** A1.
+- [x] **A2 — Config model + parser.** Serializer-agnostic `ReportConfig` DTOs (source ·
+  columns · outputs · destinations) + `IReportConfigParser` (JSON) in Abstractions;
+  `ReportConfigCompiler` (Core) turns a parsed config into a runnable `CompiledReport`,
+  resolving source/format/destination from DI by stable id (`IConfigSourceProvider`,
+  `IWriterFactory`, `IDestinationFactory`). Filter is parsed but deferred to A4 (compiler
+  rejects it explicitly). **Acceptance:** golden config → compiled, runnable report. ✅ 33
+  green Core tests (+7). **Depends on:** A1.
 - [ ] **A3 — SQL source from config.** Keyset SQL source driven by config (connection
   name/string · sql · key · pageSize), materializing columns to `ReportRecord` by
   name/ordinal. **Acceptance:** Testcontainers E2E config→SQL→CSV. **Depends on:** A2, A3 reuses v1 keyset.
