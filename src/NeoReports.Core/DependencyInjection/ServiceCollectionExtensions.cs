@@ -63,7 +63,7 @@ public static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configJson);
 
         services.AddNeoReports();
-        var config = new JsonReportConfigParser().Parse(configJson);
+        ReportConfig config = new JsonReportConfigParser().Parse(configJson);
         services.AddSingleton(config);
         return services;
     }
@@ -91,7 +91,7 @@ public static class ServiceCollectionExtensions
         if (!Directory.Exists(directory))
             throw new DirectoryNotFoundException($"Report config directory not found: {directory}");
 
-        foreach (var file in Directory.EnumerateFiles(directory, searchPattern).OrderBy(f => f, StringComparer.Ordinal))
+        foreach (string file in Directory.EnumerateFiles(directory, searchPattern).OrderBy(f => f, StringComparer.Ordinal))
             services.AddReportFromConfig(File.ReadAllText(file));
 
         return services;

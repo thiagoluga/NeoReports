@@ -17,6 +17,8 @@ namespace NeoReports.Core.UnitTests;
 /// </summary>
 public class DynamicConfigDiTests
 {
+    private static readonly string[] AlphaBeta = { "alpha", "beta" };
+
     private static string ConfigNamed(string name) => $$"""
     {
       "name": "{{name}}",
@@ -54,12 +56,12 @@ public class DynamicConfigDiTests
     [Fact]
     public void Loads_every_config_from_a_directory()
     {
-        var directory = Path.Combine(Path.GetTempPath(), "nr-cfg-" + Guid.NewGuid().ToString("N"));
+        var directory = Path.Join(Path.GetTempPath(), "nr-cfg-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         try
         {
-            File.WriteAllText(Path.Combine(directory, "a.json"), ConfigNamed("alpha"));
-            File.WriteAllText(Path.Combine(directory, "b.json"), ConfigNamed("beta"));
+            File.WriteAllText(Path.Join(directory, "a.json"), ConfigNamed("alpha"));
+            File.WriteAllText(Path.Join(directory, "b.json"), ConfigNamed("beta"));
 
             var services = new ServiceCollection();
             services.AddLogging();
@@ -70,7 +72,7 @@ public class DynamicConfigDiTests
             using var provider = services.BuildServiceProvider();
 
             var registry = provider.GetRequiredService<IReportRegistry>();
-            registry.Names.ShouldBe(new[] { "alpha", "beta" }, ignoreOrder: true);
+            registry.Names.ShouldBe(AlphaBeta, ignoreOrder: true);
         }
         finally
         {
