@@ -31,12 +31,6 @@ public static class ReportConfigCompiler
             throw new ConfigurationException($"Report '{config.Name}' has no columns.");
         if (config.Outputs is null || config.Outputs.Count == 0)
             throw new ConfigurationException($"Report '{config.Name}' has no outputs.");
-        if (config.Filter is not null)
-        {
-            throw new ConfigurationException(
-                $"Report '{config.Name}' declares a filter, but dynamic filters require the JsonLogic " +
-                "compiler (Epic A4), which is not available yet.");
-        }
 
         var columns = new ColumnDefinition<ReportRecord>[config.Columns.Count];
         for (var i = 0; i < config.Columns.Count; i++)
@@ -65,6 +59,9 @@ public static class ReportConfigCompiler
 
         if (config.PageSize is int pageSize)
             builder.WithPageSize(pageSize);
+
+        if (config.Filter is not null)
+            builder.Filter(JsonLogicFilter.Compile(config.Filter));
 
         foreach (OutputSpec output in outputs)
             builder.To(output);

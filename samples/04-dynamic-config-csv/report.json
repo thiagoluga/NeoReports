@@ -11,6 +11,7 @@
     { "name": "Amount", "type": "Decimal", "displayName": "Amount", "format": "C2", "culture": "pt-BR" },
     { "name": "Date", "type": "DateTime", "displayName": "Sale Date", "format": "yyyy-MM-dd" }
   ],
+  "filter": { ">": [ { "var": "Amount" }, 250 ] },
   "outputs": [ { "format": "csv" } ],
   "destinations": [
     { "type": "local", "properties": { "path": "./out/{name}-{date:yyyy-MM-dd}.{ext}" } }

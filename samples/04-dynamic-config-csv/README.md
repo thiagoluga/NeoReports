@@ -14,6 +14,8 @@ What the JSON drives today:
 - the report **name** and **page size**;
 - the **source** selection by id (`"type": "inmemory"`) and its properties (`rows`);
 - the **columns / schema**: name, semantic type, header, format and culture;
+- the **filter**: a JsonLogic expression (here `{ ">": [ { "var": "Amount" }, 250 ] }`) keeps only
+  the matching rows;
 - the **outputs** and **destinations** selection by id (`"csv"`, `"local"`).
 
 This sample keeps an in-memory source so it runs with no database. The real **SQL** config source
