@@ -8,6 +8,10 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-06-30
+
+First public release.
+
 ### Added
 - `NeoReports.Abstractions` — frozen, typed-only public contract (schema, data,
   sources, formats, destinations, resilience, jobs, extensibility, exceptions).
@@ -40,4 +44,5 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   source-link, and a per-package README. Tests, samples and benchmarks are not
   packable.
 
-[Unreleased]: https://github.com/thiagoluga/NeoReports/commits/master
+[Unreleased]: https://github.com/thiagoluga/NeoReports/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/thiagoluga/NeoReports/releases/tag/v1.0.0
