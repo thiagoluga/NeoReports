@@ -100,5 +100,6 @@ public class DynamicConfigSqlTests : IClassFixture<SqlServerFixture>, IDisposabl
     {
         if (Directory.Exists(_outDir))
             Directory.Delete(_outDir, recursive: true);
+        GC.SuppressFinalize(this);
     }
 }

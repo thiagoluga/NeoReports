@@ -23,11 +23,11 @@ public sealed class SqlConfigSourceProvider : IConfigSourceProvider
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(schema);
 
-        var properties = source.Properties;
-        var connectionString = RequireString(properties, "connectionString");
-        var sql = RequireString(properties, "sql");
-        var key = RequireString(properties, "key");
-        var pageSize = OptionalInt(properties, "pageSize") ?? 1000;
+        IReadOnlyDictionary<string, object?>? properties = source.Properties;
+        string connectionString = RequireString(properties, "connectionString");
+        string sql = RequireString(properties, "sql");
+        string key = RequireString(properties, "key");
+        int pageSize = OptionalInt(properties, "pageSize") ?? 1000;
 
         return new SqlKeysetSource<ReportRecord>(
             connectionString, sql, key, pageSize, schema,
@@ -41,7 +41,7 @@ public sealed class SqlConfigSourceProvider : IConfigSourceProvider
         var values = new object?[schema.Count];
         for (var i = 0; i < schema.Count; i++)
         {
-            values[i] = ordinalByName.TryGetValue(schema.Columns[i].Name, out var ordinal) && !reader.IsDBNull(ordinal)
+            values[i] = ordinalByName.TryGetValue(schema.Columns[i].Name, out int ordinal) && !reader.IsDBNull(ordinal)
                 ? reader.GetValue(ordinal)
                 : null;
         }
@@ -72,7 +72,7 @@ public sealed class SqlConfigSourceProvider : IConfigSourceProvider
             int i => i,
             long l => checked((int)l),
             double d => (int)d,
-            string s when int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) => parsed,
+            string s when int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed) => parsed,
             JsonElement { ValueKind: JsonValueKind.Number } e => e.GetInt32(),
             _ => throw new ConfigurationException(
                 $"The SQL source property '{key}' must be an integer (was {value.GetType().Name})."),
