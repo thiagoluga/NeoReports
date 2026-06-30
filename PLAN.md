@@ -67,6 +67,62 @@ Small, independent PRs, in order. Each one closes with green tests and closes on
 
 ---
 
-## Post-MVP (do not start before validating with users)
+# NeoReports — Implementation Plan (v2 / post-MVP)
 
-Likely order once there's traction: dynamic path (config + JsonLogic) → **Blazor UI from the Claude Design handoff** → variants/pipeline → multi-worker + mid-job resume → remaining sources/formats/destinations. Reminder: any UI work always starts from the Claude Design deliverables, never from invented design.
+v1 shipped (PR 0–8, published to NuGet as 1.0.0). v2 reopens scope deliberately:
+every epic below was kept *possible* by the frozen `Abstractions` (D1/D9 — "close no
+door"), so each addition is an **additive, SemVer-minor** change, never a rework.
+
+**Order (locked with the maintainer):** Epic A (dynamic path) → Epic B (multi-source /
+multi-sheet) → validation gate → **Epic C (Blazor UI) last**. Same rules as v1: one
+small PR per item, green tests, and a recorded ADR entry before any out-of-v1-scope
+code. See **D21–D25** in `DECISIONS.md`.
+
+## Epic A — Dynamic path (config-driven reports)
+
+Run reports from JSON config with no compile-time POCO, reusing the *entire* existing
+pipeline. The row type is a positional `ReportRecord` (`object?[]` aligned to a declared
+`ReportSchema`); the writer edge already speaks `object?[]` + schema (D1), so writers,
+destinations and jobs are untouched. See **D21**.
+
+- [ ] **A1 — `ReportRecord` + dynamic pipeline.** Reintroduce the positional row type
+  (Abstractions, additive) and a `ReportRecord` `IBatchSource`. Prove the existing
+  pipeline runs end-to-end with `T = ReportRecord` against an in-memory source.
+  **Acceptance:** dynamic rows reach CSV/XLSX byte-identically to the typed path for the
+  same data. **Depends on:** v1.
+- [ ] **A2 — Config model + parser.** `ReportConfig` DTOs (source · columns ·
+  filter · outputs · destinations · retry · onFailure) + `IReportConfigParser` (JSON).
+  Maps a parsed config to a runnable registration. **Acceptance:** golden config →
+  registered, runnable report. **Depends on:** A1.
+- [ ] **A3 — SQL source from config.** Keyset SQL source driven by config (connection
+  name/string · sql · key · pageSize), materializing columns to `ReportRecord` by
+  name/ordinal. **Acceptance:** Testcontainers E2E config→SQL→CSV. **Depends on:** A2, A3 reuses v1 keyset.
+- [ ] **A4 — JsonLogic filter.** Compile a JsonLogic expression to
+  `Func<ReportRecord,bool>` evaluated on the dynamic row. **Acceptance:** operator
+  coverage + a filtered E2E. **Depends on:** A1.
+- [ ] **A5 — DI + dynamic trigger.** `AddReportsFromConfig(...)` (file/dir/json) and an
+  optional dynamic-config trigger endpoint. **Acceptance:** register from JSON and run
+  via the AspNetCore endpoints. **Depends on:** A2, A4, PR 7.
+
+## Epic B — Multi-source & multi-sheet XLSX (possibly paid)
+
+Tracked in `memory/open-questions.md`; monetization (free vs paid) is **TBD with the
+maintainer** before building. See **D22** (multi-sheet) and **D23** (multi-source).
+
+- [ ] **B1 — Multi-sheet XLSX.** One workbook, several sheets, each fed by a different
+  filter (and later a different source). Needs a writer that targets a named sheet within
+  a shared workbook without breaking the single-pass read. **Acceptance:** TBD with the
+  recorded decision.
+- [ ] **B2 — Multi-source reports.** Any report assembled from several sources
+  (join/enrich) into one output. Likely the headline paid feature. **Acceptance:** TBD.
+
+## Validation gate (do not skip before Epic C)
+
+Validate Epic A/B with real users before investing in UI. This is a maintainer activity,
+not a coding task — it gates Epic C.
+
+## Epic C — Blazor UI (LAST)
+
+Blazor Server + MudBlazor, built **only** from the Claude Design handoff
+(`tokens.css`, `components.html`, per-screen `.html`, `handoff.md` — see the ADR). Never
+invent design. Deliberately last per the maintainer. See **D24**.
