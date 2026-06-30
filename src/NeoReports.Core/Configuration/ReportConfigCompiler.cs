@@ -41,7 +41,7 @@ public static class ReportConfigCompiler
         var columns = new ColumnDefinition<ReportRecord>[config.Columns.Count];
         for (var i = 0; i < config.Columns.Count; i++)
         {
-            var c = config.Columns[i];
+            ColumnConfig c = config.Columns[i];
             columns[i] = ReportColumns.Positional(i, c.Name, c.Type, c.Nullable, c.DisplayName, c.Format, c.Culture);
         }
 
@@ -49,26 +49,26 @@ public static class ReportConfigCompiler
 
         // Resolve every registration up front (fail fast on a missing provider/factory) before
         // instantiating the source, which may open connections.
-        var sourceProvider = ResolveSource(services, config.Source.Type);
-        var outputs = config.Outputs
+        IConfigSourceProvider sourceProvider = ResolveSource(services, config.Source.Type);
+        OutputSpec[] outputs = config.Outputs
             .Select(o => new OutputSpec(ResolveWriter(services, o.Format), o.Properties))
             .ToArray();
-        var destinations = config.Destinations?
+        DestinationSpec[] destinations = config.Destinations?
             .Select(d => new DestinationSpec(ResolveDestination(services, d.Type), d.Properties))
             .ToArray() ?? Array.Empty<DestinationSpec>();
 
-        var source = sourceProvider.Create(config.Source, schema, services);
+        IBatchSource<ReportRecord> source = sourceProvider.Create(config.Source, schema, services);
 
-        var builder = new ReportBuilder<ReportRecord>(config.Name)
+        ReportBuilder<ReportRecord> builder = new ReportBuilder<ReportRecord>(config.Name)
             .From(source)
             .Columns(columns);
 
         if (config.PageSize is int pageSize)
             builder.WithPageSize(pageSize);
 
-        foreach (var output in outputs)
+        foreach (OutputSpec output in outputs)
             builder.To(output);
-        foreach (var destination in destinations)
+        foreach (DestinationSpec destination in destinations)
             builder.UploadTo(destination);
 
         return builder.Build();
@@ -76,7 +76,7 @@ public static class ReportConfigCompiler
 
     private static IConfigSourceProvider ResolveSource(IServiceProvider services, string type)
     {
-        var provider = services.GetServices<IConfigSourceProvider>()
+        IConfigSourceProvider? provider = services.GetServices<IConfigSourceProvider>()
             .FirstOrDefault(p => string.Equals(p.Type, type, StringComparison.OrdinalIgnoreCase));
         return provider ?? throw new ConfigurationException(
             $"No source provider is registered for type '{type}'. Register an IConfigSourceProvider with that Type.");
@@ -84,7 +84,7 @@ public static class ReportConfigCompiler
 
     private static IWriterFactory ResolveWriter(IServiceProvider services, string format)
     {
-        var factory = services.GetServices<IWriterFactory>()
+        IWriterFactory? factory = services.GetServices<IWriterFactory>()
             .FirstOrDefault(f => string.Equals(f.Format, format, StringComparison.OrdinalIgnoreCase));
         return factory ?? throw new ConfigurationException(
             $"No writer factory is registered for format '{format}'. Register an IWriterFactory with that Format.");
@@ -92,7 +92,7 @@ public static class ReportConfigCompiler
 
     private static IDestinationFactory ResolveDestination(IServiceProvider services, string type)
     {
-        var factory = services.GetServices<IDestinationFactory>()
+        IDestinationFactory? factory = services.GetServices<IDestinationFactory>()
             .FirstOrDefault(f => string.Equals(f.Type, type, StringComparison.OrdinalIgnoreCase));
         return factory ?? throw new ConfigurationException(
             $"No destination factory is registered for type '{type}'. Register an IDestinationFactory with that Type.");

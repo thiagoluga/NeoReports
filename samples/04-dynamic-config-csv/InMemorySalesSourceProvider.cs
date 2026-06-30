@@ -29,7 +29,7 @@ internal sealed class InMemorySalesSourceProvider : IConfigSourceProvider
                 (long)i,
                 $"Customer {i}",
                 i * 100.5m,
-                new DateTime(2026, 1, 1).AddDays(i - 1),
+                new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddDays(i - 1),
             }));
         }
 

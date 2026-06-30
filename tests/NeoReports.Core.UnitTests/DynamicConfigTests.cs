@@ -44,7 +44,7 @@ public class DynamicConfigTests
     }
     """;
 
-    private static readonly IReportConfigParser Parser = new JsonReportConfigParser();
+    private static readonly JsonReportConfigParser Parser = new();
 
     private static ReportExecutionContext Exec() =>
         new(Guid.NewGuid().ToString("N"), "sales", null, NullLogger.Instance, CancellationToken.None);

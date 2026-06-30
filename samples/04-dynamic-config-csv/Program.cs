@@ -9,17 +9,17 @@ using NeoReports.Samples.DynamicConfigCsv;
 
 // Sample 04 — config-driven report (the dynamic path).
 //
-// The whole report is defined in report.json: there is NO typed POCO. Rows flow through the same
-// pipeline as the typed path as positional ReportRecords. What the JSON fully drives today: the
-// report name, the source selection (by id), the columns/schema (name, type, header, format,
-// culture), and the selection of outputs/destinations (by id).
+// The whole report is defined in report.json, with no typed POCO. Rows flow through the same
+// pipeline as the typed path, as positional ReportRecords. The JSON fully drives the report name,
+// the source selection by id, the columns and schema (name, type, header, format and culture) and
+// the selection of outputs and destinations by id.
 //
-// Standing in for things not built yet:
-//   - the SQL config source arrives in A3, so an in-memory IConfigSourceProvider provides the rows;
-//   - binding format/destination *options* from config arrives later (A5), so the CSV and Local
-//     factories are pre-wired in DI (the JSON's output/destination "properties" are illustrative).
+// Two pieces are still standing in. The SQL config source arrives in A3, so for now an in-memory
+// source provider supplies the rows. Binding format and destination options from config arrives
+// later in A5, so the CSV and Local factories are pre-wired in DI and the JSON properties under
+// outputs and destinations are illustrative.
 //
-//   dotnet run --project samples/04-dynamic-config-csv
+// Run with: dotnet run --project samples/04-dynamic-config-csv
 
 var configPath = Path.Combine(AppContext.BaseDirectory, "report.json");
 var json = await File.ReadAllTextAsync(configPath);

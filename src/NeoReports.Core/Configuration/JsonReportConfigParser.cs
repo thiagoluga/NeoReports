@@ -81,7 +81,7 @@ public sealed class JsonReportConfigParser : IReportConfigParser
             // Recover round-tripped ISO-8601 timestamps as DateTime so date parameters bind
             // correctly downstream. RoundtripKind honors any 'Z'/offset and must not be combined
             // with AdjustToUniversal/AssumeUniversal (.NET rejects that pairing).
-            if (DateTime.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var dt))
+            if (DateTime.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out DateTime dt))
                 return dt;
 
             return text;
