@@ -11,6 +11,7 @@ namespace NeoReports.Core.Configuration;
 /// <c>{"var": "Name"}</c> reads a column by name; the supported operators are <c>==</c>, <c>===</c>,
 /// <c>!=</c>, <c>!==</c>, <c>&gt;</c>, <c>&gt;=</c>, <c>&lt;</c>, <c>&lt;=</c>, <c>and</c>, <c>or</c>,
 /// <c>!</c>, <c>!!</c> and <c>in</c>. Unknown operators raise a <see cref="ConfigurationException"/>.
+/// Numeric comparisons use <see cref="decimal"/> for exact equality on ids and money.
 /// </summary>
 public static class JsonLogicFilter
 {
@@ -26,7 +27,7 @@ public static class JsonLogicFilter
         JsonElement root;
         try
         {
-            using var document = JsonDocument.Parse(expression);
+            using JsonDocument document = JsonDocument.Parse(expression);
             root = document.RootElement.Clone();
         }
         catch (JsonException ex)
@@ -34,7 +35,7 @@ public static class JsonLogicFilter
             throw new ConfigurationException($"Invalid JsonLogic filter: {ex.Message}", ex);
         }
 
-        var evaluate = Build(root);
+        Func<ReportRecord, object?> evaluate = Build(root);
         return record => IsTruthy(evaluate(record));
     }
 
@@ -45,14 +46,16 @@ public static class JsonLogicFilter
             case JsonValueKind.Object:
                 return BuildOperation(node);
             case JsonValueKind.Array:
-                var items = node.EnumerateArray().Select(Build).ToArray();
+                Func<ReportRecord, object?>[] items = node.EnumerateArray().Select(Build).ToArray();
                 return record => items.Select(f => f(record)).ToList();
             case JsonValueKind.String:
-                var text = node.GetString();
+                string? text = node.GetString();
                 return _ => text;
             case JsonValueKind.Number:
-                var number = node.TryGetInt64(out var l) ? l : node.GetDouble();
-                return _ => number;
+                if (node.TryGetInt64(out long longValue))
+                    return _ => longValue;
+                double doubleValue = node.GetDouble();
+                return _ => doubleValue;
             case JsonValueKind.True:
                 return _ => true;
             case JsonValueKind.False:
@@ -65,20 +68,20 @@ public static class JsonLogicFilter
     private static Func<ReportRecord, object?> BuildOperation(JsonElement node)
     {
         // A JsonLogic operation is a single-key object: { "op": args }.
-        var properties = node.EnumerateObject().ToArray();
+        JsonProperty[] properties = node.EnumerateObject().ToArray();
         if (properties.Length != 1)
             throw new ConfigurationException("A JsonLogic operation must be an object with exactly one operator key.");
 
-        var op = properties[0].Name;
-        var value = properties[0].Value;
-        var args = value.ValueKind == JsonValueKind.Array
+        string op = properties[0].Name;
+        JsonElement value = properties[0].Value;
+        Func<ReportRecord, object?>[] args = value.ValueKind == JsonValueKind.Array
             ? value.EnumerateArray().Select(Build).ToArray()
             : new[] { Build(value) };
 
         return op switch
         {
             "var" => BuildVar(value),
-            "==" => Binary(args, op, (a, b) => LooseEquals(a, b)),
+            "==" => Binary(args, op, LooseEquals),
             "!=" => Binary(args, op, (a, b) => !LooseEquals(a, b)),
             "===" => Binary(args, op, StrictEquals),
             "!==" => Binary(args, op, (a, b) => !StrictEquals(a, b)),
@@ -100,11 +103,11 @@ public static class JsonLogicFilter
         // {"var": "Name"} or {"var": ["Name", default]}.
         string? name;
         JsonElement defaultElement = default;
-        var hasDefault = false;
+        bool hasDefault = false;
 
         if (value.ValueKind == JsonValueKind.Array)
         {
-            var parts = value.EnumerateArray().ToArray();
+            JsonElement[] parts = value.EnumerateArray().ToArray();
             name = parts.Length > 0 ? parts[0].GetString() : null;
             if (parts.Length > 1)
             {
@@ -120,20 +123,20 @@ public static class JsonLogicFilter
         if (string.IsNullOrEmpty(name))
             throw new ConfigurationException("A JsonLogic 'var' requires a column name.");
 
-        var column = name;
-        var fallback = hasDefault ? Build(defaultElement) : null;
-        return record => record.TryGet(column, out var v) ? v : fallback?.Invoke(record);
+        string column = name;
+        Func<ReportRecord, object?>? fallback = hasDefault ? Build(defaultElement) : null;
+        return record => record.TryGet(column, out object? v) ? v : fallback?.Invoke(record);
     }
 
     private static Func<ReportRecord, object?> BuildIn(Func<ReportRecord, object?>[] args, string op)
     {
         Require(args, 2, op);
-        var needle = args[0];
-        var haystack = args[1];
+        Func<ReportRecord, object?> needle = args[0];
+        Func<ReportRecord, object?> haystack = args[1];
         return record =>
         {
-            var n = needle(record);
-            var h = haystack(record);
+            object? n = needle(record);
+            object? h = haystack(record);
             if (h is string s)
                 return n is not null && s.Contains(Stringify(n), StringComparison.Ordinal);
             if (h is IEnumerable enumerable and not string)
@@ -146,15 +149,15 @@ public static class JsonLogicFilter
         Func<ReportRecord, object?>[] args, string op, Func<object?, object?, bool> predicate)
     {
         Require(args, 2, op);
-        var left = args[0];
-        var right = args[1];
+        Func<ReportRecord, object?> left = args[0];
+        Func<ReportRecord, object?> right = args[1];
         return record => predicate(left(record), right(record));
     }
 
     private static object EvaluateAnd(Func<ReportRecord, object?>[] args, ReportRecord record)
     {
         object? last = true;
-        foreach (var arg in args)
+        foreach (Func<ReportRecord, object?> arg in args)
         {
             last = arg(record);
             if (!IsTruthy(last))
@@ -167,7 +170,7 @@ public static class JsonLogicFilter
     private static object EvaluateOr(Func<ReportRecord, object?>[] args, ReportRecord record)
     {
         object? last = false;
-        foreach (var arg in args)
+        foreach (Func<ReportRecord, object?> arg in args)
         {
             last = arg(record);
             if (IsTruthy(last))
@@ -190,8 +193,8 @@ public static class JsonLogicFilter
     {
         if (a is null || b is null)
             return a is null && b is null;
-        if (TryToDouble(a, out var da) && TryToDouble(b, out var db))
-            return da.Equals(db);
+        if (TryToNumber(a, out decimal na) && TryToNumber(b, out decimal nb))
+            return na == nb;
         return string.Equals(Stringify(a), Stringify(b), StringComparison.Ordinal);
     }
 
@@ -199,15 +202,15 @@ public static class JsonLogicFilter
     {
         if (a is null || b is null)
             return a is null && b is null;
-        if (TryToDouble(a, out var da) && TryToDouble(b, out var db))
-            return da.Equals(db);
+        if (TryToNumber(a, out decimal na) && TryToNumber(b, out decimal nb))
+            return na == nb;
         return a.GetType() == b.GetType() && a.Equals(b);
     }
 
     private static int Compare(object? a, object? b)
     {
-        if (TryToDouble(a, out var da) && TryToDouble(b, out var db))
-            return da.CompareTo(db);
+        if (TryToNumber(a, out decimal na) && TryToNumber(b, out decimal nb))
+            return na.CompareTo(nb);
         if (a is DateTime dta && b is DateTime dtb)
             return dta.CompareTo(dtb);
         return string.CompareOrdinal(Stringify(a), Stringify(b));
@@ -219,18 +222,19 @@ public static class JsonLogicFilter
         bool b => b,
         string s => s.Length > 0,
         IEnumerable enumerable => enumerable.Cast<object?>().Any(),
-        _ => !TryToDouble(value, out var d) || d != 0,
+        _ => !TryToNumber(value, out decimal n) || n != decimal.Zero,
     };
 
-    private static bool TryToDouble(object? value, out double result)
+    // Numbers are compared as decimal so ids and money compare exactly (no floating-point equality).
+    private static bool TryToNumber(object? value, out decimal result)
     {
         switch (value)
         {
             case sbyte or byte or short or ushort or int or uint or long or ulong or float or double or decimal:
-                result = Convert.ToDouble(value, CultureInfo.InvariantCulture);
+                result = Convert.ToDecimal(value, CultureInfo.InvariantCulture);
                 return true;
             default:
-                result = 0;
+                result = decimal.Zero;
                 return false;
         }
     }
