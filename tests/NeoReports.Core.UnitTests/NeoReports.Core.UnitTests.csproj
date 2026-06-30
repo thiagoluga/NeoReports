@@ -10,6 +10,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\NeoReports.Core\NeoReports.Core.csproj" />
+    <!-- Formats.Csv (Abstractions + Core only, no native deps) backs the byte-identical
+         dynamic-vs-typed equivalence test; it needs no container/runtime. -->
+    <ProjectReference Include="..\..\src\Formats\NeoReports.Formats.Csv\NeoReports.Formats.Csv.csproj" />
   </ItemGroup>
 
   <ItemGroup>
