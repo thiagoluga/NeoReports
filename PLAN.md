@@ -119,17 +119,30 @@ destinations and jobs are untouched. See **D21**.
   safety choice). **Acceptance:** register from JSON/file/dir and run by name. ✅ 51 green
   Core tests (+3); samples 04 and 05 now use the DI sugar. **Depends on:** A2, A4, PR 7.
 
-## Epic B — Multi-source & multi-sheet XLSX (possibly paid)
+## Epic B — Multi-sheet XLSX (first paid "Pro" feature), then multi-source
 
-Tracked in `memory/open-questions.md`; monetization (free vs paid) is **TBD with the
-maintainer** before building. See **D22** (multi-sheet) and **D23** (multi-source).
+Maintainer decisions (locked): **start with multi-sheet XLSX (B1)**, shipped as a **paid, separate
+"Pro" package** (commercial license), leaving the OSS core MIT. See the design blueprint in
+[`docs/epic-b1-multisheet-pro.md`](docs/epic-b1-multisheet-pro.md), **D22** (multi-sheet) and **D27**
+(Pro package model). Some sub-decisions (package name, license type/enforcement, exact OSS/Pro
+boundary) are still open in that doc and must be settled before B1.2.
 
-- [ ] **B1 — Multi-sheet XLSX.** One workbook, several sheets, each fed by a different
-  filter (and later a different source). Needs a writer that targets a named sheet within
-  a shared workbook without breaking the single-pass read. **Acceptance:** TBD with the
-  recorded decision.
-- [ ] **B2 — Multi-source reports.** Any report assembled from several sources
-  (join/enrich) into one output. Likely the headline paid feature. **Acceptance:** TBD.
+### B1 — Multi-sheet XLSX (Pro)
+
+- [ ] **B1.1 — OSS multi-section hook (MIT).** An output may carry sections `(name, filter, columns)`;
+  the pipeline drives per-section projection + a section-aware write, single-pass preserved. Tests
+  with a fake section writer.
+- [ ] **B1.2 — `NeoReports.Xlsx.Pro` package (commercial).** Fluent `XlsxWorkbook(...)` API + ClosedXML
+  workbook writer (one named sheet per section). Placeholder commercial LICENSE/metadata. Golden-file
+  test.
+- [ ] **B1.3 — Packaging & CI.** Pro package builds/packs but is excluded from the OSS NuGet release.
+- [ ] **B1.4 — Sample** `06-multi-sheet-xlsx` (typed: Approved/Rejected sheets).
+- [ ] **B1.5 — Dynamic config** support for `xlsx-workbook` (optional, after the typed API settles).
+
+### B2 — Multi-source reports (later)
+
+- [ ] Any report assembled from several sources (join/enrich) into one output — likely also Pro.
+  Design (join semantics, memory/perf) recorded before coding. See **D23**.
 
 ## Validation gate (do not skip before Epic C)
 
