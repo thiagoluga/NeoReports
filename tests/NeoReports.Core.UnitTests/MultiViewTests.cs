@@ -18,6 +18,7 @@ public class MultiViewTests
     private static readonly long[] EvenIds = { 2, 4 };
     private static readonly long[] OddIds = { 1, 3 };
     private static readonly string[] OddCustomers = { "C1", "C3" };
+    private static readonly string[] EvenOddSections = { "Even", "Odd" };
 
     private static Sale[] Page(params long[] ids) =>
         ids.Select(id => new Sale(id, $"C{id}", id * 10m, DateTime.UnixEpoch)).ToArray();
@@ -121,7 +122,7 @@ public class MultiViewTests
 
         var writer = factory.Last!;
         writer.Finalized.ShouldBeTrue();
-        writer.InitSections.Select(x => x.Name).ShouldBe(new[] { "Even", "Odd" });
+        writer.InitSections.Select(x => x.Name).ShouldBe(EvenOddSections);
 
         // "Even" section: even ids, the report's single column.
         writer.Sections[0].Select(r => (long)r[0]!).ShouldBe(EvenIds);

@@ -105,8 +105,8 @@ public sealed class ReportRunner : IReportRunner
 
             for (var sectionedIndex = 0; sectionedIndex < report.SectionedOutputs.Count; sectionedIndex++)
             {
-                var sectionedSpec = report.SectionedOutputs[sectionedIndex];
-                var writer = sectionedSpec.Spec.Factory.Create(sectionedSpec.Spec.Options, services);
+                CompiledSectionedOutput sectionedSpec = report.SectionedOutputs[sectionedIndex];
+                IReportSectionedWriter writer = sectionedSpec.Spec.Factory.Create(sectionedSpec.Spec.Options, services);
 
                 var fileName = $"{report.Name}.{writer.FileExtension}";
                 var suffix = 2;
@@ -116,7 +116,7 @@ public sealed class ReportRunner : IReportRunner
                     suffix++;
                 }
 
-                var path = Path.Combine(tempDir, fileName);
+                var path = Path.Join(tempDir, fileName);
                 var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
                 await writer.InitializeAsync(
                     new SectionedWriterContext(execution, stream, sectionedSpec.Sections, sectionedSpec.Spec.Options), cancellationToken)
@@ -176,7 +176,7 @@ public sealed class ReportRunner : IReportRunner
 
                     for (var s = 0; s < sectioned.Count; s++)
                     {
-                        var sectionRows = batch.SectionedOutputs[s];
+                        IReadOnlyList<IReadOnlyList<object?[]>> sectionRows = batch.SectionedOutputs[s];
                         for (var sec = 0; sec < sectioned[s].SectionCount; sec++)
                             await sectioned[s].Writer.WriteSectionRowsAsync(sec, sectionRows[sec], cancellationToken).ConfigureAwait(false);
                     }
@@ -224,7 +224,7 @@ public sealed class ReportRunner : IReportRunner
                     bytesWritten += output.SizeBytes;
                 }
 
-                foreach (var output in sectioned)
+                foreach (RunningSectioned output in sectioned)
                 {
                     await output.Writer.FinalizeAsync(cancellationToken).ConfigureAwait(false);
                     await output.Writer.DisposeAsync().ConfigureAwait(false);
@@ -242,7 +242,7 @@ public sealed class ReportRunner : IReportRunner
                 foreach (var destSpec in report.Destinations)
                 {
                     var destination = destSpec.Factory.Create(destSpec.Options, services);
-                    foreach (var finished in finishedFiles)
+                    foreach (IFinishedFile finished in finishedFiles)
                     {
                         var file = new ReportFile(
                             finished.FileName, finished.MimeType, finished.SizeBytes,
@@ -257,7 +257,7 @@ public sealed class ReportRunner : IReportRunner
                 // artifact store is registered. Copying happens before the temp dir is cleaned up.
                 if (services.GetService(typeof(NeoReports.Core.Artifacts.IReportArtifactStore)) is NeoReports.Core.Artifacts.IReportArtifactStore artifactStore)
                 {
-                    foreach (var finished in finishedFiles)
+                    foreach (IFinishedFile finished in finishedFiles)
                         await artifactStore.SaveAsync(
                             execution.JobId, finished.Path, finished.FileName, finished.MimeType, cancellationToken)
                             .ConfigureAwait(false);
@@ -278,13 +278,10 @@ public sealed class ReportRunner : IReportRunner
                 }
             }
 
-            foreach (var output in sectioned)
+            foreach (RunningSectioned output in sectioned.Where(o => !o.Closed))
             {
-                if (!output.Closed)
-                {
-                    await SafeDisposeAsync(output.Writer).ConfigureAwait(false);
-                    await SafeDisposeAsync(output.WriteStream).ConfigureAwait(false);
-                }
+                await SafeDisposeAsync(output.Writer).ConfigureAwait(false);
+                await SafeDisposeAsync(output.WriteStream).ConfigureAwait(false);
             }
 
             await reader.DisposeAsync().ConfigureAwait(false);

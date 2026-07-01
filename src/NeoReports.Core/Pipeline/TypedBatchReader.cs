@@ -11,8 +11,8 @@ internal sealed record OutputProjection<T>(
 /// <summary>
 /// Generic reader that bridges a typed source to the non-generic pipeline. Reading and filtering
 /// operate on <typeparamref name="T"/> with no boxing; values are boxed into <c>object?[]</c> only
-/// during projection, immediately before they are handed to writers. Each output may carry its own
-/// filters and columns (a "view"), all projected in one pass over the source.
+/// during projection, immediately before they are handed to writers. Each output (and each section of
+/// a sectioned output) may carry its own filters and columns (a "view"), all projected in one pass.
 /// </summary>
 /// <typeparam name="T">The row type produced by the source.</typeparam>
 internal sealed class TypedBatchReader<T> : IProjectedBatchReader
@@ -52,7 +52,7 @@ internal sealed class TypedBatchReader<T> : IProjectedBatchReader
         if (_batchSource is not null)
         {
             var context = new BatchContext(_execution, _pageSize, cursor, pageNumber);
-            var result = await _batchSource.ReadBatchAsync(context, cancellationToken).ConfigureAwait(false);
+            BatchResult<T> result = await _batchSource.ReadBatchAsync(context, cancellationToken).ConfigureAwait(false);
             raw = result.Records;
             nextCursor = result.NextCursor;
             hasMore = result.HasMore;
@@ -64,9 +64,121 @@ internal sealed class TypedBatchReader<T> : IProjectedBatchReader
             nextCursor = hasMore ? pageNumber.ToString(System.Globalization.CultureInfo.InvariantCulture) : null;
         }
 
-        var projected = Project(raw);
+        return BuildBatch(raw, nextCursor, hasMore);
+    }
+
+    private ProjectedBatch BuildBatch(IReadOnlyList<T> raw, string? nextCursor, bool hasMore)
+    {
+        List<object?[]>[] outputBuckets = CreateOutputBuckets(raw.Count);
+        List<object?[]>[][] sectionedBuckets = CreateSectionedBuckets();
+
+        var written = 0;
+        foreach (var record in raw)
+        {
+            if (Distribute(record, outputBuckets, sectionedBuckets))
+                written++;
+        }
+
         return new ProjectedBatch(
-            projected.Outputs, projected.Sectioned, nextCursor, hasMore, raw.Count, projected.Written);
+            FreezeOutputs(outputBuckets), FreezeSectioned(sectionedBuckets), nextCursor, hasMore, raw.Count, written);
+    }
+
+    private bool Distribute(T record, List<object?[]>[] outputBuckets, List<object?[]>[][] sectionedBuckets)
+    {
+        var included = false;
+
+        for (var o = 0; o < _outputs.Count; o++)
+        {
+            if (TryProject(record, _outputs[o], out object?[] row))
+            {
+                outputBuckets[o].Add(row);
+                included = true;
+            }
+        }
+
+        for (var s = 0; s < _sectioned.Count; s++)
+        {
+            IReadOnlyList<OutputProjection<T>> sections = _sectioned[s];
+            for (var sec = 0; sec < sections.Count; sec++)
+            {
+                if (TryProject(record, sections[sec], out object?[] row))
+                {
+                    sectionedBuckets[s][sec].Add(row);
+                    included = true;
+                }
+            }
+        }
+
+        return included;
+    }
+
+    private List<object?[]>[] CreateOutputBuckets(int capacity)
+    {
+        var buckets = new List<object?[]>[_outputs.Count];
+        for (var o = 0; o < buckets.Length; o++)
+            buckets[o] = new List<object?[]>(capacity);
+        return buckets;
+    }
+
+    private List<object?[]>[][] CreateSectionedBuckets()
+    {
+        var buckets = new List<object?[]>[_sectioned.Count][];
+        for (var s = 0; s < _sectioned.Count; s++)
+        {
+            buckets[s] = new List<object?[]>[_sectioned[s].Count];
+            for (var sec = 0; sec < _sectioned[s].Count; sec++)
+                buckets[s][sec] = [];
+        }
+
+        return buckets;
+    }
+
+    private static IReadOnlyList<IReadOnlyList<object?[]>> FreezeOutputs(List<object?[]>[] buckets)
+    {
+        var outputs = new IReadOnlyList<object?[]>[buckets.Length];
+        for (var o = 0; o < buckets.Length; o++)
+            outputs[o] = buckets[o];
+        return outputs;
+    }
+
+    private static IReadOnlyList<IReadOnlyList<IReadOnlyList<object?[]>>> FreezeSectioned(List<object?[]>[][] buckets)
+    {
+        var sectioned = new IReadOnlyList<IReadOnlyList<object?[]>>[buckets.Length];
+        for (var s = 0; s < buckets.Length; s++)
+        {
+            var sections = new IReadOnlyList<object?[]>[buckets[s].Length];
+            for (var sec = 0; sec < buckets[s].Length; sec++)
+                sections[sec] = buckets[s][sec];
+            sectioned[s] = sections;
+        }
+
+        return sectioned;
+    }
+
+    private static bool TryProject(T record, OutputProjection<T> projection, out object?[] row)
+    {
+        if (!PassesFilters(record, projection.Filters))
+        {
+            row = Array.Empty<object?>();
+            return false;
+        }
+
+        IReadOnlyList<Func<T, object?>> getters = projection.Getters;
+        row = new object?[getters.Count];
+        for (var i = 0; i < getters.Count; i++)
+            row[i] = getters[i](record);
+        return true;
+    }
+
+    private static bool PassesFilters(T record, IReadOnlyList<Func<T, bool>> filters)
+    {
+        for (var i = 0; i < filters.Count; i++)
+        {
+            if (!filters[i](record))
+                return false;
+        }
+
+        return true;
     }
 
     private async Task<IReadOnlyList<T>> ReadStreamingPageAsync(CancellationToken cancellationToken)
@@ -86,94 +198,6 @@ internal sealed class TypedBatchReader<T> : IProjectedBatchReader
         }
 
         return page;
-    }
-
-    private (IReadOnlyList<IReadOnlyList<object?[]>> Outputs, IReadOnlyList<IReadOnlyList<IReadOnlyList<object?[]>>> Sectioned, int Written) Project(
-        IReadOnlyList<T> raw)
-    {
-        var outputBuckets = new List<object?[]>[_outputs.Count];
-        for (var o = 0; o < outputBuckets.Length; o++)
-            outputBuckets[o] = new List<object?[]>(raw.Count);
-
-        var sectionedBuckets = new List<object?[]>[_sectioned.Count][];
-        for (var s = 0; s < _sectioned.Count; s++)
-        {
-            sectionedBuckets[s] = new List<object?[]>[_sectioned[s].Count];
-            for (var sec = 0; sec < _sectioned[s].Count; sec++)
-                sectionedBuckets[s][sec] = [];
-        }
-
-        var written = 0;
-        foreach (var record in raw)
-        {
-            var includedAnywhere = false;
-
-            for (var o = 0; o < _outputs.Count; o++)
-            {
-                if (TryProject(record, _outputs[o], out object?[] row))
-                {
-                    outputBuckets[o].Add(row);
-                    includedAnywhere = true;
-                }
-            }
-
-            for (var s = 0; s < _sectioned.Count; s++)
-            {
-                var sections = _sectioned[s];
-                for (var sec = 0; sec < sections.Count; sec++)
-                {
-                    if (TryProject(record, sections[sec], out object?[] row))
-                    {
-                        sectionedBuckets[s][sec].Add(row);
-                        includedAnywhere = true;
-                    }
-                }
-            }
-
-            if (includedAnywhere)
-                written++;
-        }
-
-        var outputs = new IReadOnlyList<object?[]>[outputBuckets.Length];
-        for (var o = 0; o < outputBuckets.Length; o++)
-            outputs[o] = outputBuckets[o];
-
-        var sectioned = new IReadOnlyList<IReadOnlyList<object?[]>>[sectionedBuckets.Length];
-        for (var s = 0; s < sectionedBuckets.Length; s++)
-        {
-            var sections = new IReadOnlyList<object?[]>[sectionedBuckets[s].Length];
-            for (var sec = 0; sec < sectionedBuckets[s].Length; sec++)
-                sections[sec] = sectionedBuckets[s][sec];
-            sectioned[s] = sections;
-        }
-
-        return (outputs, sectioned, written);
-    }
-
-    private static bool TryProject(T record, OutputProjection<T> projection, out object?[] row)
-    {
-        if (!PassesFilters(record, projection.Filters))
-        {
-            row = Array.Empty<object?>();
-            return false;
-        }
-
-        var getters = projection.Getters;
-        row = new object?[getters.Count];
-        for (var i = 0; i < getters.Count; i++)
-            row[i] = getters[i](record);
-        return true;
-    }
-
-    private static bool PassesFilters(T record, IReadOnlyList<Func<T, bool>> filters)
-    {
-        for (var i = 0; i < filters.Count; i++)
-        {
-            if (!filters[i](record))
-                return false;
-        }
-
-        return true;
     }
 
     public async ValueTask DisposeAsync()
