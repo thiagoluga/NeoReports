@@ -156,10 +156,21 @@ boundary) are still open in that doc and must be settled before B1.2.
   resolves an `ISectionedWriterFactory` by format and builds `ToSections(...)`. `AddXlsxWorkbook()` DI
   helper registers the Pro writer (format `xlsx-workbook`). ✅ 56 green Core tests (+1) + Pro DI test.
 
-### B2 — Multi-source reports (later)
+### B2 — Multi-source reports (join / enrichment)
 
-- [ ] Any report assembled from several sources (join/enrich) into one output — likely also Pro.
-  Design (join semantics, memory/perf) recorded before coding. See **D23**.
+Blueprint: [`docs/epic-b2-multisource.md`](docs/epic-b2-multisource.md); **D28** (two strategies) and
+**D29** (packaging/monetization — open). **Two explicit, user-chosen strategies**; both produce a
+source the existing pipeline consumes unchanged. Open sub-decisions (Pro vs free, package name, join
+types, dynamic config, validation gate) in the doc must be settled before B2.3.
+
+- [ ] **B2.1 — Enrichment** (`.Enrich(key, lookup, map)`): an `IBatchSource<TResult>` wrapper that
+  batch-looks-up related data once per page and maps it in (O(pageSize), no N+1). Tests: batched
+  per page, correct mapping, missing-key handling.
+- [ ] **B2.2 — Keyset merge-join** (`Source.MergeJoin(left, right, on, map)`): a streaming merge of
+  two same-key-ordered sources; inner + left-outer; constant memory (bounded key group). Tests:
+  ordered-merge correctness, memory, Testcontainers E2E across two SQL sources.
+- [ ] **B2.3 — Package & docs + sample** `07-multi-source` (per the Pro/free decision).
+- [ ] **B2.4 — Dynamic config** for multi-source (optional, later).
 
 ### Backlog (cross-cutting)
 
