@@ -17,7 +17,7 @@ public sealed class ReportBuilder<TRow>
     private readonly string _name;
     private readonly List<Func<TRow, bool>> _filters = new();
     private readonly List<ColumnDefinition<TRow>> _columns = new();
-    private readonly List<OutputSpec> _outputs = new();
+    private readonly List<OutputEntry> _outputs = new();
     private readonly List<DestinationSpec> _destinations = new();
     private readonly RetryOptions _retry = new();
     private readonly FailureStrategyBuilder _failure = new();
@@ -127,12 +127,29 @@ public sealed class ReportBuilder<TRow>
         return this;
     }
 
-    /// <summary>Adds an output format.</summary>
+    /// <summary>Adds an output format. It uses the report's filters and columns.</summary>
     /// <param name="output">The output specification (e.g. from a format package).</param>
     public ReportBuilder<TRow> To(OutputSpec output)
     {
         ArgumentNullException.ThrowIfNull(output);
-        _outputs.Add(output);
+        _outputs.Add(new OutputEntry(output, null));
+        return this;
+    }
+
+    /// <summary>
+    /// Adds an output format with its own "view": its own filters and/or columns over the same
+    /// source. Several such outputs are all produced from a single read (e.g. an "approved" file and
+    /// a "rejected" file with different columns).
+    /// </summary>
+    /// <param name="output">The output specification (e.g. from a format package).</param>
+    /// <param name="configureView">Configures this output's filters and columns.</param>
+    public ReportBuilder<TRow> To(OutputSpec output, Action<OutputView<TRow>> configureView)
+    {
+        ArgumentNullException.ThrowIfNull(output);
+        ArgumentNullException.ThrowIfNull(configureView);
+        var view = new OutputView<TRow>();
+        configureView(view);
+        _outputs.Add(new OutputEntry(output, view));
         return this;
     }
 
@@ -170,27 +187,53 @@ public sealed class ReportBuilder<TRow>
         if (_batchSource is null && _streamingSource is null)
             throw new ConfigurationException($"Report '{_name}' has no source. Call From(...).");
 
-        if (_columns.Count == 0)
-            throw new ConfigurationException($"Report '{_name}' has no columns. Call Columns(...).");
+        if (_columns.Count == 0 && !_outputs.Any(o => o.View is { ViewColumns.Count: > 0 }))
+            throw new ConfigurationException($"Report '{_name}' has no columns. Call Columns(...) or give an output view its own columns.");
 
-        var schema = new ReportSchema(_columns.Select(c => c.Column).ToList());
-        var getters = _columns.Select(c => c.Getter).ToArray();
-        var filters = _filters.ToArray();
+        var reportSchema = new ReportSchema(_columns.Select(c => c.Column).ToList());
+
+        var outputSpecs = new OutputSpec[_outputs.Count];
+        var outputSchemas = new ReportSchema[_outputs.Count];
+        var projections = new OutputProjection<TRow>[_outputs.Count];
+
+        for (var i = 0; i < _outputs.Count; i++)
+        {
+            var entry = _outputs[i];
+            var columns = entry.View is { ViewColumns.Count: > 0 } ? entry.View.ViewColumns : _columns;
+            if (columns.Count == 0)
+            {
+                throw new ConfigurationException(
+                    $"Report '{_name}' output #{i + 1} has no columns. Add report Columns(...) or give the view its own columns.");
+            }
+
+            var filters = entry.View is null || entry.View.ViewFilters.Count == 0
+                ? _filters.ToArray()
+                : _filters.Concat(entry.View.ViewFilters).ToArray();
+
+            outputSpecs[i] = entry.Spec;
+            outputSchemas[i] = new ReportSchema(columns.Select(c => c.Column).ToList());
+            projections[i] = new OutputProjection<TRow>(filters, columns.Select(c => c.Getter).ToArray());
+        }
+
         var batchSource = _batchSource;
         var streamingSource = _streamingSource;
         var pageSize = _pageSize;
 
         IProjectedBatchReader ReaderFactory(ReportExecutionContext execution) =>
-            new TypedBatchReader<TRow>(batchSource, streamingSource, execution, pageSize, filters, getters);
+            new TypedBatchReader<TRow>(batchSource, streamingSource, execution, pageSize, projections);
 
         return new CompiledReport(
             _name,
-            schema,
+            reportSchema,
             pageSize,
             ReaderFactory,
-            _outputs.ToArray(),
+            outputSpecs,
+            outputSchemas,
             _destinations.ToArray(),
             _retry,
             _failure.Build());
     }
+
+    /// <summary>An output plus its optional per-output view (own filters/columns).</summary>
+    private sealed record OutputEntry(OutputSpec Spec, OutputView<TRow>? View);
 }

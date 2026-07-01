@@ -2,10 +2,17 @@ using NeoReports.Abstractions;
 
 namespace NeoReports.Core.Pipeline;
 
+/// <summary>One output's projection: the filters to pass and the getters to project with.</summary>
+/// <typeparam name="T">The row type produced by the source.</typeparam>
+internal sealed record OutputProjection<T>(
+    IReadOnlyList<Func<T, bool>> Filters,
+    IReadOnlyList<Func<T, object?>> Getters);
+
 /// <summary>
-/// Generic reader that bridges a typed source to the non-generic pipeline. Reading, filtering,
-/// and mapping operate on <typeparamref name="T"/> with no boxing; values are boxed into
-/// <c>object?[]</c> only during projection, immediately before they are handed to writers.
+/// Generic reader that bridges a typed source to the non-generic pipeline. Reading and filtering
+/// operate on <typeparamref name="T"/> with no boxing; values are boxed into <c>object?[]</c> only
+/// during projection, immediately before they are handed to writers. Each output may carry its own
+/// filters and columns (a "view"), all projected in one pass over the source.
 /// </summary>
 /// <typeparam name="T">The row type produced by the source.</typeparam>
 internal sealed class TypedBatchReader<T> : IProjectedBatchReader
@@ -14,8 +21,7 @@ internal sealed class TypedBatchReader<T> : IProjectedBatchReader
     private readonly IStreamingSource<T>? _streamingSource;
     private readonly ReportExecutionContext _execution;
     private readonly int _pageSize;
-    private readonly IReadOnlyList<Func<T, bool>> _filters;
-    private readonly IReadOnlyList<Func<T, object?>> _getters;
+    private readonly IReadOnlyList<OutputProjection<T>> _outputs;
 
     private IAsyncEnumerator<T>? _enumerator;
     private bool _streamExhausted;
@@ -25,15 +31,13 @@ internal sealed class TypedBatchReader<T> : IProjectedBatchReader
         IStreamingSource<T>? streamingSource,
         ReportExecutionContext execution,
         int pageSize,
-        IReadOnlyList<Func<T, bool>> filters,
-        IReadOnlyList<Func<T, object?>> getters)
+        IReadOnlyList<OutputProjection<T>> outputs)
     {
         _batchSource = batchSource;
         _streamingSource = streamingSource;
         _execution = execution;
         _pageSize = pageSize;
-        _filters = filters;
-        _getters = getters;
+        _outputs = outputs;
     }
 
     public async Task<ProjectedBatch> ReadAsync(int pageNumber, string? cursor, CancellationToken cancellationToken)
@@ -57,8 +61,8 @@ internal sealed class TypedBatchReader<T> : IProjectedBatchReader
             nextCursor = hasMore ? pageNumber.ToString(System.Globalization.CultureInfo.InvariantCulture) : null;
         }
 
-        var rows = Project(raw);
-        return new ProjectedBatch(rows, nextCursor, hasMore, raw.Count);
+        var (outputs, written) = Project(raw);
+        return new ProjectedBatch(outputs, nextCursor, hasMore, raw.Count, written);
     }
 
     private async Task<IReadOnlyList<T>> ReadStreamingPageAsync(CancellationToken cancellationToken)
@@ -80,29 +84,46 @@ internal sealed class TypedBatchReader<T> : IProjectedBatchReader
         return page;
     }
 
-    private object?[][] Project(IReadOnlyList<T> raw)
+    private (IReadOnlyList<IReadOnlyList<object?[]>> Outputs, int Written) Project(IReadOnlyList<T> raw)
     {
-        var rows = new List<object?[]>(raw.Count);
+        var buckets = new List<object?[]>[_outputs.Count];
+        for (var o = 0; o < buckets.Length; o++)
+            buckets[o] = new List<object?[]>(raw.Count);
+
+        var written = 0;
         foreach (var record in raw)
         {
-            if (!PassesFilters(record))
-                continue;
+            var includedAnywhere = false;
+            for (var o = 0; o < _outputs.Count; o++)
+            {
+                if (!PassesFilters(record, _outputs[o].Filters))
+                    continue;
 
-            var values = new object?[_getters.Count];
-            for (var i = 0; i < _getters.Count; i++)
-                values[i] = _getters[i](record);
+                var getters = _outputs[o].Getters;
+                var values = new object?[getters.Count];
+                for (var i = 0; i < getters.Count; i++)
+                    values[i] = getters[i](record);
 
-            rows.Add(values);
+                buckets[o].Add(values);
+                includedAnywhere = true;
+            }
+
+            if (includedAnywhere)
+                written++;
         }
 
-        return rows.ToArray();
+        var outputs = new IReadOnlyList<object?[]>[buckets.Length];
+        for (var o = 0; o < buckets.Length; o++)
+            outputs[o] = buckets[o];
+
+        return (outputs, written);
     }
 
-    private bool PassesFilters(T record)
+    private static bool PassesFilters(T record, IReadOnlyList<Func<T, bool>> filters)
     {
-        for (var i = 0; i < _filters.Count; i++)
+        for (var i = 0; i < filters.Count; i++)
         {
-            if (!_filters[i](record))
+            if (!filters[i](record))
                 return false;
         }
 

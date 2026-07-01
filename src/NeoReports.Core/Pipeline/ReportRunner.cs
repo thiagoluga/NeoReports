@@ -77,8 +77,9 @@ public sealed class ReportRunner : IReportRunner
         try
         {
             var usedFileNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var spec in report.Outputs)
+            for (var outputIndex = 0; outputIndex < report.Outputs.Count; outputIndex++)
             {
+                var spec = report.Outputs[outputIndex];
                 var writer = spec.Factory.Create(spec.Options, services);
 
                 // Two outputs can share an extension (e.g. two CSVs). Disambiguate the file name so
@@ -94,7 +95,7 @@ public sealed class ReportRunner : IReportRunner
                 var path = Path.Combine(tempDir, fileName);
                 var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
                 await writer.InitializeAsync(
-                    new WriterContext(execution, stream, report.Schema, spec.Options), cancellationToken)
+                    new WriterContext(execution, stream, report.OutputSchemas[outputIndex], spec.Options), cancellationToken)
                     .ConfigureAwait(false);
                 outputs.Add(new RunningOutput(writer, stream, path, fileName, writer.MimeType));
             }
@@ -146,10 +147,10 @@ public sealed class ReportRunner : IReportRunner
 
                 try
                 {
-                    foreach (var output in outputs)
-                        await output.Writer.WriteRowsAsync(batch.Rows, cancellationToken).ConfigureAwait(false);
+                    for (var outputIndex = 0; outputIndex < outputs.Count; outputIndex++)
+                        await outputs[outputIndex].Writer.WriteRowsAsync(batch.Outputs[outputIndex], cancellationToken).ConfigureAwait(false);
 
-                    recordsWritten += batch.Rows.Count;
+                    recordsWritten += batch.WrittenCount;
                     consecutiveFailures = 0;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)

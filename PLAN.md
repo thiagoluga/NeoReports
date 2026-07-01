@@ -129,9 +129,11 @@ boundary) are still open in that doc and must be settled before B1.2.
 
 ### B1 — Multi-sheet XLSX (Pro)
 
-- [ ] **B1.1 — OSS multi-section hook (MIT).** An output may carry sections `(name, filter, columns)`;
-  the pipeline drives per-section projection + a section-aware write, single-pass preserved. Tests
-  with a fake section writer.
+- [x] **B1.1 — OSS multi-view hook (MIT).** Each output may carry its own filters/columns (a "view")
+  via `To(spec, view => view.Where(...).Column(...))`; the pipeline projects **per output** in a
+  single pass and writes one file per view. Default single-output path stays byte-identical.
+  ✅ 54 green Core tests (+3); Jobs (16) and AspNetCore (10) unaffected. The Pro workbook writer
+  (views → sheets in one file) is B1.2.
 - [ ] **B1.2 — `NeoReports.Xlsx.Pro` package (commercial).** Fluent `XlsxWorkbook(...)` API + ClosedXML
   workbook writer (one named sheet per section). Placeholder commercial LICENSE/metadata. Golden-file
   test.
