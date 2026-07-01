@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
+    <Description>NeoReports Pro — multi-sheet XLSX workbook writer (one worksheet per view), backed by ClosedXML.</Description>
+    <PackageTags>reports;reporting;xlsx;excel;workbook;multi-sheet</PackageTags>
+
+    <!-- Commercial package. NOT MIT: licensed under PolyForm Small Business 1.0.0 (free for
+         organizations under USD 1M annual revenue; a commercial license is required above that).
+         Override the repo-wide MIT metadata, and keep it out of the OSS NuGet release for now
+         (IsPackable=false). Its distribution is a separate maintainer decision. -->
+    <IsPackable>false</IsPackable>
+    <PackageLicenseExpression></PackageLicenseExpression>
+    <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\NeoReports.Abstractions\NeoReports.Abstractions.csproj" />
+    <ProjectReference Include="..\..\NeoReports.Core\NeoReports.Core.csproj" />
+    <ProjectReference Include="..\NeoReports.Formats.Xlsx\NeoReports.Formats.Xlsx.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ClosedXML" />
+  </ItemGroup>
+
+</Project>

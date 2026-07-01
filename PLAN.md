@@ -139,10 +139,15 @@ boundary) are still open in that doc and must be settled before B1.2.
   its own filter/columns, all projected in one pass. New Core contracts `IReportSectionedWriter` /
   `ISectionedWriterFactory` (in Core, not the frozen Abstractions). ✅ 55 green Core tests (+1); Jobs
   (16) and AspNetCore (10) unaffected; default path still byte-identical.
-- [ ] **B1.3 — `NeoReports.Xlsx.Pro` package (commercial).** Fluent `XlsxWorkbook(...)` API + ClosedXML
-  `IReportSectionedWriter` (one named worksheet per section) + PolyForm Small Business LICENSE +
-  metadata. Golden-file test.
-- [ ] **B1.4 — Packaging & CI.** Pro package builds/packs but is excluded from the OSS NuGet release.
+- [x] **B1.3 — `NeoReports.Xlsx.Pro` package (commercial).** Fluent `XlsxWorkbook(...)` → a
+  `SectionedOutputSpec` for `ToSections(...)`; ClosedXML `XlsxWorkbookWriter : IReportSectionedWriter`
+  (one worksheet per section, reusing the MIT `XlsxCells` helper). `IsPackable=false` (excluded from
+  the OSS NuGet release — verified `dotnet pack` produces no Pro nupkg); PolyForm Small Business
+  `LICENSE.txt` (verbatim body TODO — see below). ✅ golden-file test (2 worksheets, own
+  filters/columns from one read); Xlsx golden tests still pass after extracting `XlsxCells`.
+- [ ] **B1.4 — Packaging & CI + LICENSE.** Paste the verbatim PolyForm Small Business text into
+  `LICENSE.txt`; decide the Pro package's distribution (private feed?) and whether/how CI packs it
+  separately from the OSS release.
 - [ ] **B1.5 — Sample** `06-multi-sheet-xlsx` (typed: Approved/Rejected sheets).
 - [ ] **B1.6 — Dynamic config** support for `xlsx-workbook` (optional, after the typed API settles).
 
@@ -150,6 +155,14 @@ boundary) are still open in that doc and must be settled before B1.2.
 
 - [ ] Any report assembled from several sources (join/enrich) into one output — likely also Pro.
   Design (join semantics, memory/perf) recorded before coding. See **D23**.
+
+### Backlog (cross-cutting)
+
+- [ ] **Concurrency & memory under load.** Tests (and BenchmarkDotNet benchmarks if useful) that
+  generate many reports/jobs concurrently and measure memory/behavior: prove the constant-memory
+  guarantee holds under concurrency (allocation ~ concurrency × pageSize, not total rows), no leaks,
+  no contention, per-job temp isolation and disposal, and independent cancellation. Requested by the
+  maintainer.
 
 ## Validation gate (do not skip before Epic C)
 
