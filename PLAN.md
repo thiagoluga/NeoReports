@@ -167,9 +167,11 @@ types, dynamic config, validation gate) in the doc must be settled before B2.3.
   `NeoReports.Sources.Join` package (IsPackable=false; license/distribution deferred to B2.3) —
   one batched lookup per page, O(pageSize), no N+1; a standard `IBatchSource<TResult>` the pipeline
   consumes unchanged. ✅ 2 green tests (batched-per-page with distinct keys; missing-key → default).
-- [ ] **B2.2 — Keyset merge-join** (`Source.MergeJoin(left, right, on, map)`): a streaming merge of
-  two same-key-ordered sources; inner + left-outer; constant memory (bounded key group). Tests:
-  ordered-merge correctness, memory, Testcontainers E2E across two SQL sources.
+- [x] **B2.2 — Keyset merge-join** (`Join.MergeJoin(left, keyLeft, right, keyRight, map, kind)`): an
+  `IStreamingSource<TResult>` merging two same-key-ordered sources; **inner + left-outer**; buffers
+  one right key-group at a time (constant memory when per-key multiplicity is bounded); the pipeline
+  slices the stream into batches. ✅ 4 green Join tests (inner drops unmatched, left-outer keeps them,
+  multi-page merge, correct grouping).
 - [ ] **B2.3 — Package & docs + sample** `07-multi-source` (per the Pro/free decision).
 - [ ] **B2.4 — Dynamic config** for multi-source (optional, later).
 
