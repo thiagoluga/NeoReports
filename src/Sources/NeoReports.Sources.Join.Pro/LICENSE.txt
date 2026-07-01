@@ -1,0 +1,29 @@
+NeoReports.Sources.Join.Pro — Commercial (source-available) License
+===================================================================
+
+This package is NOT covered by the MIT license of the open-source NeoReports
+packages. It is licensed under the PolyForm Small Business License 1.0.0.
+
+SPDX-License-Identifier: PolyForm-Small-Business-1.0.0
+Required Notice: Copyright 2026 Thiago Lugarini
+
+In short (the canonical text below governs):
+
+  * Free to use for an organization with fewer than 100 employees and
+    independent contractors AND less than USD 1,000,000 in total revenue in the
+    prior tax year (adjusted for inflation, as defined by the license).
+
+  * An organization above that threshold must obtain a separate commercial
+    license from the licensor to use this package.
+
+The full, canonical, legally-binding text of the PolyForm Small Business License
+1.0.0 is published at:
+
+  https://polyformproject.org/licenses/small-business/1.0.0/
+
+------------------------------------------------------------------------------
+TODO (maintainer): paste the full verbatim PolyForm Small Business License 1.0.0
+body here before distributing this package. It is intentionally not reproduced
+from memory/summary to avoid transcription errors in legally-binding text; copy
+it verbatim from the canonical URL above.
+------------------------------------------------------------------------------

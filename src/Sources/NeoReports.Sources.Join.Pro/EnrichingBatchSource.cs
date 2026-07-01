@@ -1,6 +1,6 @@
 using NeoReports.Abstractions;
 
-namespace NeoReports.Sources.Join;
+namespace NeoReports.Sources.Join.Pro;
 
 /// <summary>
 /// Wraps a primary <see cref="IBatchSource{T}"/> and transforms each page into enriched result rows

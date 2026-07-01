@@ -1,6 +1,6 @@
 using NeoReports.Abstractions;
 
-namespace NeoReports.Sources.Join;
+namespace NeoReports.Sources.Join.Pro;
 
 /// <summary>
 /// A thin <see cref="IStreamingSource{T}"/> that produces its rows from a delegate — used by

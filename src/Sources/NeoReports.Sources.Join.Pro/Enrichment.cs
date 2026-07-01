@@ -1,7 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using NeoReports.Abstractions;
 
-namespace NeoReports.Sources.Join;
+namespace NeoReports.Sources.Join.Pro;
 
 /// <summary>Fluent entry point for enriching a source with a batched per-page lookup.</summary>
 public static class Enrichment
