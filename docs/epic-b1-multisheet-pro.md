@@ -63,19 +63,27 @@ builder
 - Dynamic (config) path: `"outputs": [ { "format": "xlsx-workbook", "properties": { "sheets": [ ... ] } } ]`
   — a later step once the typed API is settled.
 
-## Open sub-decisions (need the maintainer)
+## Resolved sub-decisions (maintainer, 2026-07-01)
 
-1. **Package name** — `NeoReports.Xlsx.Pro` (proposed) vs `NeoReports.Pro.Xlsx` vs an umbrella `NeoReports.Pro`.
-2. **License type** — source-available (visible, paid to use) vs closed-source. The legal text is the
-   maintainer's to provide; the build will carry a placeholder `LICENSE` marked commercial until then.
-3. **License enforcement** — none at first (honor-system / contractual), or a license-key gate later.
-   Recommend **none for v1 of Pro** (ship the capability; enforce later if needed).
-4. **OSS/Pro boundary** — confirm the generic multi-section hook is acceptable in the MIT core (it makes
-   a free hand-rolled multi-section possible). Alternative: keep more in Pro at the cost of a Pro-side
-   pipeline shim.
-5. **Same-extension/CSV behavior** — what a CSV output does with sections (one file per section? zip?
-   reject?). Recommend: multi-section is an XLSX-workbook concept; other formats reject sections with a
-   clear error in v1.
+1. **Package name** — `NeoReports.Xlsx.Pro`.
+2. **License model** — **open-core** (forced by the already-MIT core): core stays MIT; the Pro package
+   is **source-available with Option A (QuestPDF-style)**: free for companies under **USD 1M** annual
+   revenue, paid above. Use **PolyForm Small Business 1.0.0** (fetch the canonical verbatim text at
+   B1.2). Commercial sales terms are the maintainer's/lawyer's.
+3. **License enforcement** — **none for now** (contractual/honor-system), like QuestPDF; a key gate can
+   come later.
+4. **OSS/Pro boundary** — the generic **multi-view hook is MIT** (each output → its own file). The Pro
+   value is specifically the single-workbook writer that packs views as **sheets in one `.xlsx`**.
+5. **CSV / single-table with several views in one file** — **reject with a clear error** in v1; the OSS
+   path already gives one file per view.
+
+### Reframe: "multi-view" (from the 2.5 clarification)
+
+At save time a report can define several **views**, each with its own **filter and/or columns** over
+the single source read once. **OSS/free (B1.1, done):** each view → its **own file** (separate
+CSV/XLSX with distinct filter/columns from one read). **Pro/paid (B1.2):** the writer that packs
+several views as **sheets in one workbook**. Per-view *columns* are supported; per-view *different
+sources* is multi-source (B2), which reuses the workbook writer.
 
 ## Implementation PR breakdown (after this design is approved)
 

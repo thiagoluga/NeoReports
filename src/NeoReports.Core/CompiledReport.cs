@@ -17,6 +17,7 @@ public sealed class CompiledReport
         int pageSize,
         Func<ReportExecutionContext, IProjectedBatchReader> readerFactory,
         IReadOnlyList<OutputSpec> outputs,
+        IReadOnlyList<ReportSchema> outputSchemas,
         IReadOnlyList<DestinationSpec> destinations,
         RetryOptions retry,
         IFailureStrategy failureStrategy)
@@ -26,6 +27,7 @@ public sealed class CompiledReport
         PageSize = pageSize;
         ReaderFactory = readerFactory;
         Outputs = outputs;
+        OutputSchemas = outputSchemas;
         Destinations = destinations;
         Retry = retry;
         FailureStrategy = failureStrategy;
@@ -48,6 +50,9 @@ public sealed class CompiledReport
 
     /// <summary>Configured outputs (formats).</summary>
     internal IReadOnlyList<OutputSpec> Outputs { get; }
+
+    /// <summary>Schema of each output, aligned to <see cref="Outputs"/> (each output may have its own columns).</summary>
+    internal IReadOnlyList<ReportSchema> OutputSchemas { get; }
 
     /// <summary>Configured destinations.</summary>
     internal IReadOnlyList<DestinationSpec> Destinations { get; }
