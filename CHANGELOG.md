@@ -10,8 +10,13 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 
 ## [1.1.0] - 2026-07-01
 
-The **dynamic (config-driven) path**: define and run reports from JSON with no compile-time
-POCO, reusing the exact v1 pipeline. Additive and SemVer-minor — v1 code is unchanged.
+Two additive feature sets, both SemVer-minor — v1 code is unchanged:
+
+- The **dynamic (config-driven) path**: define and run reports from JSON with no
+  compile-time POCO, reusing the exact v1 pipeline.
+- **Multi-view and sectioned outputs**: a single source read can feed several outputs,
+  each with its own filter and columns — one file per view, or one file with many
+  sections (the hook the commercial multi-sheet XLSX workbook writer plugs into).
 
 ### Added
 - `NeoReports.Abstractions` — positional `ReportRecord` (`object?[]` + `ReportSchema`) as the
@@ -29,6 +34,27 @@ POCO, reusing the exact v1 pipeline. Additive and SemVer-minor — v1 code is un
   config-driven SQL Server source materializing `ReportRecord`s by schema-column name, reusing
   the v1 keyset engine.
 - Samples `04-dynamic-config-csv` (in-memory) and `05-dynamic-config-sql` (SQL Server).
+- `NeoReports.Core` — per-output **views**: `To(spec, view => view.Where(...).Column(...))`
+  gives each output its own filter and/or columns, projected per output in a single source
+  pass (one file per view); the default single-output path is byte-identical to v1.
+- `NeoReports.Core` — **sectioned outputs**: `ToSections(spec, s => s.Section("name", v => ...))`
+  writes one file with several sections (each with its own filter/columns) in one pass, via
+  the new Core contracts `IReportSectionedWriter` / `ISectionedWriterFactory`.
+- `NeoReports.Abstractions` — `OutputConfig.Sections` (`SectionConfig`: name · JsonLogic
+  filter · column subset) so the config-driven path can declare multi-section outputs
+  (additive).
+- `NeoReports.Formats.Xlsx` — public `XlsxCells` helper (typed cell writing shared with
+  other XLSX writers).
+
+### Commercial (source-available, not on NuGet)
+- `NeoReports.Xlsx.Pro` — multi-sheet XLSX workbook writer (`XlsxWorkbook(...)`,
+  `AddXlsxWorkbook()`): one worksheet per section from a single read.
+- `NeoReports.Sources.Join.Pro` — multi-source composition: `.Enrich(...)` (batched
+  per-page lookup, no N+1), `Join.MergeJoin(...)` (constant-memory keyset merge-join,
+  inner + left-outer), and the config-driven `merge-join` source type.
+- Both are licensed under **PolyForm Small Business 1.0.0** (free under USD 1M annual
+  revenue), are excluded from the NuGet release, and are packed as CI build artifacts
+  only (`pack-pro.yml`). Samples `06-multi-sheet-xlsx` and `07-multi-source` demo them.
 
 ## [1.0.0] - 2026-06-30
 
