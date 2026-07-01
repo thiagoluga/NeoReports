@@ -175,7 +175,13 @@ source the existing pipeline consumes unchanged.
   `NeoReports.Sources.Join.Pro` (PolyForm Small Business, `IsPackable=false`, commercial metadata +
   `LICENSE.txt`, like `NeoReports.Xlsx.Pro`); sample joins two in-memory sources via left-outer
   merge-join into a CSV, runs with no database. ✅ 4 green Join.Pro tests; sample runs green.
-- [ ] **B2.4 — Dynamic config** for multi-source (optional, later).
+- [x] **B2.4 — Dynamic config** for multi-source: a composite `IConfigSourceProvider`
+  (`type: "merge-join"`, `AddMergeJoinConfigSource()`) that recursively builds two nested sources
+  against the shared report schema and merge-joins them on one column (`key` + `kind` inner/leftOuter),
+  overlaying the right side's non-null columns onto the matching left row. Reuses the tested
+  `Join.MergeJoin` via a `StreamingToBatchSource` adapter; no `Abstractions` change (composite spec
+  lives in the source property bag). ✅ 6 green Join.Pro tests (+2: inner drops unmatched, left-outer
+  keeps with null right columns). Enrichment-via-config is out of scope (needs a keyed-lookup source).
 
 ### Backlog (cross-cutting)
 

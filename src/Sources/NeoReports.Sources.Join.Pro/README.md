@@ -45,3 +45,32 @@ Streams the merge — one right key-group buffered at a time — so memory stays
 single key's right multiplicity is bounded. The result is an `IStreamingSource<TResult>` the pipeline
 slices into batches.
 
+## Dynamic config (merge-join)
+
+The merge-join is also available on the **config-driven path** as a composite source
+(`type: "merge-join"`), so a JSON report can join two sources without typed code. Register it with
+`services.AddMergeJoinConfigSource()`, then:
+
+```json
+{
+  "name": "customer-orders",
+  "source": {
+    "type": "merge-join",
+    "properties": {
+      "key": "customerId",
+      "kind": "leftOuter",
+      "left":  { "type": "sql", "properties": { "connectionString": "...", "sql": "SELECT ... ORDER BY customerId", "key": "customerId" } },
+      "right": { "type": "sql", "properties": { "connectionString": "...", "sql": "SELECT ... ORDER BY customerId", "key": "customerId" } }
+    }
+  },
+  "columns": [ { "name": "customerId", "type": "Integer" }, { "name": "customer", "type": "String" }, { "name": "total", "type": "Decimal" } ],
+  "outputs": [ { "format": "csv" } ]
+}
+```
+
+Both nested sources materialize against the **same report schema** — each fills the columns its query
+returns and leaves the rest null — and both must be **ordered by `key`** (their keyset column). The
+join then overlays the right side's non-null columns onto the matching left row; `kind` is `inner`
+(default) or `leftOuter`. Config joins are expected to be **to-one** lookups (one right row per key);
+with several right rows per key, the last non-null value per column wins.
+
