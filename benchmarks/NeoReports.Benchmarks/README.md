@@ -42,6 +42,21 @@ The per-row allocation is the unavoidable boxing of each cell into `object?[]` a
 writer edge (4 columns × one box each), plus the row array — this is by design
 (see architecture rule 3, projection only at the writer edge).
 
+## Concurrency (many reports at once)
+
+`ConcurrencyMemoryBenchmark` runs `Concurrency` reports (1 / 8 / 32) of 1,000,000 rows **at the same
+time** over the streaming CSV path:
+
+```bash
+dotnet run -c Release --project benchmarks/NeoReports.Benchmarks -- --filter '*Concurrent*'
+```
+
+Read it the same way: **Allocated** should scale ~linearly with `Concurrency` (running many at once
+adds no super-linear cost), and peak live memory stays bounded by ≈ `Concurrency × pageSize` because
+each report holds only one page at a time. The deterministic correctness/isolation side of this —
+independent runs, per-job temp dirs, independent cancellation, page-by-page reads — is covered by
+`ConcurrencyTests` in `NeoReports.Core.UnitTests` (run in CI).
+
 ## CSV vs XLSX
 
 - **CSV is fully streaming**: rows are formatted and flushed to the output stream
