@@ -11,9 +11,9 @@ namespace NeoReports.Core.Building;
 /// <typeparam name="TRow">The report's row type.</typeparam>
 public sealed class OutputView<TRow>
 {
-    internal List<Func<TRow, bool>> ViewFilters { get; } = new();
+    internal List<Func<TRow, bool>> ViewFilters { get; } = [];
 
-    internal List<ColumnDefinition<TRow>> ViewColumns { get; } = new();
+    internal List<ColumnDefinition<TRow>> ViewColumns { get; } = [];
 
     /// <summary>Adds a filter that a row must pass to appear in this output.</summary>
     /// <param name="predicate">A predicate over the report row.</param>

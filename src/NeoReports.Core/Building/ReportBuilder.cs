@@ -198,15 +198,15 @@ public sealed class ReportBuilder<TRow>
 
         for (var i = 0; i < _outputs.Count; i++)
         {
-            var entry = _outputs[i];
-            var columns = entry.View is { ViewColumns.Count: > 0 } ? entry.View.ViewColumns : _columns;
+            OutputEntry entry = _outputs[i];
+            List<ColumnDefinition<TRow>> columns = entry.View is { ViewColumns.Count: > 0 } ? entry.View.ViewColumns : _columns;
             if (columns.Count == 0)
             {
                 throw new ConfigurationException(
                     $"Report '{_name}' output #{i + 1} has no columns. Add report Columns(...) or give the view its own columns.");
             }
 
-            var filters = entry.View is null || entry.View.ViewFilters.Count == 0
+            Func<TRow, bool>[] filters = entry.View is null || entry.View.ViewFilters.Count == 0
                 ? _filters.ToArray()
                 : _filters.Concat(entry.View.ViewFilters).ToArray();
 

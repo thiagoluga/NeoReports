@@ -61,7 +61,7 @@ internal sealed class TypedBatchReader<T> : IProjectedBatchReader
             nextCursor = hasMore ? pageNumber.ToString(System.Globalization.CultureInfo.InvariantCulture) : null;
         }
 
-        var (outputs, written) = Project(raw);
+        (IReadOnlyList<IReadOnlyList<object?[]>> outputs, int written) = Project(raw);
         return new ProjectedBatch(outputs, nextCursor, hasMore, raw.Count, written);
     }
 
@@ -99,7 +99,7 @@ internal sealed class TypedBatchReader<T> : IProjectedBatchReader
                 if (!PassesFilters(record, _outputs[o].Filters))
                     continue;
 
-                var getters = _outputs[o].Getters;
+                IReadOnlyList<Func<T, object?>> getters = _outputs[o].Getters;
                 var values = new object?[getters.Count];
                 for (var i = 0; i < getters.Count; i++)
                     values[i] = getters[i](record);

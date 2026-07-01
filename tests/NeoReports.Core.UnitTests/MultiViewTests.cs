@@ -15,7 +15,11 @@ namespace NeoReports.Core.UnitTests;
 /// </summary>
 public class MultiViewTests
 {
-    private static IReadOnlyList<Sale> Page(params long[] ids) =>
+    private static readonly long[] EvenIds = { 2, 4 };
+    private static readonly long[] OddIds = { 1, 3 };
+    private static readonly string[] OddCustomers = { "C1", "C3" };
+
+    private static Sale[] Page(params long[] ids) =>
         ids.Select(id => new Sale(id, $"C{id}", id * 10m, DateTime.UnixEpoch)).ToArray();
 
     private static Task<ReportRunResult> Run(CompiledReport report) =>
@@ -50,13 +54,13 @@ public class MultiViewTests
         result.Stats.RecordsWritten.ShouldBe(4); // each row lands in exactly one view
 
         // Approved: even ids, the report's single column.
-        approved.LastWriter!.Rows.Select(r => (long)r[0]!).ShouldBe(new long[] { 2, 4 });
+        approved.LastWriter!.Rows.Select(r => (long)r[0]!).ShouldBe(EvenIds);
         approved.LastWriter!.Rows.ShouldAllBe(r => r.Length == 1);
 
         // Rejected: odd ids, its own two columns (Id, Customer).
-        rejected.LastWriter!.Rows.Select(r => (long)r[0]!).ShouldBe(new long[] { 1, 3 });
+        rejected.LastWriter!.Rows.Select(r => (long)r[0]!).ShouldBe(OddIds);
         rejected.LastWriter!.Rows.ShouldAllBe(r => r.Length == 2);
-        rejected.LastWriter!.Rows.Select(r => (string)r[1]!).ShouldBe(new[] { "C1", "C3" });
+        rejected.LastWriter!.Rows.Select(r => (string)r[1]!).ShouldBe(OddCustomers);
     }
 
     [Fact]

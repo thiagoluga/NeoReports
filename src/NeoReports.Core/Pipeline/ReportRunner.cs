@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using NeoReports.Abstractions;
+using NeoReports.Core.Building;
 using NeoReports.Core.Registry;
 
 namespace NeoReports.Core.Pipeline;
@@ -79,7 +80,7 @@ public sealed class ReportRunner : IReportRunner
             var usedFileNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             for (var outputIndex = 0; outputIndex < report.Outputs.Count; outputIndex++)
             {
-                var spec = report.Outputs[outputIndex];
+                OutputSpec spec = report.Outputs[outputIndex];
                 var writer = spec.Factory.Create(spec.Options, services);
 
                 // Two outputs can share an extension (e.g. two CSVs). Disambiguate the file name so
