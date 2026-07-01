@@ -20,6 +20,7 @@ public class JoinConfigSourceProviderTests
 {
     private static readonly long[] Matched = { 1, 3 };
     private static readonly long[] All = { 1, 2, 3 };
+    private static readonly string[] ByNameOrder = { "alice", "carol" };
 
     // Combined schema: customers own id+name, orders own item; the join key is "id".
     private static readonly ReportSchema Schema = new(new[]
@@ -65,7 +66,7 @@ public class JoinConfigSourceProviderTests
 
         List<ReportRecord> rows = await DrainAsync(joined);
 
-        rows.Select(r => (string)r["name"]!).ShouldBe(new[] { "alice", "carol" });
+        rows.Select(r => (string)r["name"]!).ShouldBe(ByNameOrder);
         ((long)rows[0]["id"]!).ShouldBe(10L); // left id + right item merged on the text key
         rows[0]["item"].ShouldBe("x");
     }
@@ -168,7 +169,7 @@ public class JoinConfigSourceProviderTests
         return await DrainAsync(joined);
     }
 
-    private static IServiceProvider BuildServices()
+    private static ServiceProvider BuildServices()
     {
         var services = new ServiceCollection();
         services.AddSingleton<IConfigSourceProvider, InlineProvider>();
