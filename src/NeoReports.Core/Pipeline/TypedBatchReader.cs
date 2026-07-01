@@ -72,12 +72,9 @@ internal sealed class TypedBatchReader<T> : IProjectedBatchReader
         List<object?[]>[] outputBuckets = CreateOutputBuckets(raw.Count);
         List<object?[]>[][] sectionedBuckets = CreateSectionedBuckets();
 
-        var written = 0;
-        foreach (var record in raw)
-        {
-            if (Distribute(record, outputBuckets, sectionedBuckets))
-                written++;
-        }
+        // Distribute fills the per-output and per-section buckets as a side effect and returns whether
+        // the record landed in any of them; Count tallies the distinct written source rows.
+        int written = raw.Count(record => Distribute(record, outputBuckets, sectionedBuckets));
 
         return new ProjectedBatch(
             FreezeOutputs(outputBuckets), FreezeSectioned(sectionedBuckets), nextCursor, hasMore, raw.Count, written);
@@ -133,7 +130,7 @@ internal sealed class TypedBatchReader<T> : IProjectedBatchReader
         return buckets;
     }
 
-    private static IReadOnlyList<IReadOnlyList<object?[]>> FreezeOutputs(List<object?[]>[] buckets)
+    private static IReadOnlyList<object?[]>[] FreezeOutputs(List<object?[]>[] buckets)
     {
         var outputs = new IReadOnlyList<object?[]>[buckets.Length];
         for (var o = 0; o < buckets.Length; o++)
@@ -141,7 +138,7 @@ internal sealed class TypedBatchReader<T> : IProjectedBatchReader
         return outputs;
     }
 
-    private static IReadOnlyList<IReadOnlyList<IReadOnlyList<object?[]>>> FreezeSectioned(List<object?[]>[][] buckets)
+    private static IReadOnlyList<IReadOnlyList<object?[]>>[] FreezeSectioned(List<object?[]>[][] buckets)
     {
         var sectioned = new IReadOnlyList<IReadOnlyList<object?[]>>[buckets.Length];
         for (var s = 0; s < buckets.Length; s++)
