@@ -8,6 +8,28 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-07-01
+
+The **dynamic (config-driven) path**: define and run reports from JSON with no compile-time
+POCO, reusing the exact v1 pipeline. Additive and SemVer-minor — v1 code is unchanged.
+
+### Added
+- `NeoReports.Abstractions` — positional `ReportRecord` (`object?[]` + `ReportSchema`) as the
+  dynamic row type (not a dictionary); serializer-agnostic config model (`ReportConfig`,
+  `SourceConfig`, `ColumnConfig`, `OutputConfig`, `DestinationConfig`); `IReportConfigParser`
+  and `IConfigSourceProvider` contracts.
+- `NeoReports.Core` — `JsonReportConfigParser` (System.Text.Json) and `ReportConfigCompiler`
+  that compile a config into the same runnable report the fluent builder produces (source,
+  format and destination resolved from DI by stable id); `ReportColumns.Positional(...)` for
+  dynamic columns; `JsonLogicFilter` (a lean JsonLogic evaluator: `var`, `==`/`===`/`!=`/`!==`,
+  `>`/`>=`/`<`/`<=`, `and`/`or`/`!`/`!!`, `in`); DI helpers `AddReportFromConfig`,
+  `AddReportFromConfigFile` and `AddReportsFromConfigDirectory` (config reports compile lazily
+  and run by name through the standard runner and endpoints).
+- `NeoReports.Sources.Sql` — `SqlConfigSourceProvider` (`type: "sql"`) and `AddSqlConfigSource()`:
+  config-driven SQL Server source materializing `ReportRecord`s by schema-column name, reusing
+  the v1 keyset engine.
+- Samples `04-dynamic-config-csv` (in-memory) and `05-dynamic-config-sql` (SQL Server).
+
 ## [1.0.0] - 2026-06-30
 
 First public release.
@@ -44,5 +66,6 @@ First public release.
   source-link, and a per-package README. Tests, samples and benchmarks are not
   packable.
 
-[Unreleased]: https://github.com/thiagoluga/NeoReports/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/thiagoluga/NeoReports/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/thiagoluga/NeoReports/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/thiagoluga/NeoReports/releases/tag/v1.0.0
