@@ -38,7 +38,7 @@ public static class Enrichment
 
         return new EnrichingBatchSource<TPrimary, TResult>(primary, async (records, cancellationToken) =>
         {
-            List<TKey> keys = records.Select(key).Distinct().ToList();
+            var keys = records.Select(key).Distinct().ToList();
             IReadOnlyDictionary<TKey, TLookup> values =
                 await lookup(keys, cancellationToken).ConfigureAwait(false) ?? new Dictionary<TKey, TLookup>();
 
