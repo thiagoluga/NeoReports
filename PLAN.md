@@ -145,9 +145,12 @@ boundary) are still open in that doc and must be settled before B1.2.
   the OSS NuGet release — verified `dotnet pack` produces no Pro nupkg); PolyForm Small Business
   `LICENSE.txt` (verbatim body TODO — see below). ✅ golden-file test (2 worksheets, own
   filters/columns from one read); Xlsx golden tests still pass after extracting `XlsxCells`.
-- [ ] **B1.4 — Packaging & CI + LICENSE.** Paste the verbatim PolyForm Small Business text into
-  `LICENSE.txt`; decide the Pro package's distribution (private feed?) and whether/how CI packs it
-  separately from the OSS release.
+- [x] **B1.4 — Packaging & CI + LICENSE.** Verbatim PolyForm Small Business 1.0.0 body (canonical
+  SPDX text) pasted into both Pro `LICENSE.txt` files, header + `Required Notice:` line preserved;
+  `LICENSE.txt` now packs into the Pro nupkgs (fixes NU5030). Distribution decided (**D30**): no
+  feed/publishing yet — a `pack-pro.yml` workflow packs both Pro packages as CI **build artifacts**
+  (per-project `IsPackable=true` override) on every version tag and on demand; the OSS release is
+  untouched (verified: solution-wide `dotnet pack` still yields no Pro nupkg).
 - [x] **B1.5 — Sample** `06-multi-sheet-xlsx` (typed: Approved/Rejected sheets). ✅ runs locally
   (in-memory source) → one `.xlsx` with an Approved sheet (report columns) and a Rejected sheet (own
   columns), each auto-filtered, from a single read.

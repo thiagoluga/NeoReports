@@ -1,0 +1,65 @@
+name: Pack Pro
+
+# Packs the commercial Pro packages (NeoReports.Xlsx.Pro, NeoReports.Sources.Join.Pro)
+# as build ARTIFACTS only — nothing is published to nuget.org (see DECISIONS.md D30).
+# The Pro projects are IsPackable=false so the OSS release never picks them up; this
+# workflow overrides that per project. Runs on every version tag (same version as the
+# OSS release) and on demand via workflow_dispatch.
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Package version (e.g. 1.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  pack:
+    name: Pack Pro artifacts
+    runs-on: ubuntu-latest
+    if: ${{ github.repository == 'thiagoluga/NeoReports' }}
+    env:
+      DOTNET_NOLOGO: true
+      DOTNET_CLI_TELEMETRY_OPTOUT: true
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup .NET (8 + 9)
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+
+      - name: Derive version (tag or input)
+        id: ver
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Pack Pro packages
+        run: |
+          for proj in \
+            src/Formats/NeoReports.Xlsx.Pro/NeoReports.Xlsx.Pro.csproj \
+            src/Sources/NeoReports.Sources.Join.Pro/NeoReports.Sources.Join.Pro.csproj
+          do
+            dotnet pack "$proj" --configuration Release -o ./artifacts-pro \
+              -p:IsPackable=true -p:Version=${{ steps.ver.outputs.version }}
+          done
+
+      - name: Upload Pro artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: neoreports-pro-${{ steps.ver.outputs.version }}
+          path: ./artifacts-pro/*
+          if-no-files-found: error
+          retention-days: 90
