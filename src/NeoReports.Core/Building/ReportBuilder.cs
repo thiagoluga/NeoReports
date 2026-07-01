@@ -1,6 +1,7 @@
 using System.Linq.Expressions;
 using NeoReports.Abstractions;
 using NeoReports.Core.Pipeline;
+using NeoReports.Core.Sections;
 using NeoReports.Core.Sources;
 
 namespace NeoReports.Core.Building;
@@ -18,6 +19,7 @@ public sealed class ReportBuilder<TRow>
     private readonly List<Func<TRow, bool>> _filters = new();
     private readonly List<ColumnDefinition<TRow>> _columns = new();
     private readonly List<OutputEntry> _outputs = new();
+    private readonly List<SectionedEntry> _sectioned = [];
     private readonly List<DestinationSpec> _destinations = new();
     private readonly RetryOptions _retry = new();
     private readonly FailureStrategyBuilder _failure = new();
@@ -153,6 +155,28 @@ public sealed class ReportBuilder<TRow>
         return this;
     }
 
+    /// <summary>
+    /// Adds a sectioned output: a single file with several named sections (e.g. an XLSX workbook with
+    /// one worksheet per section), each with its own filters and/or columns, all produced from one
+    /// source read.
+    /// </summary>
+    /// <param name="output">The sectioned output specification (from a format package).</param>
+    /// <param name="configureSections">Declares the sections (name + view).</param>
+    /// <exception cref="ConfigurationException">Thrown when no sections are declared.</exception>
+    public ReportBuilder<TRow> ToSections(SectionedOutputSpec output, Action<SectionBuilder<TRow>> configureSections)
+    {
+        ArgumentNullException.ThrowIfNull(output);
+        ArgumentNullException.ThrowIfNull(configureSections);
+
+        var sections = new SectionBuilder<TRow>();
+        configureSections(sections);
+        if (sections.Sections.Count == 0)
+            throw new ConfigurationException($"Report '{_name}' has a sectioned output with no sections. Call Section(...).");
+
+        _sectioned.Add(new SectionedEntry(output, sections.Sections));
+        return this;
+    }
+
     /// <summary>Adds a destination the finished files are uploaded to.</summary>
     /// <param name="destination">The destination specification (e.g. from a destination package).</param>
     public ReportBuilder<TRow> UploadTo(DestinationSpec destination)
@@ -187,40 +211,50 @@ public sealed class ReportBuilder<TRow>
         if (_batchSource is null && _streamingSource is null)
             throw new ConfigurationException($"Report '{_name}' has no source. Call From(...).");
 
-        if (_columns.Count == 0 && !_outputs.Any(o => o.View is { ViewColumns.Count: > 0 }))
-            throw new ConfigurationException($"Report '{_name}' has no columns. Call Columns(...) or give an output view its own columns.");
+        bool anyViewColumns =
+            _outputs.Any(o => o.View is { ViewColumns.Count: > 0 }) ||
+            _sectioned.Any(s => s.Sections.Any(sd => sd.View.ViewColumns.Count > 0));
+        if (_columns.Count == 0 && !anyViewColumns)
+            throw new ConfigurationException($"Report '{_name}' has no columns. Call Columns(...) or give a view its own columns.");
 
         var reportSchema = new ReportSchema(_columns.Select(c => c.Column).ToList());
 
         var outputSpecs = new OutputSpec[_outputs.Count];
         var outputSchemas = new ReportSchema[_outputs.Count];
         var projections = new OutputProjection<TRow>[_outputs.Count];
-
         for (var i = 0; i < _outputs.Count; i++)
         {
-            OutputEntry entry = _outputs[i];
-            List<ColumnDefinition<TRow>> columns = entry.View is { ViewColumns.Count: > 0 } ? entry.View.ViewColumns : _columns;
-            if (columns.Count == 0)
-            {
-                throw new ConfigurationException(
-                    $"Report '{_name}' output #{i + 1} has no columns. Add report Columns(...) or give the view its own columns.");
-            }
-
-            Func<TRow, bool>[] filters = entry.View is null || entry.View.ViewFilters.Count == 0
-                ? _filters.ToArray()
-                : _filters.Concat(entry.View.ViewFilters).ToArray();
-
-            outputSpecs[i] = entry.Spec;
-            outputSchemas[i] = new ReportSchema(columns.Select(c => c.Column).ToList());
-            projections[i] = new OutputProjection<TRow>(filters, columns.Select(c => c.Getter).ToArray());
+            (ReportSchema schema, OutputProjection<TRow> projection) = ResolveView(_outputs[i].View, $"output #{i + 1}");
+            outputSpecs[i] = _outputs[i].Spec;
+            outputSchemas[i] = schema;
+            projections[i] = projection;
         }
 
-        var batchSource = _batchSource;
-        var streamingSource = _streamingSource;
-        var pageSize = _pageSize;
+        var sectionedOutputs = new CompiledSectionedOutput[_sectioned.Count];
+        var sectionedProjections = new IReadOnlyList<OutputProjection<TRow>>[_sectioned.Count];
+        for (var s = 0; s < _sectioned.Count; s++)
+        {
+            SectionedEntry entry = _sectioned[s];
+            var sectionMetas = new ReportSection[entry.Sections.Count];
+            var sectionProjections = new OutputProjection<TRow>[entry.Sections.Count];
+            for (var sec = 0; sec < entry.Sections.Count; sec++)
+            {
+                SectionDefinition<TRow> def = entry.Sections[sec];
+                (ReportSchema schema, OutputProjection<TRow> projection) = ResolveView(def.View, $"section '{def.Name}'");
+                sectionMetas[sec] = new ReportSection(def.Name, schema);
+                sectionProjections[sec] = projection;
+            }
+
+            sectionedOutputs[s] = new CompiledSectionedOutput(entry.Spec, sectionMetas);
+            sectionedProjections[s] = sectionProjections;
+        }
+
+        IBatchSource<TRow>? batchSource = _batchSource;
+        IStreamingSource<TRow>? streamingSource = _streamingSource;
+        int pageSize = _pageSize;
 
         IProjectedBatchReader ReaderFactory(ReportExecutionContext execution) =>
-            new TypedBatchReader<TRow>(batchSource, streamingSource, execution, pageSize, projections);
+            new TypedBatchReader<TRow>(batchSource, streamingSource, execution, pageSize, projections, sectionedProjections);
 
         return new CompiledReport(
             _name,
@@ -229,11 +263,33 @@ public sealed class ReportBuilder<TRow>
             ReaderFactory,
             outputSpecs,
             outputSchemas,
+            sectionedOutputs,
             _destinations.ToArray(),
             _retry,
             _failure.Build());
     }
 
+    private (ReportSchema Schema, OutputProjection<TRow> Projection) ResolveView(OutputView<TRow>? view, string what)
+    {
+        List<ColumnDefinition<TRow>> columns = view is { ViewColumns.Count: > 0 } ? view.ViewColumns : _columns;
+        if (columns.Count == 0)
+        {
+            throw new ConfigurationException(
+                $"Report '{_name}' {what} has no columns. Add report Columns(...) or give it its own columns.");
+        }
+
+        Func<TRow, bool>[] filters = view is null || view.ViewFilters.Count == 0
+            ? _filters.ToArray()
+            : _filters.Concat(view.ViewFilters).ToArray();
+
+        return (
+            new ReportSchema(columns.Select(c => c.Column).ToList()),
+            new OutputProjection<TRow>(filters, columns.Select(c => c.Getter).ToArray()));
+    }
+
     /// <summary>An output plus its optional per-output view (own filters/columns).</summary>
     private sealed record OutputEntry(OutputSpec Spec, OutputView<TRow>? View);
+
+    /// <summary>A sectioned output plus its section definitions.</summary>
+    private sealed record SectionedEntry(SectionedOutputSpec Spec, IReadOnlyList<SectionDefinition<TRow>> Sections);
 }

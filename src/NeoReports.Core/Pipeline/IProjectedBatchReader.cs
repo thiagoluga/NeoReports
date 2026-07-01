@@ -11,10 +11,15 @@ namespace NeoReports.Core.Pipeline;
 /// </param>
 /// <param name="NextCursor">Opaque cursor for the next page, or <c>null</c> when none.</param>
 /// <param name="HasMore">Whether more pages are expected after this one.</param>
+/// <param name="SectionedOutputs">
+/// Projected rows per sectioned output, then per section (e.g. workbook → worksheets), aligned to the
+/// compiled report's sectioned outputs. Empty when the report has no sectioned outputs.
+/// </param>
 /// <param name="RawCount">Number of records read before filtering (for statistics).</param>
-/// <param name="WrittenCount">Distinct source records written to at least one output (for statistics).</param>
+/// <param name="WrittenCount">Distinct source records written to at least one output/section (for statistics).</param>
 internal sealed record ProjectedBatch(
     IReadOnlyList<IReadOnlyList<object?[]>> Outputs,
+    IReadOnlyList<IReadOnlyList<IReadOnlyList<object?[]>>> SectionedOutputs,
     string? NextCursor,
     bool HasMore,
     int RawCount,

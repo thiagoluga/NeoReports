@@ -22,6 +22,7 @@ internal sealed class TypedBatchReader<T> : IProjectedBatchReader
     private readonly ReportExecutionContext _execution;
     private readonly int _pageSize;
     private readonly IReadOnlyList<OutputProjection<T>> _outputs;
+    private readonly IReadOnlyList<IReadOnlyList<OutputProjection<T>>> _sectioned;
 
     private IAsyncEnumerator<T>? _enumerator;
     private bool _streamExhausted;
@@ -31,13 +32,15 @@ internal sealed class TypedBatchReader<T> : IProjectedBatchReader
         IStreamingSource<T>? streamingSource,
         ReportExecutionContext execution,
         int pageSize,
-        IReadOnlyList<OutputProjection<T>> outputs)
+        IReadOnlyList<OutputProjection<T>> outputs,
+        IReadOnlyList<IReadOnlyList<OutputProjection<T>>> sectioned)
     {
         _batchSource = batchSource;
         _streamingSource = streamingSource;
         _execution = execution;
         _pageSize = pageSize;
         _outputs = outputs;
+        _sectioned = sectioned;
     }
 
     public async Task<ProjectedBatch> ReadAsync(int pageNumber, string? cursor, CancellationToken cancellationToken)
@@ -61,8 +64,9 @@ internal sealed class TypedBatchReader<T> : IProjectedBatchReader
             nextCursor = hasMore ? pageNumber.ToString(System.Globalization.CultureInfo.InvariantCulture) : null;
         }
 
-        (IReadOnlyList<IReadOnlyList<object?[]>> outputs, int written) = Project(raw);
-        return new ProjectedBatch(outputs, nextCursor, hasMore, raw.Count, written);
+        var projected = Project(raw);
+        return new ProjectedBatch(
+            projected.Outputs, projected.Sectioned, nextCursor, hasMore, raw.Count, projected.Written);
     }
 
     private async Task<IReadOnlyList<T>> ReadStreamingPageAsync(CancellationToken cancellationToken)
@@ -84,39 +88,81 @@ internal sealed class TypedBatchReader<T> : IProjectedBatchReader
         return page;
     }
 
-    private (IReadOnlyList<IReadOnlyList<object?[]>> Outputs, int Written) Project(IReadOnlyList<T> raw)
+    private (IReadOnlyList<IReadOnlyList<object?[]>> Outputs, IReadOnlyList<IReadOnlyList<IReadOnlyList<object?[]>>> Sectioned, int Written) Project(
+        IReadOnlyList<T> raw)
     {
-        var buckets = new List<object?[]>[_outputs.Count];
-        for (var o = 0; o < buckets.Length; o++)
-            buckets[o] = new List<object?[]>(raw.Count);
+        var outputBuckets = new List<object?[]>[_outputs.Count];
+        for (var o = 0; o < outputBuckets.Length; o++)
+            outputBuckets[o] = new List<object?[]>(raw.Count);
+
+        var sectionedBuckets = new List<object?[]>[_sectioned.Count][];
+        for (var s = 0; s < _sectioned.Count; s++)
+        {
+            sectionedBuckets[s] = new List<object?[]>[_sectioned[s].Count];
+            for (var sec = 0; sec < _sectioned[s].Count; sec++)
+                sectionedBuckets[s][sec] = [];
+        }
 
         var written = 0;
         foreach (var record in raw)
         {
             var includedAnywhere = false;
+
             for (var o = 0; o < _outputs.Count; o++)
             {
-                if (!PassesFilters(record, _outputs[o].Filters))
-                    continue;
+                if (TryProject(record, _outputs[o], out object?[] row))
+                {
+                    outputBuckets[o].Add(row);
+                    includedAnywhere = true;
+                }
+            }
 
-                IReadOnlyList<Func<T, object?>> getters = _outputs[o].Getters;
-                var values = new object?[getters.Count];
-                for (var i = 0; i < getters.Count; i++)
-                    values[i] = getters[i](record);
-
-                buckets[o].Add(values);
-                includedAnywhere = true;
+            for (var s = 0; s < _sectioned.Count; s++)
+            {
+                var sections = _sectioned[s];
+                for (var sec = 0; sec < sections.Count; sec++)
+                {
+                    if (TryProject(record, sections[sec], out object?[] row))
+                    {
+                        sectionedBuckets[s][sec].Add(row);
+                        includedAnywhere = true;
+                    }
+                }
             }
 
             if (includedAnywhere)
                 written++;
         }
 
-        var outputs = new IReadOnlyList<object?[]>[buckets.Length];
-        for (var o = 0; o < buckets.Length; o++)
-            outputs[o] = buckets[o];
+        var outputs = new IReadOnlyList<object?[]>[outputBuckets.Length];
+        for (var o = 0; o < outputBuckets.Length; o++)
+            outputs[o] = outputBuckets[o];
 
-        return (outputs, written);
+        var sectioned = new IReadOnlyList<IReadOnlyList<object?[]>>[sectionedBuckets.Length];
+        for (var s = 0; s < sectionedBuckets.Length; s++)
+        {
+            var sections = new IReadOnlyList<object?[]>[sectionedBuckets[s].Length];
+            for (var sec = 0; sec < sectionedBuckets[s].Length; sec++)
+                sections[sec] = sectionedBuckets[s][sec];
+            sectioned[s] = sections;
+        }
+
+        return (outputs, sectioned, written);
+    }
+
+    private static bool TryProject(T record, OutputProjection<T> projection, out object?[] row)
+    {
+        if (!PassesFilters(record, projection.Filters))
+        {
+            row = Array.Empty<object?>();
+            return false;
+        }
+
+        var getters = projection.Getters;
+        row = new object?[getters.Count];
+        for (var i = 0; i < getters.Count; i++)
+            row[i] = getters[i](record);
+        return true;
     }
 
     private static bool PassesFilters(T record, IReadOnlyList<Func<T, bool>> filters)
