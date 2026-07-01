@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NeoReports.Abstractions;
 using NeoReports.Core.Configuration;
 using NeoReports.Core.Pipeline;
+using NeoReports.Core.Sections;
 using NeoReports.Core.UnitTests.Fakes;
 using Shouldly;
 using Xunit;
@@ -173,5 +174,55 @@ public class DynamicConfigTests
 
         var ex = Should.Throw<ConfigurationException>(() => ReportConfigCompiler.Compile(config, services));
         ex.Message.ShouldContain("xlsx");
+    }
+
+    private static readonly string[] BigSmall = { "Big", "Small" };
+    private static readonly long[] BigIds = { 2, 3 };
+    private static readonly long[] SmallIds = { 1 };
+
+    [Fact]
+    public async Task Compiles_a_sectioned_workbook_output_from_config()
+    {
+        const string json = """
+        {
+          "name": "sales",
+          "source": { "type": "inmemory" },
+          "columns": [
+            { "name": "Id", "type": "Integer" },
+            { "name": "Customer", "type": "String" }
+          ],
+          "outputs": [
+            {
+              "format": "sectioned-fake",
+              "sections": [
+                { "name": "Big", "filter": { ">": [ { "var": "Id" }, 1 ] } },
+                { "name": "Small", "filter": { "<=": [ { "var": "Id" }, 1 ] }, "columns": [ "Id" ] }
+              ]
+            }
+          ]
+        }
+        """;
+        var config = Parser.Parse(json);
+        config.Outputs[0].Sections.ShouldNotBeNull().Count.ShouldBe(2); // parsed from JSON
+
+        var writerFactory = new FakeSectionedWriterFactory();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IConfigSourceProvider>(new FakeConfigSourceProvider(
+            new[] { new object?[] { 1L, "Acme" }, new object?[] { 2L, "Globex" }, new object?[] { 3L, "Initech" } }));
+        services.AddSingleton<ISectionedWriterFactory>(writerFactory);
+        await using var provider = services.BuildServiceProvider();
+
+        var report = ReportConfigCompiler.Compile(config, provider);
+        var result = await ReportRunner.ExecuteAsync(report, Exec(), provider, CancellationToken.None);
+
+        result.Status.ShouldBe(ReportRunStatus.Completed);
+
+        var writer = writerFactory.Last!;
+        writer.InitSections.Select(x => x.Name).ShouldBe(BigSmall);
+        writer.Sections[0].Select(r => (long)r[0]!).ShouldBe(BigIds); // Big: Id > 1, all report columns
+        writer.Sections[0].ShouldAllBe(r => r.Length == 2);
+        writer.Sections[1].Select(r => (long)r[0]!).ShouldBe(SmallIds); // Small: Id <= 1, one column
+        writer.Sections[1].ShouldAllBe(r => r.Length == 1);
     }
 }

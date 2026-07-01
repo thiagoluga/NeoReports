@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using NeoReports.Abstractions;
 using NeoReports.Core.Building;
+using NeoReports.Core.Sections;
 
 namespace NeoReports.Core.Configuration;
 
@@ -41,12 +42,24 @@ public static class ReportConfigCompiler
 
         var schema = new ReportSchema(columns.Select(c => c.Column).ToList());
 
+        var columnsByName = new Dictionary<string, ColumnDefinition<ReportRecord>>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < config.Columns.Count; i++)
+            columnsByName[config.Columns[i].Name] = columns[i];
+
         // Resolve every registration up front (fail fast on a missing provider/factory) before
         // instantiating the source, which may open connections.
         IConfigSourceProvider sourceProvider = ResolveSource(services, config.Source.Type);
-        OutputSpec[] outputs = config.Outputs
-            .Select(o => new OutputSpec(ResolveWriter(services, o.Format), o.Properties))
-            .ToArray();
+
+        var regularOutputs = new List<OutputSpec>();
+        var sectionedOutputs = new List<(SectionedOutputSpec Spec, IReadOnlyList<SectionConfig> Sections)>();
+        foreach (OutputConfig output in config.Outputs)
+        {
+            if (output.Sections is { Count: > 0 })
+                sectionedOutputs.Add((new SectionedOutputSpec(ResolveSectionedWriter(services, output.Format), output.Properties), output.Sections));
+            else
+                regularOutputs.Add(new OutputSpec(ResolveWriter(services, output.Format), output.Properties));
+        }
+
         DestinationSpec[] destinations = config.Destinations?
             .Select(d => new DestinationSpec(ResolveDestination(services, d.Type), d.Properties))
             .ToArray() ?? Array.Empty<DestinationSpec>();
@@ -63,12 +76,55 @@ public static class ReportConfigCompiler
         if (config.Filter is not null)
             builder.Filter(JsonLogicFilter.Compile(config.Filter));
 
-        foreach (OutputSpec output in outputs)
+        foreach (OutputSpec output in regularOutputs)
             builder.To(output);
+        foreach ((SectionedOutputSpec spec, IReadOnlyList<SectionConfig> sections) in sectionedOutputs)
+            builder.ToSections(spec, s => BuildSections(s, sections, columnsByName));
         foreach (DestinationSpec destination in destinations)
             builder.UploadTo(destination);
 
         return builder.Build();
+    }
+
+    private static void BuildSections(
+        SectionBuilder<ReportRecord> sectionBuilder,
+        IReadOnlyList<SectionConfig> sections,
+        IReadOnlyDictionary<string, ColumnDefinition<ReportRecord>> columnsByName)
+    {
+        foreach (SectionConfig section in sections)
+        {
+            sectionBuilder.Section(section.Name, view =>
+            {
+                if (section.Filter is not null)
+                    view.Where(JsonLogicFilter.Compile(section.Filter));
+
+                if (section.Columns is { Count: > 0 })
+                    view.Columns(ResolveSectionColumns(section, columnsByName));
+            });
+        }
+    }
+
+    private static ColumnDefinition<ReportRecord>[] ResolveSectionColumns(
+        SectionConfig section, IReadOnlyDictionary<string, ColumnDefinition<ReportRecord>> columnsByName)
+    {
+        var defs = new ColumnDefinition<ReportRecord>[section.Columns!.Count];
+        for (var i = 0; i < section.Columns.Count; i++)
+        {
+            var name = section.Columns[i];
+            if (!columnsByName.TryGetValue(name, out ColumnDefinition<ReportRecord>? def))
+                throw new ConfigurationException($"Section '{section.Name}' references unknown column '{name}'.");
+            defs[i] = def;
+        }
+
+        return defs;
+    }
+
+    private static ISectionedWriterFactory ResolveSectionedWriter(IServiceProvider services, string format)
+    {
+        ISectionedWriterFactory? factory = services.GetServices<ISectionedWriterFactory>()
+            .FirstOrDefault(f => string.Equals(f.Format, format, StringComparison.OrdinalIgnoreCase));
+        return factory ?? throw new ConfigurationException(
+            $"No sectioned writer factory is registered for format '{format}'. Register an ISectionedWriterFactory with that Format.");
     }
 
     private static IConfigSourceProvider ResolveSource(IServiceProvider services, string type)

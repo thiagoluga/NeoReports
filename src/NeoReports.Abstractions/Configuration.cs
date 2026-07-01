@@ -51,11 +51,24 @@ public sealed record ColumnConfig(
     bool Nullable = true);
 
 /// <summary>An output section: a stable format id plus a free-form property bag the writer reads.</summary>
-/// <param name="Format">Stable format id (e.g. "csv", "xlsx"); resolved to an <see cref="IWriterFactory"/>.</param>
+/// <param name="Format">Stable format id (e.g. "csv", "xlsx", "xlsx-workbook"). When <paramref name="Sections"/>
+/// is set, the format is resolved to a sectioned writer; otherwise to a single-sheet <see cref="IWriterFactory"/>.</param>
 /// <param name="Properties">Format-specific options.</param>
+/// <param name="Sections">When present, makes this a single-file, multi-section output (e.g. an XLSX workbook
+/// with one worksheet per section); each section has its own filter and column subset.</param>
 public sealed record OutputConfig(
     string Format,
-    IReadOnlyDictionary<string, object?>? Properties = null);
+    IReadOnlyDictionary<string, object?>? Properties = null,
+    IReadOnlyList<SectionConfig>? Sections = null);
+
+/// <summary>One section (e.g. worksheet) of a sectioned output, over the same source read.</summary>
+/// <param name="Name">Section (sheet) name.</param>
+/// <param name="Filter">Optional JsonLogic filter that rows must pass to appear in this section.</param>
+/// <param name="Columns">Optional subset of the report's column names to include, in order; <c>null</c> means all report columns.</param>
+public sealed record SectionConfig(
+    string Name,
+    string? Filter = null,
+    IReadOnlyList<string>? Columns = null);
 
 /// <summary>A destination section: a stable type id plus a free-form property bag.</summary>
 /// <param name="Type">Stable destination type id (e.g. "local", "s3"); resolved to an <see cref="IDestinationFactory"/>.</param>

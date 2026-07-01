@@ -19,6 +19,7 @@
     <PackageReference Include="Shouldly" />
     <PackageReference Include="ClosedXML" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
   </ItemGroup>
 
 </Project>
