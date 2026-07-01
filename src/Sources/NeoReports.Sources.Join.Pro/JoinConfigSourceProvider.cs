@@ -119,7 +119,7 @@ public sealed class JoinConfigSourceProvider : IConfigSourceProvider
         };
     }
 
-    private static IReadOnlyDictionary<string, object?> ReadProperties(JsonElement obj)
+    private static Dictionary<string, object?> ReadProperties(JsonElement obj)
     {
         var result = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         foreach (JsonProperty property in obj.EnumerateObject())
@@ -157,13 +157,11 @@ public sealed class JoinConfigSourceProvider : IConfigSourceProvider
 
     private static bool TryGetProperty(JsonElement obj, string name, out JsonElement value)
     {
-        foreach (JsonProperty property in obj.EnumerateObject())
+        foreach (JsonProperty property in obj.EnumerateObject()
+            .Where(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)))
         {
-            if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
-            {
-                value = property.Value;
-                return true;
-            }
+            value = property.Value;
+            return true;
         }
 
         value = default;
