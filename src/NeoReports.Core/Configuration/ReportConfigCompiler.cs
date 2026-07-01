@@ -23,15 +23,7 @@ public static class ReportConfigCompiler
     {
         ArgumentNullException.ThrowIfNull(config);
         ArgumentNullException.ThrowIfNull(services);
-
-        if (string.IsNullOrWhiteSpace(config.Name))
-            throw new ConfigurationException("Report configuration has no name.");
-        if (config.Source is null)
-            throw new ConfigurationException($"Report '{config.Name}' has no source.");
-        if (config.Columns is null || config.Columns.Count == 0)
-            throw new ConfigurationException($"Report '{config.Name}' has no columns.");
-        if (config.Outputs is null || config.Outputs.Count == 0)
-            throw new ConfigurationException($"Report '{config.Name}' has no outputs.");
+        Validate(config);
 
         var columns = new ColumnDefinition<ReportRecord>[config.Columns.Count];
         for (var i = 0; i < config.Columns.Count; i++)
@@ -84,6 +76,18 @@ public static class ReportConfigCompiler
             builder.UploadTo(destination);
 
         return builder.Build();
+    }
+
+    private static void Validate(ReportConfig config)
+    {
+        if (string.IsNullOrWhiteSpace(config.Name))
+            throw new ConfigurationException("Report configuration has no name.");
+        if (config.Source is null)
+            throw new ConfigurationException($"Report '{config.Name}' has no source.");
+        if (config.Columns is null || config.Columns.Count == 0)
+            throw new ConfigurationException($"Report '{config.Name}' has no columns.");
+        if (config.Outputs is null || config.Outputs.Count == 0)
+            throw new ConfigurationException($"Report '{config.Name}' has no outputs.");
     }
 
     private static void BuildSections(
