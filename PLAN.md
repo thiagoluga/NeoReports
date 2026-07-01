@@ -151,7 +151,10 @@ boundary) are still open in that doc and must be settled before B1.2.
 - [x] **B1.5 — Sample** `06-multi-sheet-xlsx` (typed: Approved/Rejected sheets). ✅ runs locally
   (in-memory source) → one `.xlsx` with an Approved sheet (report columns) and a Rejected sheet (own
   columns), each auto-filtered, from a single read.
-- [ ] **B1.6 — Dynamic config** support for `xlsx-workbook` (optional, after the typed API settles).
+- [x] **B1.6 — Dynamic config** support for sectioned/workbook outputs. `OutputConfig` gains
+  `Sections` (`SectionConfig`: name · JsonLogic filter · report-column-name subset); the compiler
+  resolves an `ISectionedWriterFactory` by format and builds `ToSections(...)`. `AddXlsxWorkbook()` DI
+  helper registers the Pro writer (format `xlsx-workbook`). ✅ 56 green Core tests (+1) + Pro DI test.
 
 ### B2 — Multi-source reports (later)
 
