@@ -163,9 +163,10 @@ Blueprint: [`docs/epic-b2-multisource.md`](docs/epic-b2-multisource.md); **D28**
 source the existing pipeline consumes unchanged. Open sub-decisions (Pro vs free, package name, join
 types, dynamic config, validation gate) in the doc must be settled before B2.3.
 
-- [ ] **B2.1 — Enrichment** (`.Enrich(key, lookup, map)`): an `IBatchSource<TResult>` wrapper that
-  batch-looks-up related data once per page and maps it in (O(pageSize), no N+1). Tests: batched
-  per page, correct mapping, missing-key handling.
+- [x] **B2.1 — Enrichment** (`.Enrich(key, lookup, map)`): `EnrichingBatchSource<...>` in a new
+  `NeoReports.Sources.Join` package (IsPackable=false; license/distribution deferred to B2.3) —
+  one batched lookup per page, O(pageSize), no N+1; a standard `IBatchSource<TResult>` the pipeline
+  consumes unchanged. ✅ 2 green tests (batched-per-page with distinct keys; missing-key → default).
 - [ ] **B2.2 — Keyset merge-join** (`Source.MergeJoin(left, right, on, map)`): a streaming merge of
   two same-key-ordered sources; inner + left-outer; constant memory (bounded key group). Tests:
   ordered-merge correctness, memory, Testcontainers E2E across two SQL sources.
