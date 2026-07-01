@@ -77,7 +77,7 @@ public sealed class XlsxWriter : IReportWriter
             {
                 var value = i < row.Length ? row[i] : null;
                 var cell = _sheet.Cell(_nextRow, i + 1);
-                SetCell(cell, value, _schema.Columns[i]);
+                XlsxCells.SetCell(cell, value, _schema.Columns[i]);
             }
 
             _nextRow++;
@@ -110,55 +110,4 @@ public sealed class XlsxWriter : IReportWriter
         return ValueTask.CompletedTask;
     }
 
-    private static void SetCell(IXLCell cell, object? value, ReportColumn column)
-    {
-        if (value is null)
-        {
-            cell.Clear(XLClearOptions.Contents);
-            return;
-        }
-
-        switch (value)
-        {
-            case bool b:
-                cell.Value = b;
-                break;
-            case byte or sbyte or short or ushort or int or uint or long or ulong
-                or float or double or decimal:
-                cell.Value = Convert.ToDouble(value, System.Globalization.CultureInfo.InvariantCulture);
-                ApplyFormat(cell, column);
-                break;
-            case DateTime dt:
-                cell.Value = dt;
-                ApplyDateFormat(cell, column);
-                break;
-            case DateTimeOffset dto:
-                cell.Value = dto.DateTime;
-                ApplyDateFormat(cell, column);
-                break;
-            case DateOnly d:
-                cell.Value = d.ToDateTime(TimeOnly.MinValue);
-                ApplyDateFormat(cell, column);
-                break;
-            case Guid g:
-                cell.Value = g.ToString();
-                break;
-            default:
-                cell.Value = value.ToString();
-                break;
-        }
-    }
-
-    private static void ApplyFormat(IXLCell cell, ReportColumn column)
-    {
-        if (!string.IsNullOrEmpty(column.Format))
-            cell.Style.NumberFormat.Format = ExcelFormat.FromNetFormat(column.Format!, column);
-    }
-
-    private static void ApplyDateFormat(IXLCell cell, ReportColumn column)
-    {
-        cell.Style.DateFormat.Format = string.IsNullOrEmpty(column.Format)
-            ? "yyyy-mm-dd"
-            : ExcelFormat.FromNetDateFormat(column.Format!);
-    }
 }
