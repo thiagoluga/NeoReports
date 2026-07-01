@@ -19,7 +19,9 @@ public sealed record Sale(long Id, string Customer, decimal Amount);
 /// </summary>
 public sealed class XlsxWorkbookTests : IDisposable
 {
-    private readonly string _outDir = Path.Combine(Path.GetTempPath(), "nr-xlsxpro", Guid.NewGuid().ToString("N"));
+    private static readonly string[] SectionNames = { "Approved", "Rejected" };
+
+    private readonly string _outDir = Path.Join(Path.GetTempPath(), "nr-xlsxpro", Guid.NewGuid().ToString("N"));
 
     [Fact]
     public async Task Produces_one_workbook_with_a_worksheet_per_section()
@@ -45,7 +47,7 @@ public sealed class XlsxWorkbookTests : IDisposable
                     .Where(x => x.Amount <= 0)
                     .Column(x => x.Id, "Sale ID")
                     .Column(x => x.Customer, "Customer")))
-            .UploadTo(Destination.Local(Path.Combine(_outDir, "{name}.{ext}")))
+            .UploadTo(Destination.Local(Path.Join(_outDir, "{name}.{ext}")))
             .Build();
 
         var exec = new ReportExecutionContext(
@@ -54,11 +56,11 @@ public sealed class XlsxWorkbookTests : IDisposable
 
         result.Status.ShouldBe(ReportRunStatus.Completed);
 
-        var path = Path.Combine(_outDir, "sales.xlsx");
+        var path = Path.Join(_outDir, "sales.xlsx");
         File.Exists(path).ShouldBeTrue();
 
         using var workbook = new XLWorkbook(path);
-        workbook.Worksheets.Select(w => w.Name).ShouldBe(new[] { "Approved", "Rejected" });
+        workbook.Worksheets.Select(w => w.Name).ShouldBe(SectionNames);
 
         IXLWorksheet approved = workbook.Worksheet("Approved");
         approved.Cell(1, 1).GetString().ShouldBe("Sale ID"); // single column
