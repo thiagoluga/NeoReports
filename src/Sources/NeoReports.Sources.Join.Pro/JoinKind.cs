@@ -1,4 +1,4 @@
-namespace NeoReports.Sources.Join;
+namespace NeoReports.Sources.Join.Pro;
 
 /// <summary>How unmatched left rows are treated in a merge-join.</summary>
 public enum JoinKind

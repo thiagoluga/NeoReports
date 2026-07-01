@@ -1,9 +1,10 @@
 using System.Globalization;
 using Microsoft.Extensions.Logging.Abstractions;
 using NeoReports.Abstractions;
-using NeoReports.Sources.Join;
+using NeoReports.Sources.Join.Pro;
 using Shouldly;
 using Xunit;
+using static NeoReports.Sources.Join.Pro.Join;
 
 namespace NeoReports.Sources.Join.UnitTests;
 
@@ -45,7 +46,7 @@ public class MergeJoinTests
     [Fact]
     public async Task Inner_join_emits_only_matched_left_rows_with_their_group()
     {
-        IStreamingSource<Row> joined = Join.MergeJoin(Customers(), c => c.Id, Orders(), o => o.CustomerId, Map);
+        IStreamingSource<Row> joined = MergeJoin(Customers(), c => c.Id, Orders(), o => o.CustomerId, Map);
 
         List<Row> rows = await CollectAsync(joined);
 
@@ -60,7 +61,7 @@ public class MergeJoinTests
     public async Task Left_outer_join_keeps_unmatched_left_rows_with_an_empty_group()
     {
         IStreamingSource<Row> joined =
-            Join.MergeJoin(Customers(), c => c.Id, Orders(), o => o.CustomerId, Map, JoinKind.LeftOuter);
+            MergeJoin(Customers(), c => c.Id, Orders(), o => o.CustomerId, Map, JoinKind.LeftOuter);
 
         List<Row> rows = await CollectAsync(joined);
 

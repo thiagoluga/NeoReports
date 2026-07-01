@@ -159,20 +159,22 @@ boundary) are still open in that doc and must be settled before B1.2.
 ### B2 — Multi-source reports (join / enrichment)
 
 Blueprint: [`docs/epic-b2-multisource.md`](docs/epic-b2-multisource.md); **D28** (two strategies) and
-**D29** (packaging/monetization — open). **Two explicit, user-chosen strategies**; both produce a
-source the existing pipeline consumes unchanged. Open sub-decisions (Pro vs free, package name, join
-types, dynamic config, validation gate) in the doc must be settled before B2.3.
+**D29** (packaging — resolved to **Pro**). **Two explicit, user-chosen strategies**; both produce a
+source the existing pipeline consumes unchanged.
 
 - [x] **B2.1 — Enrichment** (`.Enrich(key, lookup, map)`): `EnrichingBatchSource<...>` in a new
-  `NeoReports.Sources.Join` package (IsPackable=false; license/distribution deferred to B2.3) —
-  one batched lookup per page, O(pageSize), no N+1; a standard `IBatchSource<TResult>` the pipeline
-  consumes unchanged. ✅ 2 green tests (batched-per-page with distinct keys; missing-key → default).
+  `NeoReports.Sources.Join.Pro` package — one batched lookup per page, O(pageSize), no N+1; a standard
+  `IBatchSource<TResult>` the pipeline consumes unchanged. ✅ 2 green tests (batched-per-page with
+  distinct keys; missing-key → default).
 - [x] **B2.2 — Keyset merge-join** (`Join.MergeJoin(left, keyLeft, right, keyRight, map, kind)`): an
   `IStreamingSource<TResult>` merging two same-key-ordered sources; **inner + left-outer**; buffers
   one right key-group at a time (constant memory when per-key multiplicity is bounded); the pipeline
   slices the stream into batches. ✅ 4 green Join tests (inner drops unmatched, left-outer keeps them,
   multi-page merge, correct grouping).
-- [ ] **B2.3 — Package & docs + sample** `07-multi-source` (per the Pro/free decision).
+- [x] **B2.3 — Pro package & docs + sample** `07-multi-source`: renamed the package to
+  `NeoReports.Sources.Join.Pro` (PolyForm Small Business, `IsPackable=false`, commercial metadata +
+  `LICENSE.txt`, like `NeoReports.Xlsx.Pro`); sample joins two in-memory sources via left-outer
+  merge-join into a CSV, runs with no database. ✅ 4 green Join.Pro tests; sample runs green.
 - [ ] **B2.4 — Dynamic config** for multi-source (optional, later).
 
 ### Backlog (cross-cutting)

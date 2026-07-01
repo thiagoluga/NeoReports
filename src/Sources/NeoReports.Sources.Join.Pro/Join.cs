@@ -2,7 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using NeoReports.Abstractions;
 
-namespace NeoReports.Sources.Join;
+namespace NeoReports.Sources.Join.Pro;
 
 /// <summary>Fluent entry points for combining several sources into one.</summary>
 public static class Join

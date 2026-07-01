@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
+    <Description>NeoReports Pro — multi-source composition: enrichment (batched per-page lookup) and keyset merge-join.</Description>
+    <PackageTags>reports;reporting;multi-source;join;enrichment</PackageTags>
+
+    <!-- Commercial package (maintainer decision, D29). NOT MIT: licensed under PolyForm Small
+         Business 1.0.0 (free for organizations under USD 1M annual revenue; a commercial license is
+         required above that). Override the repo-wide MIT metadata, and keep it out of the OSS NuGet
+         release (IsPackable=false). Its distribution is a separate maintainer decision. -->
+    <IsPackable>false</IsPackable>
+    <PackageLicenseExpression></PackageLicenseExpression>
+    <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\NeoReports.Abstractions\NeoReports.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

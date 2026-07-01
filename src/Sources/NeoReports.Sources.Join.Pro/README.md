@@ -1,6 +1,10 @@
-# NeoReports.Sources.Join
+# NeoReports.Sources.Join.Pro (commercial)
 
 Multi-source composition for NeoReports: **enrichment** (B2.1) and keyset **merge-join** (B2.2).
+
+**License:** PolyForm Small Business 1.0.0 (see [`LICENSE.txt`](LICENSE.txt)) — free for organizations
+under USD 1,000,000 annual revenue; a commercial license is required above that. **Not MIT**, and
+excluded from the open-source NuGet release.
 
 > Packaging and license (Pro vs free) are an open Epic B2 decision (**D29**), settled in B2.3. This
 > package is not auto-published yet.

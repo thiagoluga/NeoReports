@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using NeoReports.Abstractions;
-using NeoReports.Sources.Join;
+using NeoReports.Sources.Join.Pro;
 using Shouldly;
 using Xunit;
 
