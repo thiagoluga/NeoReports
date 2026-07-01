@@ -24,11 +24,11 @@ public class MergeJoinTests
     private sealed record Row(long CustomerId, int OrderCount, string Items);
 
     // customer 1 → 2 orders, customer 2 → none, customer 3 → 1 order (all ordered by key).
-    private static IBatchSource<Customer> Customers() =>
-        new Paged<Customer>(new[] { new Customer(1, "A"), new Customer(2, "B"), new Customer(3, "C") }, pageSize: 2);
+    private static Paged<Customer> Customers() =>
+        new(new[] { new Customer(1, "A"), new Customer(2, "B"), new Customer(3, "C") }, pageSize: 2);
 
-    private static IBatchSource<Order> Orders() =>
-        new Paged<Order>(new[] { new Order(1, "x"), new Order(1, "y"), new Order(3, "z") }, pageSize: 2);
+    private static Paged<Order> Orders() =>
+        new(new[] { new Order(1, "x"), new Order(1, "y"), new Order(3, "z") }, pageSize: 2);
 
     private static Row Map(Customer c, IReadOnlyList<Order> orders) =>
         new(c.Id, orders.Count, string.Join(",", orders.Select(o => o.Item)));

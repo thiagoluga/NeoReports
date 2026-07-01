@@ -42,7 +42,7 @@ public static class Join
         ArgumentNullException.ThrowIfNull(right);
         ArgumentNullException.ThrowIfNull(keyRight);
         ArgumentNullException.ThrowIfNull(map);
-        var comparer = keyComparer ?? Comparer<TKey>.Default;
+        IComparer<TKey> comparer = keyComparer ?? Comparer<TKey>.Default;
 
         async IAsyncEnumerable<TResult> Merge(
             ReportExecutionContext execution, [EnumeratorCancellation] CancellationToken cancellationToken)
@@ -52,7 +52,7 @@ public static class Join
             var rightHasCurrent = await rightEnum.MoveNextAsync().ConfigureAwait(false);
 
             var group = new List<TRight>();
-            IReadOnlyList<TRight> current = Array.Empty<TRight>();
+            TRight[] current = Array.Empty<TRight>();
             TKey? currentKey = default;
             var haveKey = false;
 
@@ -61,26 +61,42 @@ public static class Join
                 TKey key = keyLeft(leftRow);
                 if (!haveKey || comparer.Compare(currentKey!, key) != 0)
                 {
-                    group.Clear();
-                    while (rightHasCurrent && comparer.Compare(keyRight(rightEnum.Current), key) < 0)
-                        rightHasCurrent = await rightEnum.MoveNextAsync().ConfigureAwait(false);
-                    while (rightHasCurrent && comparer.Compare(keyRight(rightEnum.Current), key) == 0)
-                    {
-                        group.Add(rightEnum.Current);
-                        rightHasCurrent = await rightEnum.MoveNextAsync().ConfigureAwait(false);
-                    }
-
+                    rightHasCurrent = await GatherGroupAsync(rightEnum, rightHasCurrent, key, keyRight, comparer, group)
+                        .ConfigureAwait(false);
                     current = group.Count == 0 ? Array.Empty<TRight>() : group.ToArray();
                     currentKey = key;
                     haveKey = true;
                 }
 
-                if (current.Count > 0 || kind == JoinKind.LeftOuter)
+                if (current.Length > 0 || kind == JoinKind.LeftOuter)
                     yield return map(leftRow, current);
             }
         }
 
         return new DelegatingStreamingSource<TResult>(left.Schema, Merge);
+    }
+
+    // Advances the right enumerator past keys below <paramref name="key"/>, then buffers the
+    // contiguous group of right rows whose key equals it. Returns whether the right enumerator still
+    // has a current row.
+    private static async Task<bool> GatherGroupAsync<TRight, TKey>(
+        IAsyncEnumerator<TRight> right,
+        bool hasCurrent,
+        TKey key,
+        Func<TRight, TKey> keyRight,
+        IComparer<TKey> comparer,
+        List<TRight> group)
+    {
+        group.Clear();
+        while (hasCurrent && comparer.Compare(keyRight(right.Current), key) < 0)
+            hasCurrent = await right.MoveNextAsync().ConfigureAwait(false);
+        while (hasCurrent && comparer.Compare(keyRight(right.Current), key) == 0)
+        {
+            group.Add(right.Current);
+            hasCurrent = await right.MoveNextAsync().ConfigureAwait(false);
+        }
+
+        return hasCurrent;
     }
 
     /// <summary>Reads a batch source page by page as a flat async sequence (O(pageSize) memory).</summary>
