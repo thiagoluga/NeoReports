@@ -163,11 +163,11 @@ boundary) are still open in that doc and must be settled before B1.2.
 
 ### Backlog (cross-cutting)
 
-- [ ] **Concurrency & memory under load.** Tests (and BenchmarkDotNet benchmarks if useful) that
-  generate many reports/jobs concurrently and measure memory/behavior: prove the constant-memory
-  guarantee holds under concurrency (allocation ~ concurrency × pageSize, not total rows), no leaks,
-  no contention, per-job temp isolation and disposal, and independent cancellation. Requested by the
-  maintainer.
+- [x] **Concurrency & memory under load.** `ConcurrencyTests` (Core.UnitTests, CI): 32 reports run
+  at once without interfering (each its own file/counts), page-by-page reads (bounded memory), and
+  cancelling some runs leaves the others unaffected + per-job temp dirs are isolated and cleaned up.
+  `ConcurrencyMemoryBenchmark` (BenchmarkDotNet, MemoryDiagnoser, manual) measures allocation at
+  concurrency 1/8/32 over 1M-row streaming CSV. ✅ 60 green Core tests (+4).
 
 ## Validation gate (do not skip before Epic C)
 
