@@ -8,11 +8,17 @@
     <!-- Commercial package (maintainer decision, D29). NOT MIT: licensed under PolyForm Small
          Business 1.0.0 (free for organizations under USD 1M annual revenue; a commercial license is
          required above that). Override the repo-wide MIT metadata, and keep it out of the OSS NuGet
-         release (IsPackable=false). Its distribution is a separate maintainer decision. -->
+         release (IsPackable=false). Distribution (D30): the pack-pro.yml workflow packs it as a CI
+         build artifact only, overriding IsPackable per project; nothing is published to a feed. -->
     <IsPackable>false</IsPackable>
     <PackageLicenseExpression></PackageLicenseExpression>
     <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- PackageLicenseFile requires the license to travel inside the package. -->
+    <None Include="LICENSE.txt" Pack="true" PackagePath="/" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\NeoReports.Abstractions\NeoReports.Abstractions.csproj" />
