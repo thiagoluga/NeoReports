@@ -157,15 +157,13 @@ public sealed class JoinConfigSourceProvider : IConfigSourceProvider
 
     private static bool TryGetProperty(JsonElement obj, string name, out JsonElement value)
     {
-        foreach (JsonProperty property in obj.EnumerateObject()
-            .Where(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)))
-        {
-            value = property.Value;
-            return true;
-        }
+        JsonElement? match = obj.EnumerateObject()
+            .Where(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))
+            .Select(p => (JsonElement?)p.Value)
+            .FirstOrDefault();
 
-        value = default;
-        return false;
+        value = match ?? default;
+        return match.HasValue;
     }
 
     private static ConfigurationException Fail(string message) =>
