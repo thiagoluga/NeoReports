@@ -148,7 +148,9 @@ boundary) are still open in that doc and must be settled before B1.2.
 - [ ] **B1.4 — Packaging & CI + LICENSE.** Paste the verbatim PolyForm Small Business text into
   `LICENSE.txt`; decide the Pro package's distribution (private feed?) and whether/how CI packs it
   separately from the OSS release.
-- [ ] **B1.5 — Sample** `06-multi-sheet-xlsx` (typed: Approved/Rejected sheets).
+- [x] **B1.5 — Sample** `06-multi-sheet-xlsx` (typed: Approved/Rejected sheets). ✅ runs locally
+  (in-memory source) → one `.xlsx` with an Approved sheet (report columns) and a Rejected sheet (own
+  columns), each auto-filtered, from a single read.
 - [ ] **B1.6 — Dynamic config** support for `xlsx-workbook` (optional, after the typed API settles).
 
 ### B2 — Multi-source reports (later)
