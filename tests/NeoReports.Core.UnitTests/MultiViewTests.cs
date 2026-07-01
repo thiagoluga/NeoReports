@@ -18,6 +18,7 @@ public class MultiViewTests
     private static readonly long[] EvenIds = { 2, 4 };
     private static readonly long[] OddIds = { 1, 3 };
     private static readonly string[] OddCustomers = { "C1", "C3" };
+    private static readonly string[] EvenOddSections = { "Even", "Odd" };
 
     private static Sale[] Page(params long[] ids) =>
         ids.Select(id => new Sale(id, $"C{id}", id * 10m, DateTime.UnixEpoch)).ToArray();
@@ -94,5 +95,42 @@ public class MultiViewTests
             .Build();
 
         Should.Throw<ConfigurationException>(act).Message.ShouldContain("no columns");
+    }
+
+    [Fact]
+    public async Task Sectioned_output_projects_each_section_from_a_single_read()
+    {
+        var source = new FakeBatchSource<Sale>(new[] { Page(1, 2, 3, 4) });
+        var factory = new FakeSectionedWriterFactory();
+
+        var report = new ReportBuilder<Sale>("workbook")
+            .From(source)
+            .Column(v => v.Id, "Id") // report default columns (the "Even" section uses these)
+            .ToSections(new SectionedOutputSpec(factory), s => s
+                .Section("Even", v => v.Where(x => x.Id % 2 == 0))
+                .Section("Odd", v => v
+                    .Where(x => x.Id % 2 == 1)
+                    .Column(x => x.Id, "Id")
+                    .Column(x => x.Customer, "Customer")))
+            .Build();
+
+        var result = await Run(report);
+
+        result.Status.ShouldBe(ReportRunStatus.Completed);
+        source.ReadCalls.ShouldBe(1); // one workbook file, both sections from one read
+        result.Stats.RecordsWritten.ShouldBe(4);
+
+        var writer = factory.Last!;
+        writer.Finalized.ShouldBeTrue();
+        writer.InitSections.Select(x => x.Name).ShouldBe(EvenOddSections);
+
+        // "Even" section: even ids, the report's single column.
+        writer.Sections[0].Select(r => (long)r[0]!).ShouldBe(EvenIds);
+        writer.Sections[0].ShouldAllBe(r => r.Length == 1);
+
+        // "Odd" section: odd ids, its own two columns.
+        writer.Sections[1].Select(r => (long)r[0]!).ShouldBe(OddIds);
+        writer.Sections[1].ShouldAllBe(r => r.Length == 2);
+        writer.Sections[1].Select(r => (string)r[1]!).ShouldBe(OddCustomers);
     }
 }

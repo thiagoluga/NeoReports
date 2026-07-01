@@ -134,12 +134,17 @@ boundary) are still open in that doc and must be settled before B1.2.
   single pass and writes one file per view. Default single-output path stays byte-identical.
   ✅ 54 green Core tests (+3); Jobs (16) and AspNetCore (10) unaffected. The Pro workbook writer
   (views → sheets in one file) is B1.2.
-- [ ] **B1.2 — `NeoReports.Xlsx.Pro` package (commercial).** Fluent `XlsxWorkbook(...)` API + ClosedXML
-  workbook writer (one named sheet per section). Placeholder commercial LICENSE/metadata. Golden-file
-  test.
-- [ ] **B1.3 — Packaging & CI.** Pro package builds/packs but is excluded from the OSS NuGet release.
-- [ ] **B1.4 — Sample** `06-multi-sheet-xlsx` (typed: Approved/Rejected sheets).
-- [ ] **B1.5 — Dynamic config** support for `xlsx-workbook` (optional, after the typed API settles).
+- [x] **B1.2 — OSS sectioned-output hook (MIT).** A single output can carry several sections (one file,
+  many sections — e.g. a workbook) via `ToSections(spec, s => s.Section("name", v => ...))`, each with
+  its own filter/columns, all projected in one pass. New Core contracts `IReportSectionedWriter` /
+  `ISectionedWriterFactory` (in Core, not the frozen Abstractions). ✅ 55 green Core tests (+1); Jobs
+  (16) and AspNetCore (10) unaffected; default path still byte-identical.
+- [ ] **B1.3 — `NeoReports.Xlsx.Pro` package (commercial).** Fluent `XlsxWorkbook(...)` API + ClosedXML
+  `IReportSectionedWriter` (one named worksheet per section) + PolyForm Small Business LICENSE +
+  metadata. Golden-file test.
+- [ ] **B1.4 — Packaging & CI.** Pro package builds/packs but is excluded from the OSS NuGet release.
+- [ ] **B1.5 — Sample** `06-multi-sheet-xlsx` (typed: Approved/Rejected sheets).
+- [ ] **B1.6 — Dynamic config** support for `xlsx-workbook` (optional, after the typed API settles).
 
 ### B2 — Multi-source reports (later)
 

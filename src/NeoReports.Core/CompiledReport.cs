@@ -1,8 +1,12 @@
 using NeoReports.Abstractions;
 using NeoReports.Core.Building;
 using NeoReports.Core.Pipeline;
+using NeoReports.Core.Sections;
 
 namespace NeoReports.Core;
+
+/// <summary>A compiled sectioned output: the writer factory plus its sections (name + schema), in order.</summary>
+internal sealed record CompiledSectionedOutput(SectionedOutputSpec Spec, IReadOnlyList<ReportSection> Sections);
 
 /// <summary>
 /// An immutable, type-erased report definition produced by <c>ReportBuilder&lt;T&gt;</c> and held
@@ -18,6 +22,7 @@ public sealed class CompiledReport
         Func<ReportExecutionContext, IProjectedBatchReader> readerFactory,
         IReadOnlyList<OutputSpec> outputs,
         IReadOnlyList<ReportSchema> outputSchemas,
+        IReadOnlyList<CompiledSectionedOutput> sectionedOutputs,
         IReadOnlyList<DestinationSpec> destinations,
         RetryOptions retry,
         IFailureStrategy failureStrategy)
@@ -28,6 +33,7 @@ public sealed class CompiledReport
         ReaderFactory = readerFactory;
         Outputs = outputs;
         OutputSchemas = outputSchemas;
+        SectionedOutputs = sectionedOutputs;
         Destinations = destinations;
         Retry = retry;
         FailureStrategy = failureStrategy;
@@ -53,6 +59,9 @@ public sealed class CompiledReport
 
     /// <summary>Schema of each output, aligned to <see cref="Outputs"/> (each output may have its own columns).</summary>
     internal IReadOnlyList<ReportSchema> OutputSchemas { get; }
+
+    /// <summary>Configured sectioned outputs (single file, several sections — e.g. an XLSX workbook).</summary>
+    internal IReadOnlyList<CompiledSectionedOutput> SectionedOutputs { get; }
 
     /// <summary>Configured destinations.</summary>
     internal IReadOnlyList<DestinationSpec> Destinations { get; }

@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using NeoReports.Abstractions;
 using NeoReports.Core.Building;
 using NeoReports.Core.Registry;
+using NeoReports.Core.Sections;
 
 namespace NeoReports.Core.Pipeline;
 
@@ -67,6 +68,7 @@ public sealed class ReportRunner : IReportRunner
         Directory.CreateDirectory(tempDir);
 
         var outputs = new List<RunningOutput>(report.Outputs.Count);
+        var sectioned = new List<RunningSectioned>(report.SectionedOutputs.Count);
         var reader = report.ReaderFactory(execution);
 
         long recordsRead = 0, recordsWritten = 0;
@@ -99,6 +101,27 @@ public sealed class ReportRunner : IReportRunner
                     new WriterContext(execution, stream, report.OutputSchemas[outputIndex], spec.Options), cancellationToken)
                     .ConfigureAwait(false);
                 outputs.Add(new RunningOutput(writer, stream, path, fileName, writer.MimeType));
+            }
+
+            for (var sectionedIndex = 0; sectionedIndex < report.SectionedOutputs.Count; sectionedIndex++)
+            {
+                CompiledSectionedOutput sectionedSpec = report.SectionedOutputs[sectionedIndex];
+                IReportSectionedWriter writer = sectionedSpec.Spec.Factory.Create(sectionedSpec.Spec.Options, services);
+
+                var fileName = $"{report.Name}.{writer.FileExtension}";
+                var suffix = 2;
+                while (!usedFileNames.Add(fileName))
+                {
+                    fileName = $"{report.Name}-{suffix}.{writer.FileExtension}";
+                    suffix++;
+                }
+
+                var path = Path.Join(tempDir, fileName);
+                var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
+                await writer.InitializeAsync(
+                    new SectionedWriterContext(execution, stream, sectionedSpec.Sections, sectionedSpec.Spec.Options), cancellationToken)
+                    .ConfigureAwait(false);
+                sectioned.Add(new RunningSectioned(writer, stream, path, fileName, writer.MimeType, sectionedSpec.Sections.Count));
             }
 
             string? cursor = null;
@@ -151,6 +174,13 @@ public sealed class ReportRunner : IReportRunner
                     for (var outputIndex = 0; outputIndex < outputs.Count; outputIndex++)
                         await outputs[outputIndex].Writer.WriteRowsAsync(batch.Outputs[outputIndex], cancellationToken).ConfigureAwait(false);
 
+                    for (var s = 0; s < sectioned.Count; s++)
+                    {
+                        IReadOnlyList<IReadOnlyList<object?[]>> sectionRows = batch.SectionedOutputs[s];
+                        for (var sec = 0; sec < sectioned[s].SectionCount; sec++)
+                            await sectioned[s].Writer.WriteSectionRowsAsync(sec, sectionRows[sec], cancellationToken).ConfigureAwait(false);
+                    }
+
                     recordsWritten += batch.WrittenCount;
                     consecutiveFailures = 0;
                 }
@@ -194,14 +224,29 @@ public sealed class ReportRunner : IReportRunner
                     bytesWritten += output.SizeBytes;
                 }
 
+                foreach (RunningSectioned output in sectioned)
+                {
+                    await output.Writer.FinalizeAsync(cancellationToken).ConfigureAwait(false);
+                    await output.Writer.DisposeAsync().ConfigureAwait(false);
+                    await output.WriteStream.FlushAsync(cancellationToken).ConfigureAwait(false);
+                    await output.WriteStream.DisposeAsync().ConfigureAwait(false);
+                    output.Closed = true;
+                    output.SizeBytes = new FileInfo(output.Path).Length;
+                    bytesWritten += output.SizeBytes;
+                }
+
+                var finishedFiles = new List<IFinishedFile>(outputs.Count + sectioned.Count);
+                finishedFiles.AddRange(outputs);
+                finishedFiles.AddRange(sectioned);
+
                 foreach (var destSpec in report.Destinations)
                 {
                     var destination = destSpec.Factory.Create(destSpec.Options, services);
-                    foreach (var output in outputs)
+                    foreach (IFinishedFile finished in finishedFiles)
                     {
                         var file = new ReportFile(
-                            output.FileName, output.MimeType, output.SizeBytes,
-                            () => new FileStream(output.Path, FileMode.Open, FileAccess.Read, FileShare.Read));
+                            finished.FileName, finished.MimeType, finished.SizeBytes,
+                            () => new FileStream(finished.Path, FileMode.Open, FileAccess.Read, FileShare.Read));
                         uploads.Add(await destination.UploadAsync(
                             file, new DestinationContext(execution, destSpec.Options), cancellationToken)
                             .ConfigureAwait(false));
@@ -212,9 +257,9 @@ public sealed class ReportRunner : IReportRunner
                 // artifact store is registered. Copying happens before the temp dir is cleaned up.
                 if (services.GetService(typeof(NeoReports.Core.Artifacts.IReportArtifactStore)) is NeoReports.Core.Artifacts.IReportArtifactStore artifactStore)
                 {
-                    foreach (var output in outputs)
+                    foreach (IFinishedFile finished in finishedFiles)
                         await artifactStore.SaveAsync(
-                            execution.JobId, output.Path, output.FileName, output.MimeType, cancellationToken)
+                            execution.JobId, finished.Path, finished.FileName, finished.MimeType, cancellationToken)
                             .ConfigureAwait(false);
                 }
             }
@@ -231,6 +276,12 @@ public sealed class ReportRunner : IReportRunner
                     await SafeDisposeAsync(output.Writer).ConfigureAwait(false);
                     await SafeDisposeAsync(output.WriteStream).ConfigureAwait(false);
                 }
+            }
+
+            foreach (RunningSectioned output in sectioned.Where(o => !o.Closed))
+            {
+                await SafeDisposeAsync(output.Writer).ConfigureAwait(false);
+                await SafeDisposeAsync(output.WriteStream).ConfigureAwait(false);
             }
 
             await reader.DisposeAsync().ConfigureAwait(false);
@@ -262,7 +313,16 @@ public sealed class ReportRunner : IReportRunner
         }
     }
 
-    private sealed class RunningOutput
+    /// <summary>A finished output file (regular or sectioned) for upload and artifact retention.</summary>
+    private interface IFinishedFile
+    {
+        string Path { get; }
+        string FileName { get; }
+        string MimeType { get; }
+        long SizeBytes { get; }
+    }
+
+    private sealed class RunningOutput : IFinishedFile
     {
         public RunningOutput(IReportWriter writer, FileStream writeStream, string path, string fileName, string mimeType)
         {
@@ -278,6 +338,29 @@ public sealed class ReportRunner : IReportRunner
         public string Path { get; }
         public string FileName { get; }
         public string MimeType { get; }
+        public bool Closed { get; set; }
+        public long SizeBytes { get; set; }
+    }
+
+    private sealed class RunningSectioned : IFinishedFile
+    {
+        public RunningSectioned(
+            IReportSectionedWriter writer, FileStream writeStream, string path, string fileName, string mimeType, int sectionCount)
+        {
+            Writer = writer;
+            WriteStream = writeStream;
+            Path = path;
+            FileName = fileName;
+            MimeType = mimeType;
+            SectionCount = sectionCount;
+        }
+
+        public IReportSectionedWriter Writer { get; }
+        public FileStream WriteStream { get; }
+        public string Path { get; }
+        public string FileName { get; }
+        public string MimeType { get; }
+        public int SectionCount { get; }
         public bool Closed { get; set; }
         public long SizeBytes { get; set; }
     }
