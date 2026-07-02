@@ -98,5 +98,6 @@ public class DynamicReportsRehydrationTests : IDisposable
     {
         if (Directory.Exists(_directory))
             Directory.Delete(_directory, recursive: true);
+        GC.SuppressFinalize(this);
     }
 }

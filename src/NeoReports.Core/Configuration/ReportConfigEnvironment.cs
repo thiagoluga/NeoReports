@@ -9,12 +9,12 @@ namespace NeoReports.Core.Configuration;
 /// written into a persisted config document (<see cref="IReportConfigStore"/> always stores the
 /// original, unresolved document).
 /// </summary>
-public static class ReportConfigEnvironment
+public static partial class ReportConfigEnvironment
 {
     // Whole-value match only — no interpolation inside larger strings, no defaults syntax, no
     // recursion. Keeping this narrow keeps ReportConfigCompiler pure and the behavior predictable.
-    private static readonly Regex PlaceholderPattern =
-        new(@"^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    [GeneratedRegex(@"^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$", RegexOptions.CultureInvariant)]
+    private static partial Regex PlaceholderPattern();
 
     /// <summary>
     /// Returns a copy of <paramref name="config"/> with every string property value that is
@@ -26,9 +26,9 @@ public static class ReportConfigEnvironment
     {
         ArgumentNullException.ThrowIfNull(config);
 
-        var source = config.Source with { Properties = SubstituteProperties(config.Source.Properties) };
+        SourceConfig source = config.Source with { Properties = SubstituteProperties(config.Source.Properties) };
 
-        var outputs = config.Outputs
+        OutputConfig[] outputs = config.Outputs
             .Select(output => output with { Properties = SubstituteProperties(output.Properties) })
             .ToArray();
 
@@ -57,7 +57,7 @@ public static class ReportConfigEnvironment
         if (value is not string text)
             return value;
 
-        Match match = PlaceholderPattern.Match(text);
+        Match match = PlaceholderPattern().Match(text);
         if (!match.Success)
             return value;
 

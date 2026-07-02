@@ -18,7 +18,7 @@ internal sealed class FileStoreRegistryHydrator : IRegistryHydrator
     /// <inheritdoc />
     public void Hydrate(IMutableReportRegistry registry, IServiceProvider services)
     {
-        var store = services.GetRequiredService<IReportConfigStore>();
+        IReportConfigStore store = services.GetRequiredService<IReportConfigStore>();
         ILogger logger = services.GetService<ILoggerFactory>()
             ?.CreateLogger("NeoReports.Core.Configuration.FileStoreRegistryHydrator")
             ?? NullLogger.Instance;

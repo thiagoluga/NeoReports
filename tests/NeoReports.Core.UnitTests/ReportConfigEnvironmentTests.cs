@@ -12,7 +12,11 @@ public class ReportConfigEnvironmentTests : IDisposable
 
     public ReportConfigEnvironmentTests() => Environment.SetEnvironmentVariable(VarName, "resolved-value");
 
-    public void Dispose() => Environment.SetEnvironmentVariable(VarName, null);
+    public void Dispose()
+    {
+        Environment.SetEnvironmentVariable(VarName, null);
+        GC.SuppressFinalize(this);
+    }
 
     private static ReportConfig BaseConfig(IReadOnlyDictionary<string, object?> sourceProperties) => new(
         Name: "r",

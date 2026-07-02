@@ -8,14 +8,15 @@ namespace NeoReports.Core.Configuration;
 /// endpoints), so an invalid name is always rejected — never sanitized — to keep path traversal
 /// structurally impossible.
 /// </summary>
-public static class DynamicReportName
+public static partial class DynamicReportName
 {
     /// <summary>The validation pattern: starts with a letter, then up to 99 letters/digits/underscore/hyphen.</summary>
     public const string Pattern = "^[a-zA-Z][a-zA-Z0-9_-]{0,99}$";
 
-    private static readonly Regex Regex = new(Pattern, RegexOptions.Compiled | RegexOptions.CultureInvariant);
-
     /// <summary>True when <paramref name="name"/> matches <see cref="Pattern"/>.</summary>
     /// <param name="name">The candidate report name.</param>
-    public static bool IsValid(string? name) => name is not null && Regex.IsMatch(name);
+    public static bool IsValid(string? name) => name is not null && NamePattern().IsMatch(name);
+
+    [GeneratedRegex(Pattern, RegexOptions.CultureInvariant)]
+    private static partial Regex NamePattern();
 }
