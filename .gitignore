@@ -70,3 +70,6 @@ _*.txt
 *.flag
 _*/
 *.trx
+
+# Dynamic report configs persisted locally by AddDynamicReports() (default directory)
+neoreports-configs/
