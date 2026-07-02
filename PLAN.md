@@ -328,9 +328,14 @@ not sanitized.
   tests green (6 new: code-first detail shape, dynamic-report detail is deletable, 404 unknown,
   no `"properties"` key, list summary carries formats/destinations, origin defaults to "code"
   with no dynamic-reports support configured).
-- [ ] **D5 — AspNetCore: `GET /jobs/{id}/artifacts`.** File name / mime / `SizeBytes` from the
-  existing artifact store (never `Path`); kept out of `JobView` so status polling does no IO;
-  non-completed job → `[]`. Tests per §D5.
+- [x] **D5 — AspNetCore: `GET /jobs/{id}/artifacts`.** `ArtifactView` (file name / mime /
+  `SizeBytes`, never `Path`) from the existing `IReportArtifactStore`; kept out of `JobView`
+  so status polling does no IO; unknown job → 404; non-completed job → `[]` (not an error);
+  `IReportArtifactStore` injected the same plain way `DownloadAsync` already does (no
+  `[FromServices]`), mirroring its existing null/absence behavior exactly rather than
+  introducing a new pattern. ✅ solution builds 0 warnings; 184/184 tests green (5 new: single
+  artifact matches size, multi-output count matches the zip download, no `"path"` key in the
+  response, running job → `[]`, unknown job → 404).
 - [ ] **D6 — UI: Builder wired end-to-end.** `BuilderConfigMapper` (`BuilderState` →
   `ReportConfig` JSON, pure + unit-tested with a golden snapshot); client methods
   `TryGetCapabilities`/`TryValidateReport`/`TryCreateReport`/`TryDeleteReport`; step 1 sources

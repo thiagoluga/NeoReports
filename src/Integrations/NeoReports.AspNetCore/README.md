@@ -21,6 +21,7 @@ reports and jobs, via Minimal API.
 | GET | `/jobs/{id}` | job status + stats |
 | POST | `/jobs/{id}/cancel` | request cooperative cancellation |
 | GET | `/jobs/{id}/download` | download the result (multi-output → zip) |
+| GET | `/jobs/{id}/artifacts` | finished output files (name/mime/size, never the on-disk path); `[]` if not completed |
 
 The `POST /reports`, `POST /reports/validate`, and `DELETE /reports/{name}` endpoints require
 `NeoReports.Core`'s `AddDynamicReports()` to be called (registers `IReportConfigStore` — see that
