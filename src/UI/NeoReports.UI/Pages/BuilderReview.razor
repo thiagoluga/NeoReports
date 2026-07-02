@@ -2,6 +2,7 @@
 @using NeoReports.UI.Services
 @inject NavigationManager Nav
 @inject BuilderState Wizard
+@inject INeoReportsApiClient Api
 
 <div class="page">
     <WizardStepper Steps="Steps" Current="4" />
@@ -12,6 +13,21 @@
             <div class="sub">Confirm the configuration, save as a template and schedule · step 5 of 5</div>
         </div>
     </div>
+
+    @if (!Wizard.EngineAvailable)
+    {
+        <Banner Variant="info" Icon="info-circle">
+            <b>Demo mode</b>
+            <span style="font-size:12px">No engine capabilities were found in step 1 — saving and running are disabled.</span>
+        </Banner>
+    }
+    @if (_saveError is not null)
+    {
+        <Banner Variant="danger" Icon="alert-triangle">
+            <b>Could not save the report</b>
+            <span style="font-size:12px">@_saveError</span>
+        </Banner>
+    }
 
     @* Summary *@
     <Card Title="Configuration summary">
@@ -36,8 +52,8 @@
         {
             <div class="col" style="gap:14px">
                 <div class="grid-2">
-                    <div class="field"><span class="label-sm">Name</span><span class="input"><input value="Monthly sales · retail" style="width:100%" /></span></div>
-                    <div class="field"><span class="label-sm">URL identifier</span><span class="input"><span class="mono muted" style="font-size:11px">/reports/</span><input class="mono" value="monthly-sales-retail" style="flex:1" /></span></div>
+                    <div class="field"><span class="label-sm">Name</span><span class="input mono"><input class="mono" @bind="Wizard.ReportName" @bind:event="oninput" placeholder="monthly-sales" style="width:100%" /></span></div>
+                    <div class="field"><span class="label-sm">URL identifier</span><span class="input"><span class="mono muted" style="font-size:11px">/reports/</span><input class="mono" value="@Wizard.ReportName" readonly style="flex:1" /></span></div>
                 </div>
                 <div class="field"><span class="label-sm">Description</span><textarea style="width:100%;min-height:64px;padding:8px 10px;background:var(--bg);border:0.5px solid var(--border);border-radius:6px;font:400 13px var(--font-sans);color:var(--fg);resize:vertical">Monthly snapshot of sales per store, grouped by category. Includes returns and manual adjustments.</textarea></div>
                 <div class="grid-2">
@@ -104,8 +120,8 @@
     <div class="wizard-footer">
         <Button Variant="outline" Icon="arrow-left" OnClick="@(() => Nav.NavigateTo("builder/destination"))">Back</Button>
         <div style="display:flex;gap:8px">
-            <Button Variant="outline" Icon="player-play" OnClick="@(() => Nav.NavigateTo("jobs/7c4a01f3"))">Run now</Button>
-            <Button Variant="primary" Icon="check" OnClick="Save">Save and schedule</Button>
+            <Button Variant="outline" Icon="player-play" Disabled="@(!Wizard.EngineAvailable)" Loading="_running" OnClick="RunNowAsync">Run now</Button>
+            <Button Variant="primary" Icon="check" Disabled="@(!Wizard.EngineAvailable)" Loading="_saving" OnClick="SaveAsync">Save and schedule</Button>
         </div>
     </div>
 </div>
@@ -113,6 +129,63 @@
 @code {
     private readonly string[] Steps = { "Source", "Columns", "Format", "Destination", "Review" };
     private bool _allowExec = true, _lockEdit = false;
+    private bool _saving;
+    private bool _running;
+    private string? _saveError;
+
     private void ToggleDay(int i) { if (!Wizard.Weekdays.Add(i)) Wizard.Weekdays.Remove(i); }
-    private void Save() { Nav.NavigateTo("reports/monthly-sales"); }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        _saveError = null;
+        try
+        {
+            ApiCreateResult result = await Api.TryCreateReportAsync(BuilderConfigMapper.ToConfigJson(Wizard));
+            if (result.Outcome == ApiCreateOutcome.Created)
+                Nav.NavigateTo($"reports/{result.Name ?? Wizard.ReportName}");
+            else
+                _saveError = result.Error ?? DescribeFailure(result.Outcome);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task RunNowAsync()
+    {
+        _running = true;
+        _saveError = null;
+        try
+        {
+            ApiCreateResult created = await Api.TryCreateReportAsync(BuilderConfigMapper.ToConfigJson(Wizard));
+            if (created.Outcome != ApiCreateOutcome.Created)
+            {
+                _saveError = created.Error ?? DescribeFailure(created.Outcome);
+                return;
+            }
+
+            string reportName = created.Name ?? Wizard.ReportName;
+            string? jobId = await Api.TryRunReportAsync(reportName);
+            if (jobId is null)
+            {
+                _saveError = $"Report '{reportName}' was saved but could not be started.";
+                return;
+            }
+
+            Nav.NavigateTo($"jobs/{jobId}");
+        }
+        finally
+        {
+            _running = false;
+        }
+    }
+
+    private static string DescribeFailure(ApiCreateOutcome outcome) => outcome switch
+    {
+        ApiCreateOutcome.NameTaken => "A report with this name already exists.",
+        ApiCreateOutcome.Invalid => "The configuration was rejected by the engine.",
+        _ => "The engine is not reachable right now.",
+    };
 }
