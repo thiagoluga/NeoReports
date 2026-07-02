@@ -8,6 +8,13 @@ using NeoReports.Core.Registry;
 
 namespace NeoReports.Core.DependencyInjection;
 
+/// <summary>Options for <see cref="ServiceCollectionExtensions.AddDynamicReports"/>.</summary>
+public sealed class DynamicReportsOptions
+{
+    /// <summary>Directory where dynamic report configs are persisted. Default: <c>./neoreports-configs</c>.</summary>
+    public string Directory { get; set; } = "./neoreports-configs";
+}
+
 /// <summary>DI entry points for registering NeoReports and individual reports.</summary>
 public static class ServiceCollectionExtensions
 {
@@ -97,6 +104,35 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>
+    /// Registers dynamic (runtime-created) report support: a file-backed <see cref="IReportConfigStore"/>
+    /// and startup rehydration of every document it holds, through the same lazy mechanism
+    /// code-first config reports (<see cref="AddReportFromConfig"/>) already use. Combine with the
+    /// AspNetCore package's dynamic report endpoints to let a UI create reports at runtime.
+    /// Safe to call multiple times.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configure">Optional options callback (e.g. to change the storage directory).</param>
+    public static IServiceCollection AddDynamicReports(
+        this IServiceCollection services, Action<DynamicReportsOptions>? configure = null)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.AddNeoReports();
+
+        var options = new DynamicReportsOptions();
+        configure?.Invoke(options);
+        services.TryAddSingleton(options);
+
+        services.TryAddSingleton<IReportConfigStore>(
+            serviceProvider => new FileReportConfigStore(serviceProvider.GetRequiredService<DynamicReportsOptions>().Directory));
+
+        if (!services.Any(d => d.ServiceType == typeof(IRegistryHydrator) && d.ImplementationType == typeof(FileStoreRegistryHydrator)))
+            services.AddSingleton<IRegistryHydrator, FileStoreRegistryHydrator>();
+
+        return services;
+    }
+
     private static ReportRegistry GetOrAddRegistry(IServiceCollection services)
     {
         foreach (var descriptor in services)
@@ -113,12 +149,24 @@ public static class ServiceCollectionExtensions
         // Concrete instance: the dedup anchor and the eager target for typed AddReport calls.
         services.AddSingleton(registry);
 
+        // Same singleton instance, exposed through the mutable interface for the dynamic path
+        // (ADR D33) — runtime register/unregister without a second registry to keep in sync.
+        services.AddSingleton<IMutableReportRegistry>(registry);
+
         // The public registry compiles any config-registered reports on first resolution, when the
         // service provider — and thus the source/format/destination providers — is available.
+        // Hydrators (e.g. FileStoreRegistryHydrator, added by AddDynamicReports) run afterwards
+        // regardless of whether AddDynamicReports was called before or after this factory was
+        // registered — GetServices<IRegistryHydrator> only runs when IReportRegistry is resolved,
+        // by which point the whole service collection has already been built.
         services.AddSingleton<IReportRegistry>(serviceProvider =>
         {
             foreach (ReportConfig config in serviceProvider.GetServices<ReportConfig>())
                 registry.Register(ReportConfigCompiler.Compile(config, serviceProvider));
+
+            foreach (IRegistryHydrator hydrator in serviceProvider.GetServices<IRegistryHydrator>())
+                hydrator.Hydrate(registry, serviceProvider);
+
             return registry;
         });
 

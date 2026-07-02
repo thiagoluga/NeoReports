@@ -3,8 +3,9 @@ using NeoReports.Abstractions;
 
 namespace NeoReports.Core.Registry;
 
-/// <summary>Default thread-safe <see cref="IReportRegistry"/>. Reports are added at startup.</summary>
-public sealed class ReportRegistry : IReportRegistry
+/// <summary>Default thread-safe <see cref="IReportRegistry"/>. Reports are added at startup, and
+/// — through <see cref="IMutableReportRegistry"/> — at runtime for the dynamic-registration path.</summary>
+public sealed class ReportRegistry : IMutableReportRegistry
 {
     private readonly ConcurrentDictionary<string, CompiledReport> _reports =
         new(StringComparer.Ordinal);
@@ -31,4 +32,7 @@ public sealed class ReportRegistry : IReportRegistry
 
     /// <inheritdoc />
     public bool Contains(string name) => _reports.ContainsKey(name);
+
+    /// <inheritdoc />
+    public bool Unregister(string name) => _reports.TryRemove(name, out _);
 }

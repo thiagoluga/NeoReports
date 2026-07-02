@@ -273,13 +273,24 @@ counterparts). Ground rules for every item: `Abstractions` stays frozen; GET res
 echo property bags; dynamic report names are validated (`^[a-zA-Z][a-zA-Z0-9_-]{0,99}$`),
 not sanitized.
 
-- [ ] **D1 — Core: mutable registry + persisted config store.** `IMutableReportRegistry`
-  (`Register`/`Unregister` — `ReportRegistry` already has a thread-safe `Register`);
-  `IReportConfigStore` + file-backed impl (one `{name}.json` per report, atomic tmp+move
-  writes); `AddDynamicReports()` with startup rehydration through the existing lazy registry
-  build (corrupt files logged + skipped, code-first wins name collisions); `${VAR}` whole-value
-  env placeholders (`ReportConfigEnvironment.Substitute`) so secrets stay out of persisted
-  configs. Unit tests per blueprint §D1.
+- [x] **D1 — Core: mutable registry + persisted config store.** `IMutableReportRegistry`
+  (`Register`/`Unregister`); `ReportRegistry` implements it (`Unregister` added, thread-safe
+  `TryRemove`) and is exposed under both interfaces from the same singleton instance.
+  `IReportConfigStore` + `FileReportConfigStore` (one `{name}.json` per report, atomic
+  tmp-then-move writes, `*.json` listing naturally excludes `.tmp` leftovers,
+  `DynamicReportName` regex shared for reuse by the AspNetCore endpoints in D2).
+  `AddDynamicReports()` registers the store and an internal `IRegistryHydrator`
+  (`FileStoreRegistryHydrator`) resolved via `GetServices<IRegistryHydrator>()` inside the
+  existing lazy `IReportRegistry` factory — runs regardless of `AddDynamicReports` vs
+  `AddNeoReports` call order, since the factory only executes on first resolution, after the
+  whole service collection is built. Corrupt/incompilable stored documents and name
+  collisions (code-first wins) are caught as `ConfigurationException`, logged (sanitized),
+  and skipped — never crash the host. `ReportConfigEnvironment.Substitute` resolves
+  whole-value `${VAR}` placeholders from environment variables at compile time so secrets
+  never touch the persisted document. ✅ solution builds 0 warnings; 148/148 tests green
+  (22 new: registry unregister, file-store roundtrip/invalid-name/tmp-exclusion, env
+  substitution happy/missing/non-placeholder/non-string/lowercase/embedded, rehydration
+  happy/corrupt-sibling/name-collision).
 - [ ] **D2 — AspNetCore: dynamic report endpoints.** `POST /reports` (parse → name regex →
   409-if-exists → env-substitute → compile → register → persist original document, with
   rollback on persist failure; 201 + Location), `POST /reports/validate` (dry-run, 200 with
