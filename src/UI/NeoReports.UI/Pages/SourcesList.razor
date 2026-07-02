@@ -2,6 +2,7 @@
 @using NeoReports.UI.Models
 @using NeoReports.UI.Services
 @inject NavigationManager Nav
+@inject INeoReportsApiClient Api
 
 <div class="page">
     <div class="page-head">
@@ -11,6 +12,30 @@
         </div>
         <Button Variant="primary" Icon="plus">Register source</Button>
     </div>
+
+    @* Engine source types — GET /api/capabilities (Epic D / D9). Additive: the decorative
+       catalog below is unchanged, since capabilities only reports registered provider *types*
+       (e.g. "sql"), not per-source name/health/latency — no per-source data to replace it with. *@
+    @if (_engineSourceTypes.Count > 0)
+    {
+        <div>
+            <p class="label-sm" style="margin-bottom:10px">Engine source types</p>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+                @foreach (var type in _engineSourceTypes)
+                {
+                    <div class="src-card">
+                        <div class="sc-head">
+                            <CatTile Kind="teal" Icon="database" />
+                            <div class="info">
+                                <div class="title-row"><span class="title mono">@type</span></div>
+                                <span class="conn">Registered <span class="mono">IConfigSourceProvider</span></span>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
 
     @* Count strip — mock/future: health aggregates not exposed yet *@
     <div class="count-strip">
@@ -35,6 +60,7 @@
 
 @code {
     private string _search = "";
+    private IReadOnlyList<string> _engineSourceTypes = Array.Empty<string>();
 
     private IEnumerable<SourceSummary> Filtered =>
         SampleData.Sources.Where(s =>
@@ -48,5 +74,11 @@
         {
             Nav.NavigateTo($"sources/{s.Id}/explore");
         }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        ApiCapabilities? capabilities = await Api.TryGetCapabilitiesAsync();
+        _engineSourceTypes = capabilities?.Sources ?? Array.Empty<string>();
     }
 }
