@@ -1,0 +1,67 @@
+@* ReportCard — list item for a report template.
+   Head: cat tile + name + status + description + tags + primary action.
+   Body: SCHEDULE / PIPELINE / LAST RUN grid.
+   Usage:  <ReportCard Report="r" OnOpen="@(() => Nav.NavigateTo($"reports/{r.Slug}"))" /> *@
+@using NeoReports.UI.Models
+
+<div class="report-card" style="cursor:pointer" @onclick="OnOpen">
+    <div class="rc-head">
+        <CatTile Kind="@Report.CatKind" Icon="@Report.CatIcon" />
+        <div class="info-col">
+            <div class="title-row">
+                <span class="title">@Report.Name</span>
+                <JobStatusBadge Status="Report.Status" />
+            </div>
+            <span class="desc">@Report.Description</span>
+            <div class="tags">
+                @foreach (var t in Report.Tags)
+                {
+                    <Chip>@t</Chip>
+                }
+            </div>
+        </div>
+        <div class="actions" @onclick:stopPropagation="true">
+            <Button Variant="@(Report.Status == JobStatus.Failed ? "danger" : "outline")" Size="sm"
+                    Icon="@Report.PrimaryIcon" OnClick="OnPrimary">@Report.PrimaryAction</Button>
+            <button class="btn icon-only sm subtle"><i class="ti ti-dots-vertical"></i></button>
+        </div>
+    </div>
+    <div class="rc-body">
+        <div class="cell">
+            <span class="k">Schedule</span>
+            <span class="v">@Report.ScheduleTitle</span>
+            <span class="vmono">@Report.ScheduleSub</span>
+        </div>
+        <div class="cell">
+            <span class="k">Pipeline</span>
+            <div class="pipeline-chips">
+                <span class="chip">@Report.Source</span>
+                <i class="ti ti-arrow-right arrow" style="font-size:12px"></i>
+                @foreach (var f in Report.Formats)
+                {
+                    <span class="chip format @FormatClass(f)">@f</span>
+                }
+                <i class="ti ti-arrow-right arrow" style="font-size:12px"></i>
+                <span class="chip">@Report.Destination</span>
+            </div>
+        </div>
+        <div class="cell">
+            <span class="k">Last run</span>
+            <span class="v">@Report.LastTitle</span>
+            <span class="vmono">@Report.LastSub</span>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public ReportSummary Report { get; set; } = default!;
+    [Parameter] public EventCallback OnOpen { get; set; }
+    [Parameter] public EventCallback OnPrimary { get; set; }
+
+    private static string FormatClass(string format) => format.ToLowerInvariant() switch
+    {
+        "pdf" => "pdf",
+        "json" or "xml" => "json",
+        _ => "",
+    };
+}

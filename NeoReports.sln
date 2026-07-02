@@ -79,9 +79,9 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NeoReports.Samples.MultiSou
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Destinations", "Destinations", "{5785BC42-0EC0-98FB-3B2B-12E9D9C18C4E}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NeoReports.Web", "src\Web\NeoReports.Web\NeoReports.Web.csproj", "{783D9E03-4048-48FD-A394-8EDA71C85785}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NeoReports.UI", "src\UI\NeoReports.UI\NeoReports.UI.csproj", "{783D9E03-4048-48FD-A394-8EDA71C85785}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NeoReports.Samples.WebUi", "samples\08-web-ui\NeoReports.Samples.WebUi.csproj", "{D6D810F4-CD28-4A79-B385-2EFA7C0895A0}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NeoReports.Samples.WebUI", "samples\08-web-ui\NeoReports.Samples.WebUI.csproj", "{D6D810F4-CD28-4A79-B385-2EFA7C0895A0}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

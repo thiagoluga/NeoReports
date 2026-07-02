@@ -1,6 +1,6 @@
 {
   "profiles": {
-    "NeoReports.Samples.WebUi": {
+    "NeoReports.Samples.WebUI": {
       "commandName": "Project",
       "launchBrowser": true,
       "environmentVariables": {

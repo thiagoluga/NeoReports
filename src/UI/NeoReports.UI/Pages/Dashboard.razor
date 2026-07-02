@@ -1,0 +1,138 @@
+@page "/"
+@using NeoReports.UI.Models
+@using NeoReports.UI.Services
+@inject NavigationManager Nav
+
+<div class="page">
+    <div class="page-head">
+        <div class="title">
+            <h1>Dashboard</h1>
+            <div class="sub">Overview of the last 24 hours</div>
+        </div>
+        <Button Variant="primary" Icon="plus" OnClick="@(() => Nav.NavigateTo("builder"))">New report</Button>
+    </div>
+
+    @* Metric strip — mock/future: aggregate metrics not exposed by the engine yet *@
+    <div class="grid-4">
+        <MetricCard Icon="player-play" Label="Active jobs" Value="12" Sub="3 queued · 9 running" />
+        <MetricCard Icon="report-analytics" Label="Reports today" Value="486" Sub="vs yesterday" DeltaDir="up" DeltaText="+3.4%" />
+        <MetricCard Icon="circle-check" Label="Success rate" Value="98.4%" Sub="last 7 days" />
+        <MetricCard Icon="clock" Label="Avg duration" Value="3m 12s" Sub="vs week" DeltaDir="down" DeltaText="-18s" />
+    </div>
+
+    @* Recent jobs — GET /api/jobs (recent) *@
+    <Card Title="Recent jobs" Sub="Last 24 hours">
+        <Action>
+            <Button Variant="link" OnClick="@(() => Nav.NavigateTo("jobs/7c4a01f3"))">View all →</Button>
+        </Action>
+        <ChildContent>
+        <DataGrid Columns="5" Empty="false">
+            <Head>
+                <tr>
+                    <th>Report</th>
+                    <th>Status</th>
+                    <th>Progress</th>
+                    <th>Started</th>
+                    <th>Duration</th>
+                </tr>
+            </Head>
+            <Body>
+                @foreach (var r in SampleData.Reports.Where(r => !r.IsPipeline))
+                {
+                    <tr class="clickable" @onclick="@(() => Nav.NavigateTo(JobRoute(r.Status)))">
+                        <td>
+                            <div style="display:flex;align-items:center;gap:10px">
+                                <CatTile Kind="@r.CatKind" Icon="@r.CatIcon" Sm="true" />
+                                <div>
+                                    <div style="font-weight:500">@r.Name</div>
+                                    <div class="mono muted" style="font-size:11px">@r.Source → @string.Join(" + ", r.Formats)</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td><JobStatusBadge Status="r.Status" LabelOverride="@(r.Status == JobStatus.Ok ? "Completed" : null)" /></td>
+                        <td>
+                            @if (r.Status == JobStatus.Running)
+                            {
+                                <div style="display:flex;align-items:center;gap:8px">
+                                    <ProgressBar Pct="64" Mini="true" />
+                                    <span class="mono muted" style="font-size:11px">64%</span>
+                                </div>
+                            }
+                            else if (r.Status == JobStatus.Failed)
+                            {
+                                <span class="muted" style="font-size:12px">15/15 retries</span>
+                            }
+                            else if (r.Status == JobStatus.Paused)
+                            {
+                                <span class="muted" style="font-size:12px">waiting</span>
+                            }
+                            else
+                            {
+                                <span class="muted" style="font-size:12px">Completed</span>
+                            }
+                        </td>
+                        <td class="mono">@r.LastTitle</td>
+                        <td class="mono">@DurationOf(r)</td>
+                    </tr>
+                }
+            </Body>
+        </DataGrid>
+        </ChildContent>
+    </Card>
+
+    @* Sources + destinations — mock/future: health & upload history not exposed yet *@
+    <div class="grid-2">
+        <Card Title="Sources" Sub="Most used">
+            <Action><Button Variant="link" OnClick="@(() => Nav.NavigateTo("sources"))">Manage →</Button></Action>
+            <ChildContent>
+            @foreach (var s in SampleData.Sources.Take(5))
+            {
+                <div class="list-row">
+                    <span class="dot" style="@($"width:7px;height:7px;border-radius:50%;background:var(--{StatusMaps.Dot(s.Health)}-dot)")"></span>
+                    <div class="col" style="gap:0">
+                        <span class="name">@s.Name</span>
+                        <span class="sub">@s.Type</span>
+                    </div>
+                    <span class="right">@s.P95</span>
+                </div>
+            }
+            </ChildContent>
+        </Card>
+        <Card Title="Destinations" Sub="Latest uploads">
+            <Action><Button Variant="link">Manage →</Button></Action>
+            <ChildContent>
+            <div class="list-row">
+                <CatTile Kind="info" Icon="cloud-upload" Sm="true" />
+                <div class="col" style="gap:0"><span class="name">SharePoint · /Sales/2026</span><span class="sub">last upload</span></div>
+                <span class="right">14:35:54</span>
+            </div>
+            <div class="list-row">
+                <CatTile Kind="info" Icon="brand-aws" Sm="true" />
+                <div class="col" style="gap:0"><span class="name">s3://acme-reports/billing</span><span class="sub">last upload</span></div>
+                <span class="right">14:18:02</span>
+            </div>
+            <div class="list-row">
+                <CatTile Kind="warn" Icon="mail" Sm="true" />
+                <div class="col" style="gap:0"><span class="name">email · ana@@acme.com</span><span class="sub">last upload</span></div>
+                <span class="right">12:02:11</span>
+            </div>
+            </ChildContent>
+        </Card>
+    </div>
+</div>
+
+@code {
+    private static string JobRoute(JobStatus s) => s switch
+    {
+        JobStatus.Failed => "jobs/failed",
+        JobStatus.Ok => "jobs/completed",
+        _ => "jobs/7c4a01f3",
+    };
+
+    private static string DurationOf(ReportSummary r)
+    {
+        if (r.Status == JobStatus.Paused) return "—";
+        var parts = r.LastSub.Split('·');
+        return parts.Length > 1 ? parts[1].Trim() : "—";
+    }
+}
