@@ -2,12 +2,13 @@
 @using NeoReports.UI.Models
 @using NeoReports.UI.Services
 @inject NavigationManager Nav
+@inject INeoReportsApiClient Api
 
 <div class="page">
     <div class="page-head">
         <div class="title">
             <h1>Reports</h1>
-            <div class="sub">Templates registered by code or via the builder · @SampleData.Reports.Count reports</div>
+            <div class="sub">Templates registered by code or via the builder · @_reports.Count reports</div>
         </div>
         <Button Variant="primary" Icon="plus" OnClick="@(() => Nav.NavigateTo("builder"))">New report</Button>
     </div>
@@ -49,7 +50,7 @@
             {
                 <ReportCard Report="r"
                             OnOpen="@(() => Nav.NavigateTo(r.IsPipeline ? "pipeline" : $"reports/{r.Slug}"))"
-                            OnPrimary="@(() => Nav.NavigateTo(r.Status == JobStatus.Failed ? "jobs/failed" : "jobs/7c4a01f3"))" />
+                            OnPrimary="@(() => RunOrNavigateAsync(r))" />
             }
         </div>
     }
@@ -58,11 +59,58 @@
 @code {
     private string _search = "";
     private string? _statusFilter = "running";
+    private IReadOnlyList<ReportSummary> _reports = SampleData.Reports;
+    private bool _isLive;
 
     private IEnumerable<ReportSummary> Filtered =>
-        SampleData.Reports.Where(r =>
+        _reports.Where(r =>
             string.IsNullOrWhiteSpace(_search)
             || r.Name.Contains(_search, StringComparison.OrdinalIgnoreCase)
             || r.Tags.Any(t => t.Contains(_search, StringComparison.OrdinalIgnoreCase))
             || r.Source.Contains(_search, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        // GET /api/reports — falls back to sample data if the engine API isn't reachable
+        // (e.g. this UI mounted without a NeoReports.AspNetCore host alongside it).
+        var live = await Api.TryGetReportsAsync();
+        if (live is { Count: > 0 })
+        {
+            _reports = live.Select(ToReportSummary).ToArray();
+            _statusFilter = null;
+            _isLive = true;
+        }
+    }
+
+    private async Task RunOrNavigateAsync(ReportSummary r)
+    {
+        if (!_isLive)
+        {
+            Nav.NavigateTo(r.Status == JobStatus.Failed ? "jobs/failed" : "jobs/7c4a01f3");
+            return;
+        }
+
+        // POST /api/reports/{name}/run — async trigger; land on the new job's live page.
+        var jobId = await Api.TryRunReportAsync(r.Name);
+        Nav.NavigateTo(jobId is not null ? $"jobs/{jobId}" : "jobs/failed");
+    }
+
+    // The engine exposes only name/output-count/columns today; the rest of ReportCard's
+    // fields (schedule, last run, tags, source/destination) are mock/future — shown as
+    // honest placeholders rather than fabricated demo data.
+    private static ReportSummary ToReportSummary(ApiReportSummary r) => new(
+        Slug: Uri.EscapeDataString(r.Name),
+        Name: r.Name,
+        Description: $"{r.OutputCount} output(s) · {r.Columns.Count} column(s).",
+        Tags: Array.Empty<string>(),
+        Status: JobStatus.Never,
+        Source: "—",
+        Formats: Array.Empty<string>(),
+        Destination: "—",
+        ScheduleTitle: "Not scheduled",
+        ScheduleSub: "trigger via API or the run button",
+        LastTitle: "—",
+        LastSub: "never run",
+        CatKind: "gray",
+        CatIcon: "report");
 }

@@ -1,35 +1,39 @@
 @page "/jobs/{Id}"
 @using NeoReports.UI.Components.UI
+@using NeoReports.UI.Services
 @inject NavigationManager Nav
+@inject INeoReportsApiClient Api
 @implements IDisposable
 
 <div class="page">
     <div class="page-head">
         <div class="title">
             <div style="display:flex;align-items:center;gap:12px">
-                <h1 style="font-size:24px">Monthly sales · retail</h1>
-                <Badge Variant="info" Icon="player-play" Live="true">Running</Badge>
+                <h1 style="font-size:24px">@Title</h1>
+                <Badge Variant="@_badge.Variant" Icon="@_badge.Icon" Live="@_badge.Live">@_badge.Label</Badge>
             </div>
-            <div class="sub mono" style="margin-top:6px">job_@Id · started by marina.s · manual trigger</div>
+            <div class="sub mono" style="margin-top:6px">job_@Id@SubLine</div>
         </div>
         <div style="display:flex;gap:8px">
-            <Button Variant="outline" Icon="refresh">Refresh</Button>
+            <Button Variant="outline" Icon="refresh" OnClick="PollAsync">Refresh</Button>
             @* POST /api/jobs/{id}/cancel *@
-            <Button Variant="danger" Icon="player-stop">Cancel</Button>
+            <Button Variant="danger" Icon="player-stop" OnClick="CancelAsync" Disabled="@(!IsCancellable)">Cancel</Button>
         </div>
     </div>
 
-    @* Progress hero — GET /api/jobs/{id} (polled/streamed) *@
+    @* Progress hero — GET /api/jobs/{id} (polled). Percent complete has no server-side total to
+       divide by, so the bar itself stays a decorative indicator of "in progress"; the counters
+       below it come from the polled job when one is found. *@
     <div class="progress-hero">
         <div class="top">
             <div style="display:flex;align-items:baseline;gap:16px">
                 <span class="pctbig">@_pct%</span>
-                <span class="where">Writing page @(_pct * 42 / 100) of 42 · CSV + XLSX</span>
+                <span class="where">@Where</span>
             </div>
             <span class="live-indicator"><span class="dot"></span>live</span>
         </div>
         <div class="progress-bar"><i style="width:@(_pct)%"></i></div>
-        <div class="foot"><span>Elapsed 2m 18s</span><span>ETA ~1m 18s · finish ~14:35:54</span></div>
+        <div class="foot"><span>@ElapsedText</span><span>@(_job is null ? "ETA ~1m 18s · finish ~14:35:54" : "")</span></div>
     </div>
 
     <Card Flat="true" Dense="true">
@@ -37,8 +41,8 @@
     </Card>
 
     <div class="grid-4">
-        <MetricCard Icon="download" Label="Read" Value="26,871" Sub="of ~42,000" />
-        <MetricCard Icon="upload" Label="Written" Value="26,624" Sub="247 buffered" />
+        <MetricCard Icon="download" Label="Read" Value="@ReadValue" Sub="@ReadSub" />
+        <MetricCard Icon="upload" Label="Written" Value="@WrittenValue" Sub="@WrittenSub" />
         <MetricCard Icon="activity" Label="Rate/s" Value="194" Sub="rows/s · peak 312" />
         <MetricCard Icon="cpu" Label="Memory" Value="412 MB" Sub="limit 1.2 GB" />
     </div>
@@ -67,7 +71,7 @@
         <div class="col" style="gap:12px">
             <Card Title="Configuration">
                 <div class="kv">
-                    <span class="k">Source</span><span class="v mono">sales-db · SQL Server</span>
+                    <span class="k">Report</span><span class="v mono">@(_job?.ReportName ?? "sales-db · SQL Server")</span>
                     <span class="k">Formats</span><span class="v">CSV, XLSX</span>
                     <span class="k">Buffer</span><span class="v mono">1,000 rows/page</span>
                     <span class="k">Retry policy</span><span class="v mono">5× · exp 2s..30s · jitter</span>
@@ -81,7 +85,7 @@
                 <div class="list-row" style="padding:6px 0"><CatTile Sm="true" Kind="info" Icon="brand-aws" /><div class="col" style="gap:0"><span class="name">s3://acme-reports/retail</span><span class="sub">awaiting upload</span></div></div>
             </Card>
 
-            <Card Title="Retries this job" Sub="1 recovered">
+            <Card Title="Retries this job" Sub="@RetriesSub">
                 <div class="list-row" style="border-bottom:0"><span class="cat-tile sm warn"><i class="ti ti-refresh" style="font-size:14px"></i></span><div class="col" style="gap:0"><span class="name">Attempt 2 · page 12</span><span class="sub">4s delay · SqlException 1205 (deadlock)</span></div></div>
             </Card>
         </div>
@@ -90,8 +94,28 @@
 
 @code {
     [Parameter] public string Id { get; set; } = "7c4a01f3";
+
+    private ApiJobView? _job;
+    private (string Variant, string Icon, string Label, bool Live) _badge = ("info", "player-play", "Running", true);
     private int _pct = 64;
-    private System.Threading.Timer? _timer;
+    private System.Threading.Timer? _pctTimer;
+    private System.Threading.Timer? _pollTimer;
+
+    private string Title => _job?.ReportName ?? "Monthly sales · retail";
+    private string SubLine => _job is not null
+        ? $" · {_job.ReportName} · started {_job.StartedAt?.ToLocalTime():HH:mm:ss}"
+        : " · started by marina.s · manual trigger";
+    private string Where => _job is null ? $"Writing page {_pct * 42 / 100} of 42 · CSV + XLSX" : "In progress";
+    private string ElapsedText => _job?.StartedAt is { } started
+        ? $"Elapsed {FormatSpan(DateTimeOffset.UtcNow - started)}"
+        : "Elapsed 2m 18s";
+    private string ReadValue => _job is not null ? _job.Stats.RecordsRead.ToString("N0") : "26,871";
+    private string ReadSub => _job is not null ? "records processed so far" : "of ~42,000";
+    private string WrittenValue => _job is not null ? _job.Stats.RecordsWritten.ToString("N0") : "26,624";
+    private string WrittenSub => _job is not null ? "records written so far" : "247 buffered";
+    private string RetriesSub => _job is not null ? $"{_job.Stats.Retries} recorded" : "1 recovered";
+    private bool IsCancellable => _job is null || string.Equals(_job.Status, "Running", StringComparison.Ordinal)
+        || string.Equals(_job.Status, "Retrying", StringComparison.Ordinal);
 
     private readonly PhaseStepper.Phase[] _phases =
     {
@@ -113,7 +137,7 @@
     private string _linePath = "";
     private string _areaPath = "";
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         var data = new[] { 120,140,130,150,200,240,220,260,280,312,300,290,280,200,180,220,240,230,210,194 };
         double W = 600, H = 90, P = 6; int max = data.Max(), min = data.Min();
@@ -122,12 +146,71 @@
         _linePath = string.Join(" ", pts.Select((p, i) => $"{(i == 0 ? "M" : "L")}{p.x:0.#},{p.y:0.#}"));
         _areaPath = $"{_linePath} L{pts[^1].x:0.#},{H - P} L{P},{H - P} Z";
 
-        _timer = new System.Threading.Timer(_ =>
+        // Cosmetic progress-bar animation — there is no server-side total to divide a real
+        // percentage by, so this stays a decorative "in progress" indicator.
+        _pctTimer = new System.Threading.Timer(_ =>
         {
             _pct = _pct >= 70 ? 60 : _pct + 1;
             InvokeAsync(StateHasChanged);
         }, null, 1100, 1100);
+
+        await PollAsync();
+        _pollTimer = new System.Threading.Timer(async _ => await InvokeAsync(PollAsync), null, 1500, 1500);
     }
 
-    public void Dispose() => _timer?.Dispose();
+    private async Task PollAsync()
+    {
+        var job = await Api.TryGetJobAsync(Id);
+        if (job is null)
+            return; // API unreachable or unknown id — keep showing the last known / demo state.
+
+        _job = job;
+        _badge = StatusBadge(job.Status);
+
+        if (string.Equals(job.Status, "Completed", StringComparison.Ordinal))
+        {
+            StopTimers();
+            Nav.NavigateTo($"jobs/completed/{Id}");
+            return;
+        }
+        if (job.Status is "Failed" or "Cancelled")
+        {
+            StopTimers();
+            Nav.NavigateTo($"jobs/failed/{Id}");
+            return;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task CancelAsync()
+    {
+        await Api.TryCancelJobAsync(Id);
+        await PollAsync();
+    }
+
+    private static (string Variant, string Icon, string Label, bool Live) StatusBadge(string status) => status switch
+    {
+        "Running" => ("info", "player-play", "Running", true),
+        "Retrying" => ("warn", "refresh", "Retrying", true),
+        "Queued" => ("gray", "clock", "Queued", false),
+        "Completed" => ("success", "check", "Completed", false),
+        "Failed" => ("danger", "alert-triangle", "Failed", false),
+        "Cancelled" => ("gray", "player-stop", "Cancelled", false),
+        _ => ("gray", "minus", status, false),
+    };
+
+    private static string FormatSpan(TimeSpan span) => span.TotalHours >= 1
+        ? $"{(int)span.TotalHours}h {span.Minutes}m"
+        : $"{span.Minutes}m {span.Seconds}s";
+
+    private void StopTimers()
+    {
+        _pctTimer?.Dispose();
+        _pctTimer = null;
+        _pollTimer?.Dispose();
+        _pollTimer = null;
+    }
+
+    public void Dispose() => StopTimers();
 }

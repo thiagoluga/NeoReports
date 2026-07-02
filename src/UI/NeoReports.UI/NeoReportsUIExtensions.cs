@@ -20,14 +20,25 @@ public static class NeoReportsUIExtensions
     public const string DefaultBasePath = "/neoreports";
 
     /// <summary>
-    /// Registers the services the NeoReports UI needs (Razor Pages, Blazor Server and
-    /// the builder-wizard state). Safe to call alongside a host that already uses them.
+    /// Registers the services the NeoReports UI needs (Razor Pages, Blazor Server, the
+    /// builder-wizard state, and the engine API client). Safe to call alongside a host that
+    /// already uses them.
     /// </summary>
-    public static IServiceCollection AddNeoReportsUI(this IServiceCollection services)
+    /// <param name="services">The host's service collection.</param>
+    /// <param name="configureApi">
+    /// Optional callback to customize <see cref="NeoReportsApiOptions"/> (e.g. a non-default
+    /// <c>ApiPrefix</c> when the host maps <c>MapNeoReports</c> somewhere other than <c>/api</c>).
+    /// </param>
+    public static IServiceCollection AddNeoReportsUI(
+        this IServiceCollection services, Action<NeoReportsApiOptions>? configureApi = null)
     {
         services.AddRazorPages();
         services.AddServerSideBlazor();
         services.AddScoped<BuilderState>();
+        services.AddOptions<NeoReportsApiOptions>();
+        if (configureApi is not null)
+            services.Configure(configureApi);
+        services.AddHttpClient<INeoReportsApiClient, NeoReportsApiClient>();
         return services;
     }
 

@@ -2,6 +2,7 @@
 @using NeoReports.UI.Models
 @using NeoReports.UI.Services
 @inject NavigationManager Nav
+@inject INeoReportsApiClient Api
 
 @if (_report is null)
 {
@@ -30,7 +31,7 @@
         </div>
         <div style="display:flex;gap:8px;align-self:flex-start;margin-top:6px">
             <Button Variant="outline" Icon="pencil" OnClick="@(() => Nav.NavigateTo("builder"))">Edit</Button>
-            <Button Variant="primary" Icon="player-play" OnClick="@(() => Nav.NavigateTo("jobs/7c4a01f3"))">Run now</Button>
+            <Button Variant="primary" Icon="player-play" OnClick="RunNowAsync">Run now</Button>
             <button class="btn icon-only outline"><i class="ti ti-dots-vertical"></i></button>
         </div>
     </div>
@@ -190,6 +191,19 @@
 @code {
     [Parameter] public string Slug { get; set; } = "";
     private ReportSummary? _report;
+    private bool _isLive;
+
+    private async Task RunNowAsync()
+    {
+        if (!_isLive || _report is null)
+        {
+            Nav.NavigateTo("jobs/7c4a01f3");
+            return;
+        }
+
+        var jobId = await Api.TryRunReportAsync(_report.Name);
+        Nav.NavigateTo(jobId is not null ? $"jobs/{jobId}" : "jobs/failed");
+    }
 
     private readonly (string, string)[] _params =
     {
@@ -226,9 +240,40 @@
         new("18d ago", "info", "sparkles", "Ana created the template from the builder", "based on monthly-sales-v1"),
     };
 
-    protected override void OnParametersSet()
+    protected override async Task OnParametersSetAsync()
     {
-        _report = SampleData.Reports.FirstOrDefault(r => r.Slug == Slug) ?? SampleData.Reports[0];
+        // Demo slugs resolve from sample data first (unaffected by whether an engine is
+        // mounted); an unknown slug falls back to GET /api/reports so a real registered
+        // report at least shows its name/columns instead of "not found".
+        _report = SampleData.Reports.FirstOrDefault(r => r.Slug == Slug);
+        if (_report is null)
+        {
+            var live = await Api.TryGetReportsAsync();
+            var match = live?.FirstOrDefault(r => string.Equals(r.Name, Slug, StringComparison.Ordinal));
+            if (match is not null)
+            {
+                _isLive = true;
+                _report = new ReportSummary(
+                    Slug: Slug,
+                    Name: match.Name,
+                    Description: $"{match.OutputCount} output(s) · {match.Columns.Count} column(s). " +
+                                 "Schedule, history and permissions aren't exposed by the engine yet.",
+                    Tags: Array.Empty<string>(),
+                    Status: JobStatus.Never,
+                    Source: "—",
+                    Formats: Array.Empty<string>(),
+                    Destination: "—",
+                    ScheduleTitle: "Not scheduled",
+                    ScheduleSub: "trigger via API or the run button",
+                    LastTitle: "—",
+                    LastSub: "never run",
+                    CatKind: "gray",
+                    CatIcon: "report");
+            }
+        }
+        if (_report is null)
+            return;
+
         var seed = new[]
         {
             "skip","skip","ok","ok","ok","ok","skip",

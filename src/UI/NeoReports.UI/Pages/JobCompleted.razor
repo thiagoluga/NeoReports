@@ -1,15 +1,18 @@
 @page "/jobs/completed"
+@page "/jobs/completed/{Id}"
 @using NeoReports.UI.Components.UI
+@using NeoReports.UI.Services
 @inject NavigationManager Nav
+@inject INeoReportsApiClient Api
 
 <div class="page">
     <div class="page-head">
         <div class="title">
             <div style="display:flex;align-items:center;gap:12px">
-                <h1 style="font-size:24px">Monthly sales · retail</h1>
+                <h1 style="font-size:24px">@Title</h1>
                 <Badge Variant="success" Icon="check">Completed</Badge>
             </div>
-            <div class="sub mono" style="margin-top:6px">job_7c4a01f3 · run by marina.s · finished 14:35:54 BRT</div>
+            <div class="sub mono" style="margin-top:6px">job_@EffectiveId@SubLine</div>
         </div>
         <div style="display:flex;gap:8px">
             <Button Variant="outline" Icon="refresh" OnClick="@(() => Nav.NavigateTo("jobs/7c4a01f3"))">Run again</Button>
@@ -22,7 +25,7 @@
         <div class="badge-ico"><i class="ti ti-check"></i></div>
         <div>
             <div class="title">Report generated successfully</div>
-            <div class="sub">42,184 rows processed in 3m 36s · 2 formats · 2 destinations confirmed</div>
+            <div class="sub">@SummaryText</div>
         </div>
         <Button Variant="danger" Icon="trash"></Button>
     </div>
@@ -30,10 +33,10 @@
     <Card Flat="true" Dense="true"><PhaseStepper Phases="_phases" /></Card>
 
     <div class="grid-4">
-        <MetricCard Icon="download" Label="Read" Value="42,184" Sub="batch size 1k" />
-        <MetricCard Icon="upload" Label="Written" Value="42,184" Sub="0 dropped" />
-        <MetricCard Icon="clock" Label="Duration" Value="3m 36s" Sub="vs 4m 32s avg" DeltaDir="up" DeltaText="-56s" />
-        <MetricCard Icon="refresh" Label="Retries" Value="1" Sub="recovered · resilience OK" />
+        <MetricCard Icon="download" Label="Read" Value="@ReadValue" Sub="@ReadSub" />
+        <MetricCard Icon="upload" Label="Written" Value="@WrittenValue" Sub="@WrittenSub" />
+        <MetricCard Icon="clock" Label="Duration" Value="@DurationText" Sub="vs 4m 32s avg" DeltaDir="up" DeltaText="-56s" />
+        <MetricCard Icon="refresh" Label="Retries" Value="@RetriesValue" Sub="recovered · resilience OK" />
     </div>
 
     @* Files — GET /api/jobs/{id}/download *@
@@ -42,12 +45,12 @@
             <div class="file-row">
                 <CatTile Sm="true" Kind="teal" Icon="table" />
                 <div class="file-name"><b>sales-2026-05-27.csv</b><span>2.41 MB · 42,184 rows · UTF-8 · comma-delimited</span></div>
-                <div class="file-actions"><Button Variant="outline" Size="sm" Icon="eye">Preview</Button><Button Variant="primary" Size="sm" Icon="download">Download</Button></div>
+                <div class="file-actions"><Button Variant="outline" Size="sm" Icon="eye">Preview</Button><Button Variant="primary" Size="sm" Icon="download" OnClick="Download">Download</Button></div>
             </div>
             <div class="file-row">
                 <CatTile Sm="true" Kind="teal" Icon="file-spreadsheet" />
                 <div class="file-name"><b>sales-2026-05-27.xlsx</b><span>3.82 MB · 42,184 rows · "Sales" sheet · auto-filter · freeze header</span></div>
-                <div class="file-actions"><Button Variant="outline" Size="sm" Icon="eye">Preview</Button><Button Variant="primary" Size="sm" Icon="download">Download</Button></div>
+                <div class="file-actions"><Button Variant="outline" Size="sm" Icon="eye">Preview</Button><Button Variant="primary" Size="sm" Icon="download" OnClick="Download">Download</Button></div>
             </div>
         </div>
     </Card>
@@ -86,7 +89,7 @@
         </Card>
         <Card Title="Configuration" Sub="Snapshot of what ran">
             <div class="kv">
-                <span class="k">Source</span><span class="v mono">sales-db · SQL Server</span>
+                <span class="k">Report</span><span class="v mono">@(_job?.ReportName ?? "sales-db · SQL Server")</span>
                 <span class="k">Formats</span><span class="v">CSV, XLSX</span>
                 <span class="k">Buffer</span><span class="v mono">1,000 rows/page</span>
                 <span class="k">Retry policy</span><span class="v mono">5× · exp 2s..30s · jitter</span>
@@ -102,6 +105,29 @@
 </div>
 
 @code {
+    // Nullable: with two @page templates (with/without {Id}), Blazor's router explicitly sets
+    // unmatched route parameters to null on the parameterless route rather than leaving the
+    // field's default — so the demo fallback lives in EffectiveId, not a field initializer.
+    [Parameter] public string? Id { get; set; }
+    private string EffectiveId => Id ?? "7c4a01f3";
+    private ApiJobView? _job;
+
+    private string Title => _job?.ReportName ?? "Monthly sales · retail";
+    private string SubLine => _job is not null
+        ? $" · {_job.ReportName} · finished {_job.CompletedAt?.ToLocalTime():HH:mm:ss}"
+        : " · run by marina.s · finished 14:35:54 BRT";
+    private string SummaryText => _job is not null
+        ? $"{_job.Stats.RecordsWritten:N0} rows processed{DurationSuffix}"
+        : "42,184 rows processed in 3m 36s · 2 formats · 2 destinations confirmed";
+    private string DurationSuffix => Duration is { } d ? $" in {FormatSpan(d)}" : "";
+    private TimeSpan? Duration => _job?.StartedAt is { } s && _job.CompletedAt is { } c ? c - s : null;
+    private string DurationText => Duration is { } d ? FormatSpan(d) : "3m 36s";
+    private string ReadValue => _job is not null ? _job.Stats.RecordsRead.ToString("N0") : "42,184";
+    private string ReadSub => _job is not null ? "records" : "batch size 1k";
+    private string WrittenValue => _job is not null ? _job.Stats.RecordsWritten.ToString("N0") : "42,184";
+    private string WrittenSub => _job is not null ? "records" : "0 dropped";
+    private string RetriesValue => _job is not null ? _job.Stats.Retries.ToString() : "1";
+
     private readonly PhaseStepper.Phase[] _phases =
     {
         new("Connect", "done"), new("Authenticate", "done"), new("Schema", "done"),
@@ -119,4 +145,20 @@
         new("14:35:54", "ok", "cloud-upload", "S3 upload OK", "2.41 MB · 0.8s"),
         new("14:35:54", "ok", "flag-check", "Job completed", "duration 3m 36s · 0 final failures"),
     };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // GET /api/jobs/{id} — falls back to the demo content above when unreachable or unknown.
+        _job = await Api.TryGetJobAsync(EffectiveId);
+    }
+
+    private void Download()
+    {
+        if (_job is not null)
+            Nav.NavigateTo(Api.BuildDownloadUrl(EffectiveId), forceLoad: true);
+    }
+
+    private static string FormatSpan(TimeSpan span) => span.TotalHours >= 1
+        ? $"{(int)span.TotalHours}h {span.Minutes}m"
+        : $"{span.Minutes}m {span.Seconds}s";
 }
