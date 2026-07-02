@@ -1,0 +1,98 @@
+@page "/settings/plugins"
+@using NeoReports.Web.Models
+@using NeoReports.Web.Services
+@inject NavigationManager Nav
+
+<div class="page">
+    <SubNav Active="plugins" />
+
+    <div class="page-head">
+        <div class="title"><h1>Plugins</h1><div class="sub">Sources, formats, destinations, workers and auth filters · @SampleData.Plugins.Count installed</div></div>
+        <Button Variant="outline" Icon="upload">Install plugin</Button>
+    </div>
+
+    <div class="count-strip">
+        <span class="c"><span class="dot" style="background:var(--success-dot)"></span><b>@_active</b> active</span>
+        <span class="c"><span class="dot" style="background:var(--info-dot)"></span><b>@_updates</b> update available</span>
+        <span class="c"><span class="dot" style="background:var(--purple-dot)"></span><b>@_custom</b> custom</span>
+        <span class="c"><span class="dot" style="background:var(--danger-dot)"></span><b>@_errors</b> with errors</span>
+    </div>
+
+    <div class="filter-bar">
+        @foreach (var (id, label) in _tabs)
+        {
+            <span class="pill @(_filter == id ? "active" : "")" @onclick="@(() => _filter = id)">@label <span class="mono" style="opacity:0.6">@Count(id)</span></span>
+        }
+    </div>
+
+    <div class="col" style="gap:20px">
+        @foreach (var g in _groups)
+        {
+            var items = Visible.Where(p => p.Group == g.Id).ToList();
+            if (items.Count == 0) { continue; }
+            <div>
+                <p class="label-sm" style="margin-bottom:10px">@g.Label</p>
+                <div>
+                    @foreach (var p in items)
+                    {
+                        var isUpdate = p.Health == "update";
+                        var isError = p.Health == "license-error";
+                        <div class="plugin-row @(isUpdate ? "update-available" : "")">
+                            <CatTile Kind="@p.Kind" Icon="@p.Icon" />
+                            <div>
+                                <div class="pl-name">
+                                    <b>@p.Name</b>
+                                    @if (p.Origin == "built-in") { <span class="tag" style="background:var(--bg2)">built-in</span> }
+                                    else { <span class="tag custom" style="background:var(--purple-bg);color:var(--purple-fg)">custom</span> }
+                                    @if (p.Health == "ok") { <Badge Variant="success" Icon="check">active</Badge> }
+                                    else if (isUpdate) { <Badge Variant="info" Icon="arrow-up">update v1.3.0 available</Badge> }
+                                    else { <Badge Variant="danger" Icon="alert-triangle">license error</Badge> }
+                                </div>
+                                <div class="pl-desc">@p.Description</div>
+                            </div>
+                            <div class="pl-version">
+                                @if (isUpdate) { <div>v1.1.0 → <span class="new">v1.3.0</span></div> }
+                                else { <div>@p.Version</div> }
+                                <div>@p.UsedIn reports using</div>
+                            </div>
+                            <div>
+                                @if (isUpdate) { <Button Variant="primary" Size="sm" Icon="download">Update</Button> }
+                                else if (isError) { <Button Variant="danger" Size="sm" Icon="tool">Resolve</Button> }
+                                else { <button class="btn icon-only sm subtle"><i class="ti ti-settings"></i></button> }
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+
+    <div class="marketplace-card">
+        <span class="mc-ico"><i class="ti ti-shopping-bag"></i></span>
+        <div class="mc-info"><b>Plugin marketplace</b><p>Explore community plugins — Kafka, Elasticsearch, Snowflake, Salesforce, BigQuery and more.</p></div>
+        <Button Variant="outline" Icon="external-link">Open marketplace</Button>
+    </div>
+</div>
+
+@code {
+    private string _filter = "all";
+
+    private readonly (string Id, string Label)[] _tabs =
+    {
+        ("all", "All"), ("sources", "Sources"), ("formats", "Formats"),
+        ("destinations", "Destinations"), ("jobs", "Jobs"), ("auth", "Auth"),
+    };
+
+    private readonly (string Id, string Label)[] _groups =
+    {
+        ("sources", "Sources"), ("formats", "Formats"), ("destinations", "Destinations"), ("jobs", "Jobs"), ("auth", "Auth"),
+    };
+
+    private IEnumerable<PluginInfo> Visible => _filter == "all" ? SampleData.Plugins : SampleData.Plugins.Where(p => p.Group == _filter);
+    private int Count(string id) => id == "all" ? SampleData.Plugins.Count : SampleData.Plugins.Count(p => p.Group == id);
+
+    private int _active => SampleData.Plugins.Count(p => p.Health == "ok");
+    private int _updates => SampleData.Plugins.Count(p => p.Health == "update");
+    private int _custom => SampleData.Plugins.Count(p => p.Origin == "custom");
+    private int _errors => SampleData.Plugins.Count(p => p.Health == "license-error");
+}

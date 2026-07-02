@@ -1,0 +1,127 @@
+@page "/builder/destination"
+@using NeoReports.Web.Services
+@inject NavigationManager Nav
+@inject BuilderState Wizard
+
+<div class="page">
+    <WizardStepper Steps="Steps" Current="3" />
+
+    <div class="page-head">
+        <div class="title">
+            <h1>Choose destinations</h1>
+            <div class="sub">You can deliver to more than one destination · step 4 of 5</div>
+        </div>
+    </div>
+
+    <div>
+        <p class="label-sm" style="margin-bottom:10px">Available destinations</p>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+            @foreach (var d in SampleData.Destinations)
+            {
+                <DestinationCard Destination="d" Selected="Wizard.Destinations.Contains(d.Id)" OnClick="@(() => Toggle(d.Id))" />
+            }
+        </div>
+    </div>
+
+    @if (Wizard.Destinations.Count > 0)
+    {
+        <div>
+            <p class="label-sm" style="margin-bottom:10px">Per-destination configuration</p>
+            <div class="col" style="gap:12px">
+                @if (Wizard.Destinations.Contains("sharepoint"))
+                {
+                    <div class="config-card">
+                        <div class="cc-head">
+                            <CatTile Kind="purple" Icon="brand-office" />
+                            <div class="info"><b>SharePoint</b><span>acme.sharepoint.com</span></div>
+                            <button class="btn icon-only sm subtle"><i class="ti ti-trash"></i></button>
+                        </div>
+                        <div style="padding:14px;display:flex;flex-direction:column;gap:12px">
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                                <div class="field"><span class="label-sm">Site</span><span class="input mono"><input class="mono" value="acme.sharepoint.com" style="width:100%" /></span></div>
+                                <div class="field"><span class="label-sm">Document library</span><Dropdown Value="Documents · Sales" /></div>
+                            </div>
+                            <div class="field">
+                                <span class="label-sm">Folder path</span>
+                                <div class="tpl-editor">
+                                    <span class="lit">/Documents/Sales/</span><span class="tk">{year}</span><span class="lit">/</span><span class="tk">{month:MM}</span><span class="lit">/</span>
+                                </div>
+                                <div class="tpl-resolves">resolves to: <b>/Documents/Sales/2026/05/</b></div>
+                            </div>
+                            <div class="field">
+                                <span class="label-sm">File name</span>
+                                <div class="tpl-editor">
+                                    <span class="tk">{report.name}</span><span class="lit">-</span><span class="tk">{date:YYYY-MM-DD}</span><span class="tk">{format.ext}</span>
+                                </div>
+                                <div class="tpl-resolves">available tokens: <span class="mono" style="color:var(--info-fg)">{report.name} · {date:…} · {job.id} · {format.ext}</span></div>
+                            </div>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                                <div class="field"><span class="label-sm">Authentication</span><Dropdown Value="Azure AD · service principal" /></div>
+                                <div class="field"><span class="label-sm">If file exists</span><Dropdown Value="version (keep history)" /></div>
+                            </div>
+                            <div style="display:flex;align-items:center;gap:20px;padding-top:4px;border-top:0.5px solid var(--border)">
+                                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px"><Switch @bind-Value="_spCreate" />Create folders if missing</label>
+                                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px"><Switch @bind-Value="_spMeta" />Add metadata</label>
+                            </div>
+                        </div>
+                    </div>
+                }
+                @if (Wizard.Destinations.Contains("email"))
+                {
+                    <div class="config-card">
+                        <div class="cc-head">
+                            <CatTile Kind="warn" Icon="mail" />
+                            <div class="info"><b>Email</b><span>corporate SMTP · acme-mta.prod</span></div>
+                            <button class="btn icon-only sm subtle"><i class="ti ti-trash"></i></button>
+                        </div>
+                        <div style="padding:14px;display:flex;flex-direction:column;gap:12px">
+                            <div class="field">
+                                <span class="label-sm">Recipients</span>
+                                <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:6px 8px;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-md)">
+                                    @foreach (var e in _emails)
+                                    {
+                                        <span class="email-chip"><span class="mono" style="font-size:11px">@e</span><button @onclick="@(() => _emails.Remove(e))"><i class="ti ti-x"></i></button></span>
+                                    }
+                                    <input placeholder="add email" style="border:0;background:transparent;font:400 12px var(--font-sans);flex:1;min-width:120px;color:var(--fg);outline:none" />
+                                </div>
+                            </div>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                                <div class="field"><span class="label-sm">Subject</span><span class="input"><input value="{report.name} · {date:MM/DD/YYYY}" style="width:100%" /></span></div>
+                                <div class="field"><span class="label-sm">Delivery</span><Dropdown Value="signed link + attachment" /></div>
+                            </div>
+                        </div>
+                    </div>
+                }
+                @foreach (var id in Wizard.Destinations.Where(d => d is not "sharepoint" and not "email"))
+                {
+                    var d = SampleData.Destinations.First(x => x.Id == id);
+                    <div class="config-card">
+                        <div class="cc-head">
+                            <CatTile Kind="@d.Kind" Icon="@d.Icon" />
+                            <div class="info"><b>@d.Name</b><span>summary configuration</span></div>
+                            <button class="btn icon-only sm subtle"><i class="ti ti-trash"></i></button>
+                        </div>
+                        <div style="padding:14px 16px;display:flex;align-items:center;gap:10px;color:var(--fg-muted);font-size:12px">
+                            <i class="ti ti-info-circle" style="font-size:14px"></i>@d.Description
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    <div class="wizard-footer">
+        <Button Variant="outline" Icon="arrow-left" OnClick="@(() => Nav.NavigateTo("builder/format"))">Back</Button>
+        <div style="display:flex;align-items:center;gap:12px">
+            <span class="mono muted" style="font-size:12px">@Wizard.Destinations.Count destination@(Wizard.Destinations.Count == 1 ? "" : "s") selected</span>
+            <Button Variant="primary" IconRight="arrow-right" OnClick="@(() => Nav.NavigateTo("builder/review"))">Continue</Button>
+        </div>
+    </div>
+</div>
+
+@code {
+    private readonly string[] Steps = { "Source", "Columns", "Format", "Destination", "Review" };
+    private bool _spCreate = true, _spMeta = true;
+    private readonly List<string> _emails = new() { "ana.costa@acme.com", "finance@acme.com" };
+    private void Toggle(string id) { if (!Wizard.Destinations.Add(id)) Wizard.Destinations.Remove(id); }
+}

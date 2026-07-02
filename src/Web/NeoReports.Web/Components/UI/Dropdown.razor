@@ -1,0 +1,13 @@
+@* Dropdown — read-only select-look pill (starter is cosmetic; wire a real <select> or menu later).
+   Usage:  <Dropdown Value="UTF-8 (with BOM)" /> *@
+
+<span class="input @(Mono ? "mono" : "")" style="min-width:@(MinWidth)px;justify-content:space-between">
+    <span>@Value</span>
+    <i class="ti ti-chevron-down" style="font-size:12px;color:var(--fg-muted)"></i>
+</span>
+
+@code {
+    [Parameter] public string Value { get; set; } = "";
+    [Parameter] public bool Mono { get; set; }
+    [Parameter] public int MinWidth { get; set; } = 200;
+}

@@ -1,0 +1,45 @@
+@* PhaseStepper — horizontal job phases. Each phase: done (green+check),
+   active (info+spinner, pulsing), failed (red+X), pending (gray+number).
+   Usage:
+     <PhaseStepper Phases="@phases" />
+   where phases is Phase[] { new("Connect","done"), new("Read+write","active"), ... } *@
+
+<div class="phases" style="justify-content:space-between">
+    @for (var i = 0; i < Phases.Length; i++)
+    {
+        var p = Phases[i];
+        if (i > 0)
+        {
+            <span class="phase-conn" style="flex:1"></span>
+        }
+        <span class="phase @(p.State == "failed" ? "" : p.State)"
+              style="@(p.State == "failed" ? "color:var(--danger-fg);font-weight:500" : "")">
+            <span class="pn" style="@(p.State == "failed" ? "background:var(--danger-dot);color:#fff" : "")">
+                @if (p.State == "done")
+                {
+                    <i class="ti ti-check" style="font-size:11px"></i>
+                }
+                else if (p.State == "active")
+                {
+                    <i class="ti ti-loader-2" style="font-size:12px;animation:spin 0.9s linear infinite"></i>
+                }
+                else if (p.State == "failed")
+                {
+                    <i class="ti ti-x" style="font-size:12px"></i>
+                }
+                else
+                {
+                    @(i + 1)
+                }
+            </span>
+            @p.Name
+        </span>
+    }
+</div>
+
+@code {
+    /// <summary>state: "done" | "active" | "failed" | "" (pending)</summary>
+    public record Phase(string Name, string State);
+
+    [Parameter] public Phase[] Phases { get; set; } = Array.Empty<Phase>();
+}

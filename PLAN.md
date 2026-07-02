@@ -201,6 +201,22 @@ not a coding task — it gates Epic C.
 
 ## Epic C — Blazor UI (LAST)
 
-Blazor Server + MudBlazor, built **only** from the Claude Design handoff
-(`tokens.css`, `components.html`, per-screen `.html`, `handoff.md` — see the ADR). Never
-invent design. Deliberately last per the maintainer. See **D24**.
+Blazor Server with **pure design-system CSS** (no MudBlazor — see **D31**, superseding the
+D24-era stack note), built **only** from the Claude Design handoff. The handoff arrived as a
+runnable starter (all 17 screens, en-US, Geist + Tabler): app in `src/Web/NeoReports.Web`,
+screen→route→endpoint map in `docs/ui-handoff.md`. Never invent design. See **D24/D31**.
+
+- [x] **C1 — Starter in the repo.** The full Claude Design starter (17 screens + stubs, 26
+  reusable components, tokens/styles, sample data) added as `src/Web/NeoReports.Web` and to
+  the solution; fixed to compile (Razor named-fragment wrapping, `@page` on `_Host`, en-US
+  leftovers) and smoke-tested: all 19 routes serve 200. Handoff table corrected to the real
+  API surface (no invented endpoints). ✅ builds 0 warnings; all 126 tests still green.
+- [ ] **C2 — Wire the real endpoints.** Replace `SampleData` where the engine has an API
+  today (`GET /api/reports`, `GET /api/jobs/{id}`, run/cancel/download) per the handoff
+  table; keep `mock/future` cells on mocks with graceful degradation.
+- [ ] **C3 — Responsive breakpoints.** Add the `@media` blocks (xl/lg/md/sm) specified in
+  `docs/ui-handoff.md` §(b) to `neoreports.css`.
+- [ ] **C4 — Self-host assets.** Geist/Geist Mono woff2 + Tabler icons into `wwwroot/`
+  per `wwwroot/fonts/README.md`; drop the CDN links.
+- [ ] **C5 — Hosting/packaging story.** Decide RCL vs standalone app for distribution
+  (post-validation; record the decision before coding).

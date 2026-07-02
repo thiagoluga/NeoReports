@@ -1,0 +1,33 @@
+@* WizardStepper — numbered step strip. done=green+check, active=black, pending=gray.
+   Usage:  <WizardStepper Steps="@(new[]{"Source","Columns","Format","Destination","Review"})" Current="2" /> *@
+
+<div class="wizard">
+    @for (var i = 0; i < Steps.Length; i++)
+    {
+        var state = i < Current ? "done" : i == Current ? "active" : "";
+        if (i > 0)
+        {
+            <span class="wconn"></span>
+        }
+        <span class="wstep @state">
+            <span class="wnum">
+                @if (i < Current)
+                {
+                    <i class="ti ti-check" style="font-size:10px"></i>
+                }
+                else
+                {
+                    @(i + 1)
+                }
+            </span>
+            @Steps[i]
+        </span>
+    }
+</div>
+
+@code {
+    [Parameter] public string[] Steps { get; set; } = Array.Empty<string>();
+
+    /// <summary>Current step index (0-based)</summary>
+    [Parameter] public int Current { get; set; }
+}

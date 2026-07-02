@@ -1,0 +1,63 @@
+@* DataGrid — table shell with header + rows + built-in empty/loading states.
+   Pass Head (a <tr> of <th>) and Body (rows). Set Loading/Empty to swap states.
+   Usage:
+     <DataGrid Loading="@loading" Empty="@(!rows.Any())" Columns="6"
+               EmptyTitle="No jobs yet" EmptyIcon="clock-off">
+       <Head><tr><th>Report</th><th>Status</th>...</tr></Head>
+       <Body>@foreach (...) { <tr>...</tr> }</Body>
+       <EmptyContent>Trigger a report to see runs here.</EmptyContent>
+     </DataGrid> *@
+
+<table class="tbl @Class">
+    <thead>@Head</thead>
+    <tbody>
+        @if (Loading)
+        {
+            @for (var r = 0; r < 4; r++)
+            {
+                <tr>
+                    @for (var c = 0; c < Columns; c++)
+                    {
+                        <td><span class="skeleton line" style="display:block;width:@(c == 0 ? 70 : 40)%"></span></td>
+                    }
+                </tr>
+            }
+        }
+        else if (Empty)
+        {
+            <tr>
+                <td colspan="@Columns" style="padding:0">
+                    <div class="empty-state">
+                        @if (!string.IsNullOrEmpty(EmptyIcon))
+                        {
+                            <i class="ti ti-@EmptyIcon es-icon"></i>
+                        }
+                        <div class="es-title">@EmptyTitle</div>
+                        @if (EmptyContent is not null)
+                        {
+                            <div class="es-desc">@EmptyContent</div>
+                        }
+                    </div>
+                </td>
+            </tr>
+        }
+        else
+        {
+            @Body
+        }
+    </tbody>
+</table>
+
+@code {
+    [Parameter] public RenderFragment? Head { get; set; }
+    [Parameter] public RenderFragment? Body { get; set; }
+    [Parameter] public RenderFragment? EmptyContent { get; set; }
+
+    /// <summary>Column count — used for skeleton + empty colspan.</summary>
+    [Parameter] public int Columns { get; set; } = 4;
+    [Parameter] public bool Loading { get; set; }
+    [Parameter] public bool Empty { get; set; }
+    [Parameter] public string EmptyTitle { get; set; } = "Nothing here yet";
+    [Parameter] public string? EmptyIcon { get; set; }
+    [Parameter] public string? Class { get; set; }
+}

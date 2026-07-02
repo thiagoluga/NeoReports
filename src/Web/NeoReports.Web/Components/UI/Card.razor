@@ -1,0 +1,51 @@
+@* Card — white surface, 0.5px border, no shadow.
+   Optional header (title + sub + right-aligned action).
+   When passing Action (or any named fragment), Razor requires the body to be
+   wrapped in an explicit <ChildContent> tag:
+     <Card Title="Recent jobs" Sub="Last 24h">
+       <Action><Button Variant="link">View all →</Button></Action>
+       <ChildContent> ... content ... </ChildContent>
+     </Card>
+*@
+
+<section class="card @(Dense ? "dense" : "") @(Flat ? "flat" : "") @(Class)">
+    @if (!string.IsNullOrEmpty(Title) || Action is not null)
+    {
+        <header class="card-head">
+            <div>
+                @if (!string.IsNullOrEmpty(Title))
+                {
+                    <div class="card-title">@Title</div>
+                }
+                @if (TitleContent is not null)
+                {
+                    <div class="card-title">@TitleContent</div>
+                }
+                @if (!string.IsNullOrEmpty(Sub))
+                {
+                    <div class="card-sub">@Sub</div>
+                }
+                @if (SubContent is not null)
+                {
+                    <div class="card-sub">@SubContent</div>
+                }
+            </div>
+            @Action
+        </header>
+    }
+    @ChildContent
+</section>
+
+@code {
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public RenderFragment? TitleContent { get; set; }
+    [Parameter] public string? Sub { get; set; }
+    [Parameter] public RenderFragment? SubContent { get; set; }
+    [Parameter] public bool Dense { get; set; }
+    [Parameter] public bool Flat { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    /// <summary>Right-side header content (button, link, badge)</summary>
+    [Parameter] public RenderFragment? Action { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

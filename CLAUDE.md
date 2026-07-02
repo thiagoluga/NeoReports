@@ -81,9 +81,9 @@ dotnet run --project benchmarks/NeoReports.Benchmarks -c Release
 
 ## Design / UI — permanent rule
 
-The UI is **post-MVP** and must not be implemented in v1. **When the time comes to build any design/UI, always base it on what was already produced in the Claude Design project** (Claude Design System: Anthropic Sans, CSS variables, official palette, Tabler outline icons, flat aesthetic). Do not invent new design or diverge from its tokens/components.
+**Always base any design/UI work on the Claude Design handoff — never invent design or diverge from its tokens/components.** The handoff was delivered (2026-07) as a runnable Blazor Server starter and lives in the repo: the app is `src/Web/NeoReports.Web` (design-system CSS in `wwwroot/css/tokens.css` + `neoreports.css`), and `docs/ui-handoff.md` maps screen → route → components → endpoint → states. Those files are the visual source of truth.
 
-The expected handoff from Claude Design is four deliverables (`tokens.css`, `components.html`, one `.html` per screen, `handoff.md`) — detailed in the "Claude Design handoff" section of the ADR. Target stack: Blazor Server + MudBlazor. Consume those files as the visual source of truth; the code merely translates them into Blazor components.
+Stack (see **D31**): Blazor Server + **pure design-system CSS — no MudBlazor**. Geist / Geist Mono fonts, Tabler outline icons, flat aesthetic (no shadows/gradients; 0.5px borders), en-US UI copy, sentence case, mono for technical data, status always color + icon + text. Endpoints the engine does not expose are `mock/future` in the handoff table — do not invent APIs for the UI.
 
 ## How to work
 

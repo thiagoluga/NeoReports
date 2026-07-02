@@ -1,0 +1,15 @@
+@* JobStatusBadge — maps a JobStatus to the correct Badge variant/icon/label.
+   Usage:  <JobStatusBadge Status="report.Status" /> *@
+@using NeoReports.Web.Models
+
+@{
+    var (variant, icon, label, live) = StatusMaps.Badge(Status);
+}
+<Badge Variant="@variant" Icon="@icon" Live="live">@(LabelOverride ?? label)</Badge>
+
+@code {
+    [Parameter] public JobStatus Status { get; set; }
+
+    /// <summary>Optional label override (e.g. "OK" vs "Completed").</summary>
+    [Parameter] public string? LabelOverride { get; set; }
+}

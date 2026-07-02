@@ -1,0 +1,31 @@
+@* Chip / Tag — small inline label. Kinds:
+     tag (neutral), type (mono), token (info), format (teal/coral/purple by ext).
+   Usage:  <Chip>vendas</Chip>
+           <Chip Kind="token">{year}</Chip>
+           <Chip Kind="format" Ext="pdf">PDF</Chip> *@
+
+@switch (Kind)
+{
+    case "tag":
+        <span class="tag">@ChildContent</span>
+        break;
+    case "token":
+        <span class="chip token" style="background:var(--info-bg);color:var(--info-fg);font-family:var(--font-mono);font-size:11px;padding:2px 6px;border-radius:3px">@ChildContent</span>
+        break;
+    case "format":
+        <span class="chip format @(Ext == "pdf" ? "pdf" : Ext == "json" || Ext == "xml" ? "json" : "")">@ChildContent</span>
+        break;
+    default:
+        <span class="tag">@ChildContent</span>
+        break;
+}
+
+@code {
+    /// <summary>tag | token | format</summary>
+    [Parameter] public string Kind { get; set; } = "tag";
+
+    /// <summary>For format chips: csv | xlsx | pdf | json | xml (drives color)</summary>
+    [Parameter] public string? Ext { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

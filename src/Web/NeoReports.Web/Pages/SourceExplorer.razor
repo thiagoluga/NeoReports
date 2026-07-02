@@ -1,0 +1,158 @@
+@page "/sources/{SourceName}/explore"
+@using NeoReports.Web.Models
+@using NeoReports.Web.Services
+@inject NavigationManager Nav
+
+<div class="page">
+    <div class="breadcrumb">
+        <a @onclick="@(() => Nav.NavigateTo("sources"))">Sources</a>
+        <span class="sep">›</span>
+        <a class="mono">@SourceName</a>
+        <span class="sep">›</span>
+        <span class="mono" style="color:var(--fg)">Explore</span>
+    </div>
+
+    <div class="page-head">
+        <div class="title" style="max-width:720px;min-width:0">
+            <div style="display:flex;align-items:center;gap:12px">
+                <CatTile Kind="teal" Icon="database" />
+                <h1 style="font-size:24px">@SourceName</h1>
+                <span class="badge gray" style="background:var(--bg2)"><span class="dot" style="background:var(--fg-faint)"></span>SQL Server</span>
+            </div>
+            <div class="sub mono" style="margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                SELECT v.id, v.customer_id, v.total, v.created_at FROM sales v WHERE created_at BETWEEN @@since AND @@until
+            </div>
+        </div>
+        <div style="display:flex;gap:8px">
+            <Button Variant="outline" Icon="refresh">Refresh</Button>
+            <Button Variant="outline" Icon="pencil">Edit source</Button>
+        </div>
+    </div>
+
+    @* Info strip — GET /api/sources/{name} (mock/future) *@
+    <div class="info-strip">
+        <div><span class="k">Connection</span><span class="v">sales.prod.acme.local:1433</span></div>
+        <div><span class="k">Pagination</span><span class="v">keyset · ORDER BY v.id ASC</span></div>
+        <div><span class="k">Page size</span><span class="v">1,000 rows/page</span></div>
+        <div><span class="k">Last refresh</span><span class="v">2 min ago · 14:32:14</span></div>
+    </div>
+
+    @* Parameters *@
+    <Card Title="Parameters" Sub="Applied to the preview" Dense="true">
+        <div class="col" style="gap:0">
+            @foreach (var p in _params)
+            {
+                <div class="cgr" style="grid-template-columns:120px 1fr auto 32px;padding:6px 0">
+                    <span class="lbl mono" style="color:var(--info-fg)">@p.Key</span>
+                    <span class="input mono" style="height:28px"><input class="mono" value="@p.Value" style="width:100%" /></span>
+                    <span class="badge gray" style="background:var(--bg2);font-family:var(--font-mono)">@p.Type</span>
+                    <button class="btn icon-only sm subtle"><i class="ti ti-x"></i></button>
+                </div>
+            }
+        </div>
+    </Card>
+
+    @* Columns + preview *@
+    <div style="display:grid;grid-template-columns:0.62fr 1fr;gap:12px">
+        <Card Title="Columns" Sub="Drag to reorder">
+            <Action><button class="btn link" @onclick="ToggleAll">Select all</button></Action>
+            <ChildContent>
+            <div class="col" style="gap:0">
+                @for (var i = 0; i < _cols.Count; i++)
+                {
+                    var idx = i;
+                    var c = _cols[idx];
+                    <div class="col-row @(c.Selected ? "" : "off")" @onclick="@(() => Toggle(idx))">
+                        <i class="ti ti-grip-vertical grip"></i>
+                        <span class="cb @(c.Selected ? "on" : "")"><i class="ti ti-check"></i></span>
+                        <div class="col-name">
+                            <b>@c.Name</b>
+                            @if (c.MetaLabel is not null)
+                            {
+                                <span><i class="ti ti-arrow-bear-right" style="font-size:10px"></i> @c.MetaLabel: @c.MetaValue</span>
+                            }
+                        </div>
+                        <span class="typ @c.Type">@c.Type</span>
+                    </div>
+                }
+            </div>
+            <div class="row-between" style="padding-top:8px;border-top:0.5px solid var(--border);margin-top:4px">
+                <button class="btn link" style="font-size:12px"><i class="ti ti-math-function" style="font-size:12px;margin-right:4px"></i>Computed column</button>
+                <span class="mono muted" style="font-size:11px">@SelectedCount of @_cols.Count selected</span>
+            </div>
+            </ChildContent>
+        </Card>
+
+        <Card Title="Preview" Sub="First 100 rows · 2 min cache">
+            <Action><button class="btn link"><i class="ti ti-refresh" style="font-size:12px;margin-right:4px"></i>refresh</button></Action>
+            <ChildContent>
+            <div style="max-height:360px;overflow:auto;border:0.5px solid var(--border);border-radius:var(--r-md)">
+                <table class="preview-tbl">
+                    <thead>
+                        <tr>
+                            @foreach (var c in SelectedCols)
+                            {
+                                <th class="@(c.Type == "num" ? "num" : "")">@(c.MetaLabel == "rename" ? c.MetaValue : c.Name)</th>
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _rows)
+                        {
+                            <tr>
+                                @foreach (var c in SelectedCols)
+                                {
+                                    <td class="@(c.Type == "num" ? "num" : "")">@(row.TryGetValue(c.Name, out var val) ? val : "—")</td>
+                                }
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            </ChildContent>
+        </Card>
+    </div>
+
+    <div class="wizard-footer">
+        <Button Variant="outline" Icon="arrow-left" OnClick="@(() => Nav.NavigateTo("sources"))">Back</Button>
+        <div style="display:flex;align-items:center;gap:12px">
+            <span class="mono muted" style="font-size:12px">@SelectedCount columns · 100 rows preview · est. limit ~42k records</span>
+            <Button Variant="primary" IconRight="arrow-right" OnClick="@(() => Nav.NavigateTo("builder/format"))">Continue to format</Button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string SourceName { get; set; } = "sales-db";
+
+    private List<ColumnDef> _cols = SampleData.Columns.Select(c => c with { }).ToList();
+    private int SelectedCount => _cols.Count(c => c.Selected);
+    private IEnumerable<ColumnDef> SelectedCols => _cols.Where(c => c.Selected);
+
+    private void Toggle(int i) => _cols[i] = _cols[i] with { Selected = !_cols[i].Selected };
+    private void ToggleAll()
+    {
+        var allOn = _cols.All(c => c.Selected);
+        _cols = _cols.Select(c => c with { Selected = !allOn }).ToList();
+    }
+
+    private record Param(string Key, string Value, string Type);
+    private readonly Param[] _params =
+    {
+        new("@@since", "2026-04-27", "datetime"),
+        new("@@until", "2026-05-27", "datetime"),
+        new("@@tenant", "acme-prod", "string"),
+    };
+
+    private readonly List<Dictionary<string, string>> _rows = new()
+    {
+        new() { ["id"]="184201", ["customer_id"]="4012", ["total"]="$ 1,428.90", ["created_at"]="05/27/2026 14:31", ["status_id"]="3", ["region"]="SE" },
+        new() { ["id"]="184200", ["customer_id"]="4012", ["total"]="$ 89.00",    ["created_at"]="05/27/2026 14:29", ["status_id"]="3", ["region"]="SE" },
+        new() { ["id"]="184199", ["customer_id"]="2007", ["total"]="$ 12,450.00",["created_at"]="05/27/2026 14:21", ["status_id"]="3", ["region"]="S" },
+        new() { ["id"]="184198", ["customer_id"]="3104", ["total"]="$ 320.50",   ["created_at"]="05/27/2026 14:18", ["status_id"]="4", ["region"]="NE" },
+        new() { ["id"]="184197", ["customer_id"]="1801", ["total"]="$ 78.40",    ["created_at"]="05/27/2026 14:10", ["status_id"]="3", ["region"]="CO" },
+        new() { ["id"]="184196", ["customer_id"]="4012", ["total"]="$ 5,612.00", ["created_at"]="05/27/2026 13:58", ["status_id"]="3", ["region"]="SE" },
+        new() { ["id"]="184195", ["customer_id"]="2007", ["total"]="$ 245.80",   ["created_at"]="05/27/2026 13:42", ["status_id"]="3", ["region"]="S" },
+        new() { ["id"]="184194", ["customer_id"]="5210", ["total"]="$ 1,012.00", ["created_at"]="05/27/2026 13:30", ["status_id"]="3", ["region"]="N" },
+    };
+}

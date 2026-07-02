@@ -1,0 +1,113 @@
+@page "/jobs/failed"
+@using NeoReports.Web.Components.UI
+@inject NavigationManager Nav
+
+<div class="page">
+    <div class="page-head">
+        <div class="title">
+            <div style="display:flex;align-items:center;gap:12px">
+                <h1 style="font-size:24px">Daily audit log</h1>
+                <Badge Variant="danger" Icon="alert-triangle">Failed</Badge>
+            </div>
+            <div class="sub mono" style="margin-top:6px">job_8b2f01a9 · schedule · ended 01:01:22 BRT</div>
+        </div>
+        <div style="display:flex;gap:8px">
+            <Button Variant="outline" Icon="refresh">Retry</Button>
+            <button class="btn icon-only outline"><i class="ti ti-dots-vertical"></i></button>
+        </div>
+    </div>
+
+    <div class="hero-status danger">
+        <div class="badge-ico"><i class="ti ti-alert-triangle"></i></div>
+        <div>
+            <div class="title">Failure threshold exceeded</div>
+            <div class="sub">Error rate above 10% after page 18. ThresholdMonitor aborted the run to avoid inconsistent output.</div>
+            <div class="sub mono" style="margin-top:4px">failed after 1m 22s · 15 retries exhausted · audit-mongo</div>
+        </div>
+        <Button Variant="outline" Icon="external-link">View runbook</Button>
+    </div>
+
+    <Card Flat="true" Dense="true"><PhaseStepper Phases="_phases" /></Card>
+
+    <div class="grid-4">
+        <MetricCard Icon="download" Label="Read" Value="18,402" Sub="partial · of ~96,000" />
+        <MetricCard Icon="upload" Label="Written" Value="16,000" Sub="2,402 buffered rows lost" />
+        <MetricCard Icon="clock" Label="Duration" Value="1m 22s" Sub="aborted before upload" />
+        <MetricCard Icon="refresh" Label="Retries" Value="15" Sub="exhausted · no recovery" />
+    </div>
+
+    <Card Flat="true">
+        <div class="file-row" style="border-top:0;padding:4px">
+            <CatTile Sm="true" Kind="warn" Icon="file-alert" />
+            <div class="file-name"><b style="font-family:var(--font-sans);font-size:13px">Partial output available</b><span>audit-2026-05-27.partial.json · 16,000 documents · 4.1 MB · not uploaded to Azure Blob</span></div>
+            <div class="file-actions"><Button Variant="outline" Size="sm" Icon="download">Download partial</Button></div>
+        </div>
+    </Card>
+
+    <Card Title="What to do now?" Sub="Three paths · ordered least to most destructive">
+        <div>
+            <div class="option-row recommended">
+                <span class="opt-icon"><i class="ti ti-bookmark"></i></span>
+                <div>
+                    <div class="opt-title-row"><span class="opt-title">Resume from checkpoint</span><span class="badge info"><span class="dot"></span>recommended</span></div>
+                    <div class="opt-desc">Continues from page 19 using the snapshot saved at 01:00:14. Skips the 18,000 rows already processed.</div>
+                </div>
+                <Button Variant="primary" Icon="player-play">Resume</Button>
+            </div>
+            <div class="option-row">
+                <span class="opt-icon"><i class="ti ti-rotate"></i></span>
+                <div><div class="opt-title-row"><span class="opt-title">Run from scratch</span></div><div class="opt-desc">Discards the checkpoint and reruns everything. Slower, but safe if the source data changed.</div></div>
+                <Button Variant="outline" Icon="player-play">Run</Button>
+            </div>
+            <div class="option-row">
+                <span class="opt-icon"><i class="ti ti-pencil"></i></span>
+                <div><div class="opt-title-row"><span class="opt-title">Edit configuration and retry</span></div><div class="opt-desc">Adjust threshold, retry policy or query before rerunning. Useful if the error is systematic.</div></div>
+                <Button Variant="outline" Icon="pencil" OnClick="@(() => Nav.NavigateTo("builder"))">Edit</Button>
+            </div>
+        </div>
+    </Card>
+
+    <div class="grid-1-4">
+        <Card Title="Stack trace" Sub="first and last line highlighted">
+            <pre class="stack"><span class="err">System.TimeoutException: A timeout occurred reading from MongoDB cluster audit-mongo.prod after 30000ms.</span>
+   at NeoReports.Sources.MongoSource.ReadPageAsync(Int32 page) in /src/Sources/MongoSource.cs:<span class="gray">142</span>
+   at NeoReports.Engine.PipelineRunner.RunPhaseAsync(Phase phase) in /src/Engine/PipelineRunner.cs:<span class="gray">88</span>
+   at NeoReports.Engine.PipelineRunner.RunAsync() in /src/Engine/PipelineRunner.cs:<span class="gray">54</span>
+   at NeoReports.Workers.JobWorker.ExecuteAsync(Job job) in /src/Workers/JobWorker.cs:<span class="gray">31</span>
+
+<span class="err">→ ThresholdMonitor.Abort: error rate 10.6% exceeded threshold 10% after 18,402 records. Job aborted to prevent inconsistent output.</span></pre>
+        </Card>
+
+        <Card Title="Alerts fired" Sub="3 rules · 2 channels">
+            @foreach (var a in _alerts)
+            {
+                <div class="list-row" style="padding:8px 0">
+                    <CatTile Sm="true" Kind="@a.Kind" Icon="@a.Icon" />
+                    <div class="col" style="gap:0"><span class="name">@a.Rule</span><span class="sub mono">fired at 01:01:22</span></div>
+                    <div class="row" style="margin-left:auto;gap:4px">
+                        @foreach (var c in a.Channels)
+                        {
+                            <span class="cat-tile sm gray" title="@c"><i class="ti ti-@c"></i></span>
+                        }
+                    </div>
+                </div>
+            }
+        </Card>
+    </div>
+</div>
+
+@code {
+    private readonly PhaseStepper.Phase[] _phases =
+    {
+        new("Connect", "done"), new("Authenticate", "done"), new("Schema", "done"),
+        new("Read+write", "failed"), new("Upload", ""),
+    };
+
+    private record Alert(string Rule, string Icon, string Kind, string[] Channels);
+    private readonly Alert[] _alerts =
+    {
+        new("Critical failure", "alert-triangle", "danger", new[] { "mail", "brand-slack" }),
+        new("Excessive retries", "refresh-alert", "warn", new[] { "brand-slack" }),
+        new("Schedule did not complete", "calendar-x", "warn", new[] { "mail" }),
+    };
+}

@@ -1,0 +1,19 @@
+@* SelectableCard — the shared selectable-card shell used by format & destination pickers.
+   2px info border + tinted bg + check-circle when selected.
+   Usage:
+     <SelectableCard Selected="@sel" OnClick="...">
+       <CatTile Kind="teal" Icon="table" />
+       <div class="name">CSV <span class="mono muted" style="font-size:11px;font-weight:400">.csv</span></div>
+       <div class="conn" style="white-space:normal;font-family:var(--font-sans);font-size:12px">Delimited tabular text.</div>
+     </SelectableCard> *@
+
+<div class="sel-card @(Selected ? "selected" : "")" @onclick="OnClick">
+    <div class="check"><i class="ti ti-check"></i></div>
+    @ChildContent
+</div>
+
+@code {
+    [Parameter] public bool Selected { get; set; }
+    [Parameter] public EventCallback OnClick { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}
