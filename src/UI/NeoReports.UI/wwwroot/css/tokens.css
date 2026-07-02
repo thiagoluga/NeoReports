@@ -5,10 +5,24 @@
    ============================================================= */
 
 /* Fonts ------------------------------------------------------- */
-/* Geist + Geist Mono via Google Fonts. To self-host for production,
-   see wwwroot/fonts/README.md and swap this @import for @font-face
-   pointing at the woff2 files you drop into wwwroot/fonts/. */
-@import url("https://fonts.googleapis.com/css2?family=Geist:wght@400;500&family=Geist+Mono:wght@400;500&display=swap");
+/* Self-hosted Geist + Geist Mono (see wwwroot/fonts/README.md). Both are
+   variable fonts — Google serves one physical file per family covering the
+   whole weight axis, so a single @font-face with a weight *range* (not a
+   discrete list) covers 400 and 500 without duplicating the binary. */
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 400 500;
+  font-display: swap;
+  src: url("../fonts/Geist-Variable.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 400 500;
+  font-display: swap;
+  src: url("../fonts/GeistMono-Variable.woff2") format("woff2");
+}
 
 :root {
   /* ---------- Color: neutrals ---------- */

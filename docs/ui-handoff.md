@@ -71,7 +71,8 @@ on mono/numeric columns and scroll horizontally rather than wrap.
 
 ## (c) Tabler icons used
 
-Load once (CDN in `_Host.cshtml`, or self-host per `wwwroot/fonts/README.md`). Full set
+Self-hosted (`_Host.cshtml` links `wwwroot/css/tabler-icons.min.css`; see `wwwroot/fonts/README.md`
+for the binaries and how to refresh them). Full set
 referenced across pages + components:
 
 **Nav / chrome:** `search` · `bell` · `dots-vertical` · `chevron-down` · `arrow-right` · `arrow-left` · `arrow-up` · `external-link` · `x` · `plus` · `check` · `minus`
