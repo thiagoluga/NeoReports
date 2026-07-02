@@ -8,7 +8,7 @@
     // The UI is mounted under a configurable base path (UseNeoReportsUi("/...")).
     // The branch middleware moves the mount point into PathBase, so the <base> tag
     // adapts to whatever path the host chose.
-    var basePath = HttpContext.Request.PathBase.HasValue ? HttpContext.Request.PathBase.Value + "/" : "/";
+    var basePath = HttpContext.Request.PathBase.Value + '/';
 }
 
 <!DOCTYPE html>

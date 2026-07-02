@@ -22,7 +22,8 @@
   border-bottom: var(--bw-hairline) solid var(--border);
 }
 .topbar .left, .topbar .right { display: flex; align-items: center; gap: 2px; }
-.brand { display: flex; align-items: center; gap: 10px; margin-right: 18px; }
+/* .brand and .nav-item render as anchors in Blazor: reset the anchor defaults here. */
+.brand { display: flex; align-items: center; gap: 10px; margin-right: 18px; text-decoration: none; color: var(--fg); }
 .brand b { font-weight: 500; font-size: 14px; letter-spacing: -0.005em; }
 .nav { display: flex; gap: 2px; margin-left: 4px; }
 .nav-item {
@@ -33,6 +34,7 @@
   cursor: pointer;
   transition: background var(--t-hover) ease-out, color var(--t-hover) ease-out;
   user-select: none;
+  text-decoration: none;
 }
 .nav-item:hover { background: var(--bg2); color: var(--fg); }
 .nav-item.active { background: var(--bg2); color: var(--fg); font-weight: 500; }
@@ -1229,10 +1231,6 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 * { box-sizing: border-box; }
-
-/* Topbar brand as anchor */
-.brand { text-decoration: none; color: var(--fg); }
-.nav-item { text-decoration: none; }
 
 /* Blazor error UI */
 #blazor-error-ui {
