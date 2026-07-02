@@ -2,6 +2,7 @@
 @using NeoReports.UI.Services
 @inject NavigationManager Nav
 @inject BuilderState Wizard
+@inject INeoReportsApiClient Api
 
 <div class="page">
     <WizardStepper Steps="Steps" Current="1" />
@@ -23,14 +24,58 @@
         <button class="btn link" @onclick="@(() => Nav.NavigateTo("builder"))">Change →</button>
     </div>
 
-    @* Query — POST /api/reports/{name}/run validates on server *@
-    <Card Title="Query" Sub="@("Edited in SQL · uses @name parameters")">
+    @* Engine configuration — the fields that actually build the ReportConfig sent to the
+       engine (Epic D / D6). Everything below Resilience on this page stays cosmetic. *@
+    <Card Title="Engine configuration" Sub="What gets sent to POST /api/reports">
         <Action>
-            <div style="display:flex;gap:6px">
-                <Button Variant="outline" Size="sm" Icon="indent-increase">Format</Button>
-                <Button Variant="outline" Size="sm" Icon="circle-check">Validate</Button>
-            </div>
+            <Button Variant="outline" Size="sm" Icon="circle-check" Loading="_validating" OnClick="ValidateAsync">Validate</Button>
         </Action>
+        <ChildContent>
+        <div class="col" style="gap:12px">
+            <div class="grid-2">
+                <div class="field"><span class="label-sm">Report name</span><span class="input mono"><input class="mono" @bind="Wizard.ReportName" @bind:event="oninput" placeholder="monthly-sales" style="width:100%" /></span></div>
+                <div class="field"><span class="label-sm">Connection string variable</span><span class="input mono"><span class="mono muted" style="font-size:11px">${</span><input class="mono" @bind="Wizard.ConnectionStringVariable" @bind:event="oninput" placeholder="SALES_DB" style="flex:1" /><span class="mono muted" style="font-size:11px">}</span></span></div>
+            </div>
+            <div class="field">
+                <span class="label-sm">SQL query</span>
+                <textarea class="stack mono" style="width:100%;min-height:120px;background:var(--bg2);color:var(--fg);border:0.5px solid var(--border);border-radius:var(--r-md);padding:10px 12px;resize:vertical" @bind="Wizard.SqlQuery" @bind:event="oninput" placeholder="SELECT Id, Customer, Amount FROM Sales ORDER BY Id"></textarea>
+            </div>
+            <div class="grid-2">
+                <div class="field"><span class="label-sm">Key column</span><span class="input mono"><input class="mono" @bind="Wizard.KeyColumn" @bind:event="oninput" style="width:100%" /></span></div>
+                <div class="field"><span class="label-sm">Page size</span><span class="input num"><input class="mono" type="number" min="1" @bind="Wizard.PageSize" @bind:event="oninput" /></span></div>
+            </div>
+            <div class="field"><span class="label-sm">Output columns</span><span class="input mono"><input class="mono" @bind="Wizard.ColumnNames" @bind:event="oninput" placeholder="Id, Customer, Amount" style="width:100%" /></span></div>
+        </div>
+        @if (_validationResult is not null)
+        {
+            <div style="margin-top:12px">
+                @if (_validationResult.Valid)
+                {
+                    <Banner Variant="success" Icon="circle-check">
+                        <b>Valid</b>
+                        <span class="mono" style="font-size:12px">columns: @string.Join(", ", _validationResult.Columns ?? Array.Empty<string>())@(_validationResult.NameTaken ? " · name already taken" : "")</span>
+                    </Banner>
+                }
+                else
+                {
+                    <Banner Variant="danger" Icon="alert-triangle">
+                        <b>Invalid configuration</b>
+                        <span style="font-size:12px">@_validationResult.Error</span>
+                    </Banner>
+                }
+            </div>
+        }
+        else if (_validationUnavailable)
+        {
+            <div style="margin-top:12px">
+                <Banner Variant="danger" Icon="alert-triangle"><b>Could not reach the engine to validate.</b></Banner>
+            </div>
+        }
+        </ChildContent>
+    </Card>
+
+    @* Query preview — decorative, matches the prototype's syntax-highlighted mockup *@
+    <Card Title="Query preview" Sub="@("Illustrative only — the field above is what's sent")">
         <ChildContent>
         <pre class="stack" style="background:var(--bg2);color:var(--fg)"><span style="color:var(--fg-faint);font-style:italic">-- sales in period by tenant</span>
 <span class="kw">SELECT</span> v.id, v.customer_id, v.total, v.created_at, v.status_id, v.region
@@ -132,4 +177,25 @@
     private readonly string[] _errorTypes = { "deadlock", "lock-timeout", "network", "5xx", "429", "custom" };
     private readonly HashSet<string> _retryErrors = new() { "deadlock", "lock-timeout", "network", "5xx", "429" };
     private void ToggleErr(string e) { if (!_retryErrors.Add(e)) _retryErrors.Remove(e); }
+
+    private bool _validating;
+    private bool _validationUnavailable;
+    private ApiValidationResult? _validationResult;
+
+    private async Task ValidateAsync()
+    {
+        _validating = true;
+        _validationResult = null;
+        _validationUnavailable = false;
+        try
+        {
+            string configJson = BuilderConfigMapper.ToConfigJson(Wizard);
+            _validationResult = await Api.TryValidateReportAsync(configJson);
+            _validationUnavailable = _validationResult is null;
+        }
+        finally
+        {
+            _validating = false;
+        }
+    }
 }

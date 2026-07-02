@@ -79,14 +79,28 @@ NeoReports.UI/
 See **`docs/ui-handoff.md`** for the screen → route → components → endpoint → states table,
 responsive breakpoints, and the full Tabler icon inventory. `INeoReportsApiClient`
 (`Services/NeoReportsApiClient.cs`) calls the real endpoints where the handoff table says
-one exists — reports list, report detail, run/cancel/download, all three job states —
-falling back to `SampleData` when no engine is mounted or a call fails. Cells the handoff
-marks `mock/future` (schedule, aggregate metrics, permissions, pipeline/variants, sources,
-settings) are still `SampleData` only.
+one exists — reports list, report detail, run/cancel/download, all three job states, plus
+the Epic D dynamic-registration endpoints (`capabilities`, `reports` POST/validate/DELETE,
+`jobs` list, `jobs/{id}/artifacts`) — falling back to `SampleData` when no engine is mounted
+or a call fails. Cells the handoff marks `mock/future` (aggregate metrics, permissions,
+pipeline/variants, sources, settings) are still `SampleData` only.
+
+The **Builder wizard** (`/builder` → `/builder/review`) is the one screen that writes back
+to the engine, not just reads it (ADR D33). `BuilderState` (Scoped) holds the real fields —
+report name, source type, connection string variable, SQL query, key column, page size,
+output columns, and an engine destination — alongside the wizard's cosmetic fields (schedule,
+template metadata) that have no `ReportConfig` equivalent and are never sent.
+`BuilderConfigMapper` (`Services/BuilderConfigMapper.cs`) turns that state into the same JSON
+document shape `POST /api/reports` accepts, deliberately without referencing the engine
+assemblies (the UI only ever talks to NeoReports over HTTP). Step 1 checks
+`GET /api/capabilities`; if nothing comes back the whole wizard drops into demo mode
+(browsable, but Save/Run are disabled) — this only happens when the host never mounted an
+engine, so the sample host (`samples/08-web-ui`, UI-only, no `/api`) always demos this way.
 
 ## Fidelity notes
 
-- Forms are cosmetic (no validation/persistence) — this is a UI starter, not production logic.
+- Most form fields (parameters table, resilience knobs, template metadata, schedule) are
+  cosmetic (no validation/persistence) — this is a UI starter, not production logic.
 - The progress *percentage* on the running-job screen stays a decorative animation (no
   server-side row total to compute a real one against); the counters below it (read/written/
   retries) and the status badge/cancel button are wired to `GET /api/jobs/{id}`.

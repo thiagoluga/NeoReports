@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.Logging;
@@ -25,6 +26,33 @@ public sealed record ApiJobView(
     string? Error,
     ApiJobStats Stats);
 
+/// <summary>What the engine can build dynamic reports out of, as returned by <c>GET /api/capabilities</c>.</summary>
+public sealed record ApiCapabilities(
+    IReadOnlyList<string> Sources, IReadOnlyList<string> Formats, IReadOnlyList<string> Destinations);
+
+/// <summary>Result of <c>POST /api/reports/validate</c> — a dry-run compile, never a registration.</summary>
+public sealed record ApiValidationResult(
+    bool Valid, string? Error, string? Name, IReadOnlyList<string>? Columns, bool NameTaken);
+
+/// <summary>Outcome of a <c>POST /api/reports</c> call.</summary>
+public enum ApiCreateOutcome
+{
+    /// <summary>201 — the report was registered.</summary>
+    Created,
+
+    /// <summary>409 — a report with that name already exists.</summary>
+    NameTaken,
+
+    /// <summary>400 — the config document was rejected (bad name, unknown provider, etc.).</summary>
+    Invalid,
+
+    /// <summary>The engine wasn't reachable, or returned an unexpected status.</summary>
+    Unavailable,
+}
+
+/// <summary>Result of <see cref="INeoReportsApiClient.TryCreateReportAsync"/>.</summary>
+public sealed record ApiCreateResult(ApiCreateOutcome Outcome, string? Name, string? Error);
+
 /// <summary>
 /// Reads and drives NeoReports engine jobs/reports over its HTTP API (<c>MapNeoReports</c>). Every
 /// call is best-effort: on a network error, timeout, or unexpected shape it logs and returns a
@@ -49,6 +77,22 @@ public interface INeoReportsApiClient
 
     /// <summary>Builds the absolute download URL for a completed job's output.</summary>
     string BuildDownloadUrl(string jobId);
+
+    /// <summary>Reads what the engine can build dynamic reports out of, or <c>null</c> if the engine API isn't reachable.</summary>
+    Task<ApiCapabilities?> TryGetCapabilitiesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Dry-run compiles a report config document. Returns <c>null</c> only when the engine API
+    /// itself isn't reachable — a rejected/invalid config still returns a result with
+    /// <see cref="ApiValidationResult.Valid"/> <c>false</c>.
+    /// </summary>
+    Task<ApiValidationResult?> TryValidateReportAsync(string configJson, CancellationToken cancellationToken = default);
+
+    /// <summary>Registers a report at runtime from a config document.</summary>
+    Task<ApiCreateResult> TryCreateReportAsync(string configJson, CancellationToken cancellationToken = default);
+
+    /// <summary>Removes a runtime-registered report. Returns whether the engine accepted the request.</summary>
+    Task<bool> TryDeleteReportAsync(string name, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Locates the NeoReports engine API the UI calls.</summary>
@@ -148,6 +192,101 @@ internal sealed class NeoReportsApiClient(
     }
 
     public string BuildDownloadUrl(string jobId) => new Uri(ApiBase, $"jobs/{Uri.EscapeDataString(jobId)}/download").ToString();
+
+    public async Task<ApiCapabilities?> TryGetCapabilitiesAsync(CancellationToken cancellationToken = default)
+    {
+        var apiBase = ApiBase;
+        try
+        {
+            return await http.GetFromJsonAsync<ApiCapabilities>(
+                new Uri(apiBase, "capabilities"), Json, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsTransient(ex))
+        {
+            logger.LogWarning(ex, "GET {ApiBase}capabilities unavailable; falling back to sample data.", Sanitize(apiBase.ToString()));
+            return null;
+        }
+    }
+
+    public async Task<ApiValidationResult?> TryValidateReportAsync(string configJson, CancellationToken cancellationToken = default)
+    {
+        var apiBase = ApiBase;
+        try
+        {
+            using var content = new StringContent(configJson, Encoding.UTF8, "application/json");
+            using var response = await http.PostAsync(new Uri(apiBase, "reports/validate"), content, cancellationToken)
+                .ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+                return null;
+
+            return await response.Content.ReadFromJsonAsync<ApiValidationResult>(Json, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsTransient(ex))
+        {
+            logger.LogWarning(ex, "POST {ApiBase}reports/validate failed.", Sanitize(apiBase.ToString()));
+            return null;
+        }
+    }
+
+    public async Task<ApiCreateResult> TryCreateReportAsync(string configJson, CancellationToken cancellationToken = default)
+    {
+        var apiBase = ApiBase;
+        try
+        {
+            using var content = new StringContent(configJson, Encoding.UTF8, "application/json");
+            using var response = await http.PostAsync(new Uri(apiBase, "reports"), content, cancellationToken).ConfigureAwait(false);
+
+            if (response.StatusCode == HttpStatusCode.Created)
+            {
+                var body = await response.Content.ReadFromJsonAsync<JsonElement>(Json, cancellationToken).ConfigureAwait(false);
+                string? name = body.TryGetProperty("name", out var nameProperty) ? nameProperty.GetString() : null;
+                return new ApiCreateResult(ApiCreateOutcome.Created, name, null);
+            }
+
+            string? error = await TryReadErrorAsync(response, cancellationToken).ConfigureAwait(false);
+            ApiCreateOutcome outcome = response.StatusCode switch
+            {
+                HttpStatusCode.Conflict => ApiCreateOutcome.NameTaken,
+                HttpStatusCode.BadRequest => ApiCreateOutcome.Invalid,
+                _ => ApiCreateOutcome.Unavailable,
+            };
+            return new ApiCreateResult(outcome, null, error);
+        }
+        catch (Exception ex) when (IsTransient(ex))
+        {
+            logger.LogWarning(ex, "POST {ApiBase}reports failed.", Sanitize(apiBase.ToString()));
+            return new ApiCreateResult(ApiCreateOutcome.Unavailable, null, null);
+        }
+    }
+
+    public async Task<bool> TryDeleteReportAsync(string name, CancellationToken cancellationToken = default)
+    {
+        var apiBase = ApiBase;
+        try
+        {
+            using var response = await http.DeleteAsync(
+                new Uri(apiBase, $"reports/{Uri.EscapeDataString(name)}"), cancellationToken).ConfigureAwait(false);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex) when (IsTransient(ex))
+        {
+            logger.LogWarning(ex, "DELETE {ApiBase}reports/{Name} failed.", Sanitize(apiBase.ToString()), Sanitize(name));
+            return false;
+        }
+    }
+
+    private static async Task<string?> TryReadErrorAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>(Json, cancellationToken).ConfigureAwait(false);
+            return body.TryGetProperty("error", out var error) ? error.GetString() : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 
     private static bool IsTransient(Exception ex) => ex is HttpRequestException or JsonException or TaskCanceledException;
 

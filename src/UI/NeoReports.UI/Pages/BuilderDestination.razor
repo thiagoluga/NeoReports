@@ -2,6 +2,7 @@
 @using NeoReports.UI.Services
 @inject NavigationManager Nav
 @inject BuilderState Wizard
+@inject INeoReportsApiClient Api
 
 <div class="page">
     <WizardStepper Steps="Steps" Current="3" />
@@ -12,6 +13,27 @@
             <div class="sub">You can deliver to more than one destination · step 4 of 5</div>
         </div>
     </div>
+
+    @if (Wizard.EngineAvailable)
+    {
+        <Card Title="Engine destination" Sub="What gets sent to the engine — optional; a report can also have none">
+            <ChildContent>
+            <div class="grid-2">
+                <div class="field">
+                    <span class="label-sm">Type</span>
+                    <select class="input mono" style="width:100%" @bind="Wizard.DestinationType">
+                        <option value="">(none)</option>
+                        @foreach (var d in _engineDestinations)
+                        {
+                            <option value="@d">@d</option>
+                        }
+                    </select>
+                </div>
+                <div class="field"><span class="label-sm">Path / key template</span><span class="input mono"><input class="mono" @bind="Wizard.DestinationPath" @bind:event="oninput" placeholder="./out/{name}-{date:yyyy-MM-dd}.{ext}" style="width:100%" /></span></div>
+            </div>
+        </ChildContent>
+        </Card>
+    }
 
     <div>
         <p class="label-sm" style="margin-bottom:10px">Available destinations</p>
@@ -124,4 +146,15 @@
     private bool _spCreate = true, _spMeta = true;
     private readonly List<string> _emails = new() { "ana.costa@acme.com", "finance@acme.com" };
     private void Toggle(string id) { if (!Wizard.Destinations.Add(id)) Wizard.Destinations.Remove(id); }
+
+    private IReadOnlyList<string> _engineDestinations = Array.Empty<string>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Wizard.EngineAvailable)
+            return;
+
+        ApiCapabilities? capabilities = await Api.TryGetCapabilitiesAsync();
+        _engineDestinations = capabilities?.Destinations ?? Array.Empty<string>();
+    }
 }

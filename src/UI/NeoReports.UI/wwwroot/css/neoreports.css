@@ -640,6 +640,7 @@
 .banner i { font-size: 16px; }
 .banner.success { background: var(--success-bg); color: var(--success-fg); border-color: color-mix(in oklab, var(--success-fg) 18%, transparent); }
 .banner.info    { background: var(--info-bg);    color: var(--info-fg);    border-color: color-mix(in oklab, var(--info-fg) 18%, transparent); }
+.banner.danger  { background: var(--danger-bg);  color: var(--danger-fg);  border-color: color-mix(in oklab, var(--danger-fg) 18%, transparent); }
 
 /* ---------- Permission row ---------- */
 .perm-row {

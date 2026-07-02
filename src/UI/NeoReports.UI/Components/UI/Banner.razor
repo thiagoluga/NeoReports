@@ -1,4 +1,4 @@
-@* Banner — inline tinted callout. Variants: success | info.
+@* Banner — inline tinted callout. Variants: success | info | danger.
    Usage:
      <Banner Variant="success" Icon="clock-play">
        <b>Next run: Monday, Jun 3 2026 · 06:00 BRT</b>
@@ -16,7 +16,7 @@
 </div>
 
 @code {
-    /// <summary>success | info</summary>
+    /// <summary>success | info | danger</summary>
     [Parameter] public string Variant { get; set; } = "info";
     [Parameter] public string? Icon { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }

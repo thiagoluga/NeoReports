@@ -3,6 +3,7 @@
 @using NeoReports.UI.Services
 @inject NavigationManager Nav
 @inject BuilderState Wizard
+@inject INeoReportsApiClient Api
 
 <div class="page">
     <WizardStepper Steps="Steps" Current="0" />
@@ -13,6 +14,14 @@
             <div class="sub">Pick a registered source or create an ad-hoc one · step 1 of 5</div>
         </div>
     </div>
+
+    @if (!Wizard.EngineAvailable)
+    {
+        <Banner Variant="info" Icon="info-circle">
+            <b>Demo mode</b>
+            <span style="font-size:12px">No engine capabilities were found — you can still browse the wizard, but "Save" is disabled at the end.</span>
+        </Banner>
+    }
 
     @* Quick source *@
     <div class="quick-card">
@@ -72,6 +81,14 @@
     private string? _selected;
 
     protected override void OnInitialized() => _selected = Wizard.SourceId ?? "sales-db";
+
+    protected override async Task OnInitializedAsync()
+    {
+        ApiCapabilities? capabilities = await Api.TryGetCapabilitiesAsync();
+        Wizard.EngineAvailable = capabilities is { Sources.Count: > 0 };
+        if (Wizard.EngineAvailable)
+            Wizard.SourceType = capabilities!.Sources.Contains("sql") ? "sql" : capabilities.Sources[0];
+    }
 
     private IEnumerable<SourceSummary> Filtered =>
         SampleData.Sources.Where(s => string.IsNullOrWhiteSpace(_search)

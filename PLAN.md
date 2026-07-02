@@ -336,11 +336,34 @@ not sanitized.
   introducing a new pattern. ✅ solution builds 0 warnings; 184/184 tests green (5 new: single
   artifact matches size, multi-output count matches the zip download, no `"path"` key in the
   response, running job → `[]`, unknown job → 404).
-- [ ] **D6 — UI: Builder wired end-to-end.** `BuilderConfigMapper` (`BuilderState` →
-  `ReportConfig` JSON, pure + unit-tested with a golden snapshot); client methods
-  `TryGetCapabilities`/`TryValidateReport`/`TryCreateReport`/`TryDeleteReport`; step 1 sources
-  from capabilities, step 2 Validate button, step 5 Save → navigate to detail and
-  Save & run → navigate to the job screen; demo mode (Save disabled) when no engine. §D6.
+- [x] **D6 — UI: Builder wired end-to-end.** Discovered mid-implementation that `BuilderState`
+  and the Configure/Format/Destination steps were almost entirely decorative (query editor was
+  static HTML, pagination/resilience never touched any state, the destination catalog was
+  fictional — SharePoint/email — with no engine equivalent); flagged the scope gap and the
+  maintainer chose "add minimal real fields" over a stripped-down save or deferring the epic.
+  `BuilderState` gained the real fields (`ReportName`, `SourceType`, `ConnectionStringVariable`,
+  `SqlQuery`, `KeyColumn`, `PageSize`, `ColumnNames`, `DestinationType`/`DestinationPath`,
+  `EngineAvailable`) alongside the existing cosmetic ones (schedule, template metadata — never
+  serialized). `BuilderConfigMapper` (`Services/BuilderConfigMapper.cs`, dependency-free from
+  the engine assemblies — the UI only ever talks HTTP) maps state to the `POST /api/reports`
+  JSON shape. `NeoReportsApiClient` gained `TryGetCapabilitiesAsync`/`TryValidateReportAsync`/
+  `TryCreateReportAsync`/`TryDeleteReportAsync`. Step 1 checks `GET /api/capabilities` and sets
+  `EngineAvailable` (demo-mode banner + disabled Save/Run when absent); step 2 gained an
+  "Engine configuration" card (report name, connection string `${VAR}`, SQL query, key column,
+  page size, columns) with a working Validate button; step 4 gained a real "Engine destination"
+  selector fed by capabilities, kept alongside the untouched decorative catalog; step 5's Save
+  and Run now buttons call Create (→ navigate to `/reports/{name}`) and Create+Run (→ navigate
+  to `/jobs/{jobId}`), with inline danger-banner errors on failure. Added a `.banner.danger`
+  CSS variant (existing `--danger-fg`/`--danger-bg` tokens, same pattern as `.success`/`.info`).
+  New `tests/NeoReports.UI.UnitTests` project (first for the UI) — `BuilderConfigMapperTests`:
+  happy-path shape, column ordering, omitted-when-empty destination/connection-string/path,
+  name passthrough. ✅ solution builds 0 warnings; 190/190 tests green (6 new). Browser-verified
+  (preview tool): demo-mode banner and disabled Save/Run render correctly against the UI-only
+  sample host (no `/api` mounted); two-way binding confirmed via real in-app navigation (a
+  value typed on step 2 was still present on step 5 through the Scoped `BuilderState`) — note
+  `preview_click`'s simulated click doesn't reliably reach Blazor Server's circuit even at the
+  default viewport (a tooling limitation already logged in Epic C for resized viewports, now
+  confirmed broader); native `element.click()` via `preview_eval` was used instead throughout.
 - [ ] **D7 — UI: dashboard + run histories.** `TryListJobsAsync`; dashboard recent-jobs strip
   (limit 8) + metric cards computed client-side (jobs today, success rate, records exported,
   avg duration); report-detail history (`?report=`, limit 10) linking to the job screens.
