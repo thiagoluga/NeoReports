@@ -12,6 +12,7 @@ reports and jobs, via Minimal API.
 | POST | `/reports/{name}/run` | async → `202 { jobId }` |
 | POST | `/reports/{name}/run?mode=sync` | stream a single output (multi-output → `400`) |
 | GET | `/reports` | list registered reports |
+| GET | `/reports/{name}` | full report definition — columns, formats, destinations, retry/failure strategy, origin (`code`/`config`) |
 | POST | `/reports` | register a report at runtime from a config document → `201` (`409` if the name exists, `400` if the config is invalid) |
 | POST | `/reports/validate` | dry-run compile a config document → `200 { valid, error, name, columns, nameTaken }`; never registers or persists |
 | DELETE | `/reports/{name}` | remove a runtime-registered report → `204` (`409` for a code-registered report, `404` if unknown) |

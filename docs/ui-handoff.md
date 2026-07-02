@@ -18,8 +18,8 @@ degrade gracefully once a real endpoint exists.
 |---|---|---|---|---|
 | Dashboard | `/` `Dashboard` | MetricCard, Card, DataGrid, JobStatusBadge, ProgressBar, CatTile, Button | jobs strip: `GET /api/jobs` (Epic D / D3). Aggregate metrics/sources/destinations: **mock/future** | loading (skeleton rows), empty (no recent jobs), error (engine down) |
 | Reports list | `/reports` `Reports` | ReportCard, FilterBar, Pill, EmptyState, Button | `GET /api/reports` (client-side filter) | loading, empty (no reports → EmptyState CTA), error |
-| Report detail | `/reports/{slug}` `ReportDetail` | Card, MetricCard, Chip, Banner, DataGrid, Timeline, JobStatusBadge, CatTile | `GET /api/reports` (find by name client-side; no per-report endpoint yet). History/metrics/perms/changes: **mock/future** | not-found (bad slug → EmptyState), loading, empty history |
-| Pipeline + variants | `/pipeline` `PipelineView` | Card, MetricCard, Badge, CatTile, Button | `GET /api/reports` (pipeline shape from the list; no per-report endpoint yet). Variant runs: **mock/future** | loading, per-variant error/paused |
+| Report detail | `/reports/{slug}` `ReportDetail` | Card, MetricCard, Chip, Banner, DataGrid, Timeline, JobStatusBadge, CatTile | `GET /api/reports/{name}` (Epic D / D4 — columns, formats, destinations, retry/failure strategy, origin). History/metrics/perms/changes: **mock/future** | not-found (bad slug → EmptyState), loading, empty history |
+| Pipeline + variants | `/pipeline` `PipelineView` | Card, MetricCard, Badge, CatTile, Button | `GET /api/reports/{name}` (Epic D / D4). Variant runs: **mock/future** | loading, per-variant error/paused |
 | Sources list | `/sources` `SourcesList` | SourceCard, FilterBar, Pill, Button | source list + health: **mock/future** (engine exposes reports/jobs, not source registry yet) | loading, empty, per-source error (Diagnose action) |
 | Source explorer | `/sources/{name}/explore` `SourceExplorer` | Card, CatTile, Chip, DataGrid-like preview | schema + preview: **mock/future** | loading (preview skeleton), empty (0 columns), error (source unreachable) |
 | Builder · 1 Source | `/builder` `Builder` | WizardStepper, SelectableCard, FilterBar, CatTile, Button, BuilderState | source list: **mock/future** | loading, empty (no sources → register CTA) |
@@ -43,6 +43,7 @@ degrade gracefully once a real endpoint exists.
 POST /api/reports/{name}/run        → async, returns jobId
 POST /api/reports/{name}/run?mode=sync → streams the result
 GET  /api/reports
+GET  /api/reports/{name}            → full report definition (Epic D / D4)
 POST /api/reports                   → register a dynamic report (Epic D / D2)
 POST /api/reports/validate          → dry-run compile, never registers (Epic D / D2)
 DELETE /api/reports/{name}          → remove a dynamic report; 409 for code-registered (Epic D / D2)

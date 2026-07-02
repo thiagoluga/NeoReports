@@ -37,6 +37,9 @@ public sealed class CompiledReport
         Destinations = destinations;
         Retry = retry;
         FailureStrategy = failureStrategy;
+
+        OutputFormats = outputs.Select(o => o.Factory.Format).ToArray();
+        DestinationTypes = destinations.Select(d => d.Factory.Type).ToArray();
     }
 
     /// <summary>The unique report name it was registered under.</summary>
@@ -50,6 +53,12 @@ public sealed class CompiledReport
 
     /// <summary>Number of configured outputs (formats).</summary>
     public int OutputCount => Outputs.Count;
+
+    /// <summary>Format id of each configured output, in order (e.g. "csv", "xlsx").</summary>
+    public IReadOnlyList<string> OutputFormats { get; }
+
+    /// <summary>Type id of each configured destination, in order (e.g. "local", "s3").</summary>
+    public IReadOnlyList<string> DestinationTypes { get; }
 
     /// <summary>Creates a fresh per-execution reader for this report.</summary>
     internal Func<ReportExecutionContext, IProjectedBatchReader> ReaderFactory { get; }
@@ -67,8 +76,8 @@ public sealed class CompiledReport
     internal IReadOnlyList<DestinationSpec> Destinations { get; }
 
     /// <summary>Declarative retry configuration.</summary>
-    internal RetryOptions Retry { get; }
+    public RetryOptions Retry { get; }
 
     /// <summary>Strategy applied after a batch exhausts its retries.</summary>
-    internal IFailureStrategy FailureStrategy { get; }
+    public IFailureStrategy FailureStrategy { get; }
 }
