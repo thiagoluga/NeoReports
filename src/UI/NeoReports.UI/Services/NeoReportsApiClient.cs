@@ -66,6 +66,14 @@ public interface INeoReportsApiClient
     /// <summary>Reads one job's status, or <c>null</c> if it doesn't exist or the API isn't reachable.</summary>
     Task<ApiJobView?> TryGetJobAsync(string jobId, CancellationToken cancellationToken = default);
 
+    /// <summary>Lists jobs, newest first, or <c>null</c> if the engine API isn't reachable.</summary>
+    /// <param name="report">Restrict to a single report name, or <c>null</c> for any.</param>
+    /// <param name="since">Only jobs created at or after this instant, or <c>null</c> for any.</param>
+    /// <param name="limit">Maximum number of jobs to return.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<IReadOnlyList<ApiJobView>?> TryListJobsAsync(
+        string? report = null, DateTimeOffset? since = null, int? limit = null, CancellationToken cancellationToken = default);
+
     /// <summary>Requests cancellation of a running job. Returns whether the engine accepted the request.</summary>
     Task<bool> TryCancelJobAsync(string jobId, CancellationToken cancellationToken = default);
 
@@ -148,6 +156,31 @@ internal sealed class NeoReportsApiClient(
         catch (Exception ex) when (IsTransient(ex))
         {
             logger.LogWarning(ex, "GET {ApiBase}jobs/{JobId} unavailable; falling back to sample data.", Sanitize(apiBase.ToString()), Sanitize(jobId));
+            return null;
+        }
+    }
+
+    public async Task<IReadOnlyList<ApiJobView>?> TryListJobsAsync(
+        string? report = null, DateTimeOffset? since = null, int? limit = null, CancellationToken cancellationToken = default)
+    {
+        var apiBase = ApiBase;
+        try
+        {
+            var query = new List<string>();
+            if (!string.IsNullOrEmpty(report))
+                query.Add($"report={Uri.EscapeDataString(report)}");
+            if (since is not null)
+                query.Add($"since={Uri.EscapeDataString(since.Value.ToString("O"))}");
+            if (limit is not null)
+                query.Add($"limit={limit.Value}");
+
+            string queryString = query.Count > 0 ? "?" + string.Join("&", query) : "";
+            return await http.GetFromJsonAsync<IReadOnlyList<ApiJobView>>(
+                new Uri(apiBase, $"jobs{queryString}"), Json, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsTransient(ex))
+        {
+            logger.LogWarning(ex, "GET {ApiBase}jobs unavailable; falling back to sample data.", Sanitize(apiBase.ToString()));
             return null;
         }
     }

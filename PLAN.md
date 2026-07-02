@@ -364,10 +364,21 @@ not sanitized.
   `preview_click`'s simulated click doesn't reliably reach Blazor Server's circuit even at the
   default viewport (a tooling limitation already logged in Epic C for resized viewports, now
   confirmed broader); native `element.click()` via `preview_eval` was used instead throughout.
-- [ ] **D7 — UI: dashboard + run histories.** `TryListJobsAsync`; dashboard recent-jobs strip
-  (limit 8) + metric cards computed client-side (jobs today, success rate, records exported,
-  avg duration); report-detail history (`?report=`, limit 10) linking to the job screens.
-  SampleData fallback preserved everywhere. §D7.
+- [x] **D7 — UI: dashboard + run histories.** `NeoReportsApiClient.TryListJobsAsync` (report/
+  since/limit filters, reuses `ApiJobView`). Dashboard: recent-jobs strip (`limit: 8`) unified
+  under a `DashboardJobRow` shape shared by the live (`ApiJobView`) and demo (`SampleData`)
+  paths so the markup doesn't fork; metric cards (jobs today, success rate, records exported,
+  avg duration) computed client-side from `TryListJobsAsync(since: today-utc, limit: 200)`.
+  Report detail: history table (`report: name, limit: 10`) replaces the hardcoded 5-row demo
+  array when live, with routes correctly split across `/jobs/{id}`,
+  `/jobs/completed/{id}`, `/jobs/failed/{id}` by status (previously the demo rows pointed at
+  the parameterless job routes). `EmptyState` on both screens when the live list is empty,
+  distinct from the demo-data fallback when the engine is unreachable. ✅ solution builds 0
+  warnings; 190/190 tests green (no new tests — UI pages aren't unit-tested in this repo,
+  consistent with C2/D6; verified via the preview tool instead). Browser-verified: demo
+  metric/table values render unchanged from before this PR when the engine is unreachable (UI-
+  only sample host); report-detail history renders 5 demo rows and a clicked row correctly
+  navigates to `/jobs/completed/{id}`; no console/server errors.
 - [ ] **D8 — UI: report detail, pipeline, delete, completed artifacts.** Real columns/formats/
   destinations/retry + origin chip; Delete (danger, confirm) for config-origin reports;
   pipeline stages from the detail; job-completed file list from D5 with human-readable sizes.

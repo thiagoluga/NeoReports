@@ -135,10 +135,18 @@
         </Card>
     </div>
 
-    @* History — GET /api/jobs?report={name} *@
-    <Card Title="Run history" Sub="Last 5">
+    @* History — GET /api/jobs?report={name} when live, sample rows otherwise *@
+    <Card Title="Run history" Sub="@(_isLive ? "Last 10" : "Last 5")">
         <Action><Button Variant="link">View all →</Button></Action>
         <ChildContent>
+        @if (_history.Count == 0)
+        {
+            <EmptyState Icon="report-off" Title="No runs yet">
+                <ChildContent>This report hasn't been run yet.</ChildContent>
+            </EmptyState>
+        }
+        else
+        {
         <DataGrid Columns="6" Class="compact">
             <Head>
                 <tr><th>When</th><th>Status</th><th>Duration</th><th>Rows</th><th>By</th><th style="width:60px"></th></tr>
@@ -157,6 +165,7 @@
                 }
             </Body>
         </DataGrid>
+        }
         </ChildContent>
     </Card>
 
@@ -214,14 +223,46 @@
     private CalDay[] _cal = Array.Empty<CalDay>();
 
     private sealed record HistoryRow(string When, JobStatus Status, string Duration, string Rows, string By, string Route);
-    private readonly HistoryRow[] _history =
+
+    private static readonly HistoryRow[] DemoHistory =
     {
         new("May 27 · 14:32", JobStatus.Running, "2m 18s", "26,624", "marina.s · manual", "jobs/7c4a01f3"),
-        new("May 3 · 06:00",  JobStatus.Ok,      "3m 36s", "42,184", "schedule", "jobs/completed"),
-        new("Apr 1 · 06:00",  JobStatus.Ok,      "3m 41s", "39,812", "schedule", "jobs/completed"),
-        new("Mar 1 · 06:00",  JobStatus.Failed,  "1m 22s", "—",      "schedule", "jobs/failed"),
-        new("Feb 1 · 06:00",  JobStatus.Ok,      "4m 02s", "38,118", "schedule", "jobs/completed"),
+        new("May 3 · 06:00",  JobStatus.Ok,      "3m 36s", "42,184", "schedule", "jobs/completed/7c4a01f3"),
+        new("Apr 1 · 06:00",  JobStatus.Ok,      "3m 41s", "39,812", "schedule", "jobs/completed/7c4a01f3"),
+        new("Mar 1 · 06:00",  JobStatus.Failed,  "1m 22s", "—",      "schedule", "jobs/failed/8b2f01a9"),
+        new("Feb 1 · 06:00",  JobStatus.Ok,      "4m 02s", "38,118", "schedule", "jobs/completed/7c4a01f3"),
     };
+
+    private IReadOnlyList<HistoryRow> _history = DemoHistory;
+
+    private static HistoryRow ToHistoryRow(ApiJobView j) => new(
+        When: j.CreatedAt.ToLocalTime().ToString("MMM d · HH:mm"),
+        Status: j.Status switch
+        {
+            "Completed" => JobStatus.Ok,
+            "Failed" => JobStatus.Failed,
+            "Running" or "Retrying" => JobStatus.Running,
+            "Paused" => JobStatus.Paused,
+            _ => JobStatus.Queued,
+        },
+        Duration: FormatDuration(j.StartedAt, j.CompletedAt),
+        Rows: j.Stats.RecordsWritten > 0 ? j.Stats.RecordsWritten.ToString("N0") : "—",
+        By: "—",
+        Route: j.Status switch
+        {
+            "Completed" => $"jobs/completed/{j.Id}",
+            "Failed" => $"jobs/failed/{j.Id}",
+            _ => $"jobs/{j.Id}",
+        });
+
+    private static string FormatDuration(DateTimeOffset? started, DateTimeOffset? completed)
+    {
+        if (started is not { } s || completed is not { } c)
+            return "—";
+
+        TimeSpan span = c - s;
+        return span.TotalMinutes >= 1 ? $"{(int)span.TotalMinutes}m {span.Seconds}s" : $"{span.Seconds}s";
+    }
 
     private sealed record Perm(string Name, string Initials, string Kind, string Role, string Color);
     private readonly Perm[] _perms =
@@ -273,6 +314,13 @@
         }
         if (_report is null)
             return;
+
+        if (_isLive)
+        {
+            var jobs = await Api.TryListJobsAsync(report: _report.Name, limit: 10);
+            if (jobs is not null)
+                _history = jobs.Count > 0 ? jobs.Select(ToHistoryRow).ToArray() : Array.Empty<HistoryRow>();
+        }
 
         var seed = new[]
         {
