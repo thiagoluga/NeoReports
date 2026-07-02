@@ -397,9 +397,23 @@ not sanitized.
   in this repo). Browser-verified: both screens render their demo fallback unchanged (no
   origin chip/delete button on `ReportDetail`, original 2-file list on `JobCompleted`) when
   the engine is unreachable; no console/server errors.
-- [ ] **D9 — UI: sources page on capabilities.** Provider-type cards from `GET /capabilities`;
-  drop (don't fake) per-source health numbers; source explorer stays SampleData (post-MVP,
-  ADR required). §D9.
+- [x] **D9 — UI: sources page on capabilities.** New "Engine source types" section
+  (`GET /capabilities`) additive above the existing decorative source catalog — one card per
+  registered `IConfigSourceProvider` type id, nothing else: no per-source name/health/latency
+  numbers, since capabilities only reports provider *types*, not a source registry (dropped
+  rather than faked, per the blueprint's explicit bias). Section renders only when at least
+  one capability is present; the page is byte-for-byte unchanged when the engine is
+  unreachable. Source explorer stays 100% `SampleData` (schema/preview introspection is
+  security-sensitive and needs its own ADR — unchanged from the blueprint). ✅ solution builds
+  0 warnings; 190/190 tests green (no new tests — UI pages aren't unit-tested in this repo).
+  Browser-verified: with no engine mounted, the page renders identically to before this PR (6
+  decorative source cards, no new section, no console/server errors).
+
+**Epic D is now complete (D1–D9 all merged).** Dynamic report registration
+(`POST/DELETE /reports`, validate, capabilities), the read endpoints the UI needed
+(job list, report detail, job artifacts), and the UI wiring for the Builder, dashboard, report
+detail, and sources are all live. See `docs/epic-d-dynamic-api.md` for the full design and
+`DECISIONS.md` (D33) for the scope decision.
 
 **Out of scope for the epic** (recorded in D33/blueprint): `PUT` (edit), scheduling/recurring,
 real progress percentage, source introspection (schema/preview), settings screens, variants.
