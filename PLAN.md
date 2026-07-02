@@ -291,13 +291,23 @@ not sanitized.
   (22 new: registry unregister, file-store roundtrip/invalid-name/tmp-exclusion, env
   substitution happy/missing/non-placeholder/non-string/lowercase/embedded, rehydration
   happy/corrupt-sibling/name-collision).
-- [ ] **D2 — AspNetCore: dynamic report endpoints.** `POST /reports` (parse → name regex →
+- [x] **D2 — AspNetCore: dynamic report endpoints.** `POST /reports` (parse → name regex →
   409-if-exists → env-substitute → compile → register → persist original document, with
   rollback on persist failure; 201 + Location), `POST /reports/validate` (dry-run, 200 with
-  `Valid`/`Error`/`NameTaken`, no side effects), `DELETE /reports/{name}` (404 unknown /
-  409 code-first / 204, store-first ordering), `GET /capabilities` (source provider types +
-  writer formats + destination types from DI). Integration tests per blueprint §D2, including
-  the end-to-end POST → run?mode=sync proof.
+  `Valid`/`Error`/`NameTaken`, no side effects; a truly empty body is the one 400), `DELETE
+  /reports/{name}` (404 unknown / 409 code-first / 204, store-first ordering), `GET
+  /capabilities` (source provider types + writer formats + destination types, read from
+  `HttpContext.RequestServices.GetServices<T>()` — resolving `IEnumerable<T>` as a minimal-API
+  parameter isn't reliable across hosts, so it's read explicitly instead). `IReportConfigStore`
+  and `IMutableReportRegistry` are marked `[FromServices]` on every handler: without it, a host
+  that doesn't call `AddDynamicReports()` makes ASP.NET's minimal-API metadata inference treat
+  the un-resolvable `IReportConfigStore` parameter as a request body, which broke route building
+  for the *entire* endpoint group (including the pre-existing job endpoints, not just the new
+  ones) — caught by the existing `EndpointsTests` failing during this PR. ✅ solution builds 0
+  warnings; 165/165 tests green (17 new integration tests: create happy-path + runs by name,
+  invalid JSON, unknown source type, duplicate name, invalid name (3 cases, no file created),
+  missing/set env var, validate valid/broken/name-taken/empty-body, delete dynamic/code-first/
+  unknown, capabilities reflecting registered providers).
 - [ ] **D3 — AspNetCore: `GET /jobs`.** Expose the existing `IJobStore.ListAsync(JobQuery)`
   (filters `status`/`report`/`since`/`limit`≤200/`offset`; `CreatedAt` desc enforced in the
   endpoint; verify Hangfire DI path registers `IJobStore`). Integration tests per §D3.

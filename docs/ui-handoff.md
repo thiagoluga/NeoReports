@@ -23,10 +23,10 @@ degrade gracefully once a real endpoint exists.
 | Sources list | `/sources` `SourcesList` | SourceCard, FilterBar, Pill, Button | source list + health: **mock/future** (engine exposes reports/jobs, not source registry yet) | loading, empty, per-source error (Diagnose action) |
 | Source explorer | `/sources/{name}/explore` `SourceExplorer` | Card, CatTile, Chip, DataGrid-like preview | schema + preview: **mock/future** | loading (preview skeleton), empty (0 columns), error (source unreachable) |
 | Builder · 1 Source | `/builder` `Builder` | WizardStepper, SelectableCard, FilterBar, CatTile, Button, BuilderState | source list: **mock/future** | loading, empty (no sources → register CTA) |
-| Builder · 2 Configure | `/builder/configure` `BuilderConfigure` | WizardStepper, Card, ChipGroup, Dropdown, Switch, Pill | validate: `POST /api/reports/{name}/run?mode=sync` (dry-run) — **future** | validation error inline on query |
+| Builder · 2 Configure | `/builder/configure` `BuilderConfigure` | WizardStepper, Card, ChipGroup, Dropdown, Switch, Pill | validate: `POST /api/reports/validate` (dry-run compile, never registers) | validation error inline on query |
 | Builder · 3 Format | `/builder/format` `BuilderFormat` | WizardStepper, FormatCard, ChipGroup, Dropdown, Switch, CatTile | client-side only | none (pure config) |
 | Builder · 4 Destination | `/builder/destination` `BuilderDestination` | WizardStepper, DestinationCard, Dropdown, Switch, CatTile | client-side only | none (pure config) |
-| Builder · 5 Review | `/builder/review` `BuilderReview` | WizardStepper, Card, Chip, Switch, Banner, Dropdown, CatTile, BuilderState | save: `POST /api/reports` (**future**); run now: `POST /api/reports/{name}/run` | save error (toast), schedule preview |
+| Builder · 5 Review | `/builder/review` `BuilderReview` | WizardStepper, Card, Chip, Switch, Banner, Dropdown, CatTile, BuilderState | save: `POST /api/reports` (`201`, `409` if the name exists); run now: `POST /api/reports/{name}/run` | save error (toast, incl. `409` name conflict), schedule preview |
 | Job running | `/jobs/{id}` `JobRunning` | Card, MetricCard, PhaseStepper, Timeline, ProgressBar, CatTile, Badge | `GET /api/jobs/{id}` (poll/stream); cancel: `POST /api/jobs/{id}/cancel` | live updates, connection lost, cancel-in-progress |
 | Job completed | `/jobs/completed` `JobCompleted` | Card, MetricCard, PhaseStepper, Timeline, CatTile, Badge, Button | `GET /api/jobs/{id}`; download: `GET /api/jobs/{id}/download` | download error, expired files |
 | Job failed | `/jobs/failed` `JobFailed` | Card, MetricCard, PhaseStepper, CatTile, Badge, Button | `GET /api/jobs/{id}`; resume/retry: `POST /api/reports/{name}/run` | partial-output present/absent, resume unavailable |
@@ -43,6 +43,10 @@ degrade gracefully once a real endpoint exists.
 POST /api/reports/{name}/run        → async, returns jobId
 POST /api/reports/{name}/run?mode=sync → streams the result
 GET  /api/reports
+POST /api/reports                   → register a dynamic report (Epic D / D2)
+POST /api/reports/validate          → dry-run compile, never registers (Epic D / D2)
+DELETE /api/reports/{name}          → remove a dynamic report; 409 for code-registered (Epic D / D2)
+GET  /api/capabilities              → registered source/format/destination type ids (Epic D / D2)
 GET  /api/jobs/{id}
 POST /api/jobs/{id}/cancel
 GET  /api/jobs/{id}/download
