@@ -68,7 +68,18 @@ public sealed class FileReportConfigStore : IReportConfigStore
         return results;
     }
 
-    private string GetPath(string name) => Path.Combine(_directory, $"{name}.json");
+    private string GetPath(string name)
+    {
+        // DynamicReportName.IsValid (checked by every caller via ValidateName) already forbids
+        // '/', '\\' and ':', so fileName can never be rooted — this check is a second,
+        // Combine-adjacent guard so a path can never resolve outside _directory even if the
+        // regex were ever loosened.
+        string fileName = $"{name}.json";
+        if (Path.IsPathRooted(fileName))
+            throw new ArgumentException($"'{name}' is not a valid dynamic report name.", nameof(name));
+
+        return Path.Combine(_directory, fileName);
+    }
 
     private static void ValidateName(string name)
     {
