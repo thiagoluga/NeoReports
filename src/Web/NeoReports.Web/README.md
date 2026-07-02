@@ -1,19 +1,31 @@
-# NeoReports — Blazor Server web app (starter)
+# NeoReports.Web — the NeoReports UI (Razor Class Library)
 
-A runnable **.NET 8 Blazor Server** starting point for the NeoReports web app, mounted at
-`/neoreports`. The design system is already applied (tokens, components, app shell) and
+The NeoReports web UI as a **.NET 8 Blazor Server Razor Class Library** (see D31/D32 in
+`DECISIONS.md`). The design system is applied (tokens, components, app shell) and
 **all 17 prototype screens are implemented** in en-US using pure design-system CSS
 (no MudBlazor), Geist font, and Tabler icons.
 
-## Run
+## Mounting in a host
 
-```bash
-cd NeoReports.Web
-dotnet run
+```csharp
+builder.Services.AddNeoReportsUi();
+...
+app.UseNeoReportsUi("/neoreports");   // any non-root base path works
 ```
 
-Opens at **http://localhost:5000/neoreports** (mounted via `UsePathBase`).
-Requires the **.NET 8 SDK**: https://dotnet.microsoft.com/download
+UI routes, `_content` static assets and the Blazor hub all live under the base path,
+so the host's own endpoints are untouched. `<base href>` is derived from the request
+`PathBase` — no extra configuration when the path changes.
+
+## Run
+
+The library has no entry point; use the sample host:
+
+```bash
+dotnet run --project samples/08-web-ui
+# custom URL:
+dotnet run --project samples/08-web-ui -- --NeoReports:UiPath=/reports-admin
+```
 
 ## Screens (17)
 
@@ -42,7 +54,8 @@ Requires the **.NET 8 SDK**: https://dotnet.microsoft.com/download
 
 ```
 NeoReports.Web/
-├─ Program.cs · App.razor · _Imports.razor
+├─ NeoReportsUiExtensions.cs  # AddNeoReportsUi() + UseNeoReportsUi(basePath)
+├─ App.razor · _Imports.razor
 ├─ Pages/               # _Host.cshtml + 19 .razor pages (17 screens + 2 stubs)
 ├─ Layout/              # AppLayout, Topbar
 ├─ Components/UI/       # 22 reusable components (see below)
@@ -63,7 +76,7 @@ NeoReports.Web/
 
 ## Wiring to the real engine
 
-See **`../handoff.md`** for the screen → route → components → endpoint → states table,
+See **`docs/ui-handoff.md`** for the screen → route → components → endpoint → states table,
 responsive breakpoints, and the full Tabler icon inventory. `SampleData` is the only
 mock layer — replace it with calls to the NeoReports API / EF Core.
 
@@ -72,8 +85,6 @@ mock layer — replace it with calls to the NeoReports API / EF Core.
 - Forms are cosmetic (no validation/persistence) — this is a UI starter, not production logic.
 - Job running progress is a decorative timer (60→70% loop); wire `GET /api/jobs/{id}`.
 - Logo is a placeholder; Geist + Tabler load from CDN until self-hosted (see `wwwroot/fonts/README.md`).
-- I could not run `dotnet build` in the design environment — build locally and report any
-  compile errors; the Razor is written to standard .NET 8 conventions.
 
 ## Style rules (non-negotiable)
 Sentence case · en-US copy, English technical terms · mono font for technical data ·

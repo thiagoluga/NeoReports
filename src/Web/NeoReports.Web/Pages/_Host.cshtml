@@ -5,7 +5,10 @@
 
 @{
     Layout = null;
-    var basePath = "/neoreports";
+    // The UI is mounted under a configurable base path (UseNeoReportsUi("/...")).
+    // The branch middleware moves the mount point into PathBase, so the <base> tag
+    // adapts to whatever path the host chose.
+    var basePath = HttpContext.Request.PathBase.HasValue ? HttpContext.Request.PathBase.Value + "/" : "/";
 }
 
 <!DOCTYPE html>
@@ -13,18 +16,18 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <base href="@basePath/" />
+    <base href="@basePath" />
 
     <title>NeoReports</title>
 
     <!-- Design-system tokens (colors, type, spacing) -->
-    <link rel="stylesheet" href="css/tokens.css" />
+    <link rel="stylesheet" href="_content/NeoReports.Web/css/tokens.css" />
     <!-- Component styles -->
-    <link rel="stylesheet" href="css/neoreports.css" />
+    <link rel="stylesheet" href="_content/NeoReports.Web/css/neoreports.css" />
     <!-- Tabler icons (self-host in production; see wwwroot/fonts/README.md) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@@tabler/icons-webfont@3.30.0/dist/tabler-icons.min.css"
           integrity="sha384-9pcqeAMNPuuw0/mltfCMqqVUmfHeTASX43egMosvWSN+Dh5eUCFi9Iz3yIW5sIsM" crossorigin="anonymous" />
-    <link rel="icon" href="assets/logo-mark.svg" />
+    <link rel="icon" href="_content/NeoReports.Web/assets/logo-mark.svg" />
 </head>
 <body>
     <component type="typeof(App)" render-mode="ServerPrerendered" />

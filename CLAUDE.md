@@ -81,7 +81,7 @@ dotnet run --project benchmarks/NeoReports.Benchmarks -c Release
 
 ## Design / UI — permanent rule
 
-**Always base any design/UI work on the Claude Design handoff — never invent design or diverge from its tokens/components.** The handoff was delivered (2026-07) as a runnable Blazor Server starter and lives in the repo: the app is `src/Web/NeoReports.Web` (design-system CSS in `wwwroot/css/tokens.css` + `neoreports.css`), and `docs/ui-handoff.md` maps screen → route → components → endpoint → states. Those files are the visual source of truth.
+**Always base any design/UI work on the Claude Design handoff — never invent design or diverge from its tokens/components.** The handoff was delivered (2026-07) as a runnable Blazor Server starter and lives in the repo: the UI is the Razor Class Library `src/Web/NeoReports.Web` (design-system CSS in `wwwroot/css/tokens.css` + `neoreports.css`), mounted by a host via `AddNeoReportsUi()` + `UseNeoReportsUi("<base path>")` (see D32 and sample `08-web-ui`), and `docs/ui-handoff.md` maps screen → route → components → endpoint → states. Those files are the visual source of truth.
 
 Stack (see **D31**): Blazor Server + **pure design-system CSS — no MudBlazor**. Geist / Geist Mono fonts, Tabler outline icons, flat aesthetic (no shadows/gradients; 0.5px borders), en-US UI copy, sentence case, mono for technical data, status always color + icon + text. Endpoints the engine does not expose are `mock/future` in the handoff table — do not invent APIs for the UI.
 

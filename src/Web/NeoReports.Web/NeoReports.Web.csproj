@@ -1,17 +1,20 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+<Project Sdk="Microsoft.NET.Sdk.Razor">
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>NeoReports.Web</RootNamespace>
-    <!-- App (not a library package): no nupkg, and no XML-doc requirement on the
-         generated-public Razor component classes. -->
+    <!-- Razor Class Library hosting the NeoReports UI (Epic C, D31/D32). A host app mounts
+         it with AddNeoReportsUi() + UseNeoReportsUi("<base path>") — see samples/08-web-ui.
+         AddRazorSupportForMvc is required for the _Host.cshtml Razor Page to compile into
+         the library. Not a NuGet package yet (distribution decision pending), and no XML-doc
+         requirement on the generated-public Razor component classes. -->
+    <AddRazorSupportForMvc>true</AddRazorSupportForMvc>
     <IsPackable>false</IsPackable>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>
 
-  <!--
-    NeoReports Blazor Server UI (Epic C), built from the Claude Design handoff
-    (docs/ui-handoff.md). Run with `dotnet run`; served under /neoreports.
-  -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
 
 </Project>

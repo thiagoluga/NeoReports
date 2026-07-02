@@ -218,5 +218,9 @@ screen→route→endpoint map in `docs/ui-handoff.md`. Never invent design. See 
   `docs/ui-handoff.md` §(b) to `neoreports.css`.
 - [ ] **C4 — Self-host assets.** Geist/Geist Mono woff2 + Tabler icons into `wwwroot/`
   per `wwwroot/fonts/README.md`; drop the CDN links.
-- [ ] **C5 — Hosting/packaging story.** Decide RCL vs standalone app for distribution
-  (post-validation; record the decision before coding).
+- [x] **C5 — Hosting/packaging story.** Resolved (**D32**): the UI ships as a **Razor Class
+  Library** — `NeoReports.Web` has no entry point; a host mounts it with
+  `AddNeoReportsUi()` + `UseNeoReportsUi("<base path>")` (default `/neoreports`,
+  host-configurable; routes, static assets and the Blazor hub all live under the branch).
+  Sample `08-web-ui` is the runnable host (`--NeoReports:UiPath=/...` shows the custom URL).
+  NuGet packaging of the UI (and MIT-vs-Pro) stays deferred (`IsPackable=false`).
