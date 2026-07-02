@@ -38,6 +38,8 @@
 }
 .nav-item:hover { background: var(--bg2); color: var(--fg); }
 .nav-item.active { background: var(--bg2); color: var(--fg); font-weight: 500; }
+/* Hidden above sm; the sm breakpoint below shows it and hides .nav until toggled. */
+.nav-toggle { display: none; margin-right: 4px; }
 .icon-btn {
   width: 32px; height: 32px;
   display: inline-flex; align-items: center; justify-content: center;
@@ -279,6 +281,8 @@
   padding: 8px 10px; background: var(--bg2);
   border-radius: var(--r-lg);
 }
+/* Hidden above sm; the sm breakpoint below shows it and hides the full step list. */
+.wizard-compact { display: none; }
 .wstep {
   display: inline-flex; align-items: center; gap: 7px;
   padding: 5px 11px;
@@ -1269,3 +1273,64 @@ body {
 .stack .tk { color: var(--info-fg); }
 .stack .cm { color: var(--fg-faint); font-style: italic; }
 .stack .st { color: var(--success-fg); }
+
+/* ==========================================================================
+   Responsive breakpoints (docs/ui-handoff.md §b)
+   Desktop-first: every rule above targets xl (≥1280px). These max-width
+   queries narrow the layout down through lg → md → sm; since they all use
+   max-width, a viewport can match more than one at once and the rules
+   accumulate (e.g. sm inherits the lg/md collapses below without repeating
+   them).
+   ========================================================================== */
+
+/* ---------- lg: 1024–1279px ---------- */
+@media (max-width: 1279px) {
+  .grid-4 { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ---------- md: 768–1023px ---------- */
+@media (max-width: 1023px) {
+  .grid-2, .grid-1-5, .grid-1-4 { grid-template-columns: 1fr; }
+}
+
+/* ---------- sm: <768px ---------- */
+@media (max-width: 767px) {
+  .page { padding: 16px 16px 24px; }
+
+  /* Topbar nav collapses into a hamburger-triggered dropdown (Topbar.razor
+     toggles the "open" class and swaps the icon). */
+  .nav-toggle { display: inline-flex; }
+  .nav {
+    display: none;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    position: absolute;
+    top: var(--topbar-h);
+    left: 0;
+    right: 0;
+    background: var(--bg);
+    border-bottom: var(--bw-hairline) solid var(--border);
+    padding: 6px;
+    z-index: 9;
+  }
+  .nav.open { display: flex; }
+  .nav .nav-item { min-height: 44px; padding: 0 14px; }
+
+  /* Wizard stepper collapses to a "Step N of M" label (WizardStepper.razor
+     renders both; only one is visible at a time). */
+  .wizard-compact { display: inline-flex; align-items: center; font: 500 13px var(--font-sans); color: var(--fg); padding: 2px; }
+  .wizard .wstep, .wizard .wconn { display: none; }
+
+  /* Report/source card body grids stack to a single column. */
+  .report-card .rc-body, .src-card .sc-body { grid-template-columns: 1fr; }
+
+  /* Tables scroll horizontally instead of squeezing columns; mono/numeric
+     cells stay on one line so they scroll rather than wrap. */
+  .tbl, .preview-tbl { display: block; overflow-x: auto; }
+  .tbl td.mono, .tbl th.mono { white-space: nowrap; }
+
+  /* Minimum touch target size. */
+  .btn { min-height: 44px; }
+  .icon-btn { width: 44px; height: 44px; }
+}
