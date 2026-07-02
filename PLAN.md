@@ -316,12 +316,18 @@ not sanitized.
   no gap to fix). ✅ solution builds 0 warnings; 173/173 tests green (8 new: empty store,
   descending order, report-name filter, status filter + invalid status, since filter, limit=0
   clamped to 1, large limit/negative offset don't error).
-- [ ] **D4 — AspNetCore: report detail + enriched summary.** Public computed metadata on
-  `CompiledReport` (`OutputFormats`, `DestinationTypes`, `RetryOptions`,
-  `FailureStrategyName`); `GET /reports/{name}` → `ReportDetailView` (columns with types,
-  page size, formats, destinations, retry, failure strategy, `Origin` code|config,
-  `Deletable`); `ReportSummary` gains `Formats`/`Destinations`. No property bags in any
-  response (regression-tested). Tests per §D4.
+- [x] **D4 — AspNetCore: report detail + enriched summary.** `CompiledReport` gains public
+  computed `OutputFormats`/`DestinationTypes`, and `Retry`/`FailureStrategy` (already public
+  types — `RetryOptions`, `IFailureStrategy`) went from `internal` to `public` rather than
+  being duplicated under new names. `GET /reports/{name}` → `ReportDetailView` (columns with
+  types, page size, formats, destinations, `FailureStrategy.Name`, retry attempts/backoff/base
+  delay/jitter, `Origin` code|config via an **optional** `IReportConfigStore` resolved from
+  `HttpContext.RequestServices` — hosts without `AddDynamicReports()` get every report as
+  `"code"`, no throw); `ReportSummary` gains `Formats`/`Destinations`. No property bags in any
+  response (regression-tested against the raw JSON). ✅ solution builds 0 warnings; 179/179
+  tests green (6 new: code-first detail shape, dynamic-report detail is deletable, 404 unknown,
+  no `"properties"` key, list summary carries formats/destinations, origin defaults to "code"
+  with no dynamic-reports support configured).
 - [ ] **D5 — AspNetCore: `GET /jobs/{id}/artifacts`.** File name / mime / `SizeBytes` from the
   existing artifact store (never `Path`); kept out of `JobView` so status polling does no IO;
   non-completed job → `[]`. Tests per §D5.

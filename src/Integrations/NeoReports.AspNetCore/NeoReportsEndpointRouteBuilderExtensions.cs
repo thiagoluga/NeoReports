@@ -22,6 +22,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
     /// <list type="bullet">
     /// <item><c>POST {prefix}/reports/{name}/run</c> — async (202 + jobId) or <c>?mode=sync</c> (streams a single output)</item>
     /// <item><c>GET  {prefix}/reports</c> — list registered reports</item>
+    /// <item><c>GET  {prefix}/reports/{name}</c> — full report definition (columns, formats, destinations, retry/failure strategy, origin)</item>
     /// <item><c>POST {prefix}/reports</c> — register a report at runtime from a config document (ADR D33)</item>
     /// <item><c>POST {prefix}/reports/validate</c> — dry-run compile a config document; never registers or persists</item>
     /// <item><c>DELETE {prefix}/reports/{name}</c> — remove a runtime-registered report (code-first reports return 409)</item>
@@ -59,6 +60,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
 
         group.MapPost("/reports/{name}/run", RunReportAsync);
         group.MapGet("/reports", ListReports);
+        group.MapGet("/reports/{name}", GetReportDetailAsync);
         group.MapPost("/reports", CreateReportAsync);
         group.MapPost("/reports/validate", ValidateReportAsync);
         group.MapDelete("/reports/{name}", DeleteReportAsync);
@@ -129,10 +131,46 @@ public static class NeoReportsEndpointRouteBuilderExtensions
     private static IResult ListReports(IReportRegistry registry)
     {
         var reports = registry.Reports
-            .Select(r => new ReportSummary(r.Name, r.OutputCount, r.Schema.Columns.Select(c => c.Name).ToArray()))
+            .Select(r => new ReportSummary(
+                r.Name, r.OutputCount, r.Schema.Columns.Select(c => c.Name).ToArray(), r.OutputFormats, r.DestinationTypes))
             .OrderBy(r => r.Name, StringComparer.Ordinal)
             .ToArray();
         return Results.Ok(reports);
+    }
+
+    private static async Task<IResult> GetReportDetailAsync(
+        string name, HttpContext http, [FromServices] IReportRegistry registry, CancellationToken cancellationToken)
+    {
+        CompiledReport? report = registry.Find(name);
+        if (report is null)
+            return Results.NotFound(new { error = $"No report named '{name}' is registered." });
+
+        // The config store is optional: hosts that never call AddDynamicReports() have no
+        // IReportConfigStore registered, and every report is origin "code" there.
+        IReportConfigStore? configStore = http.RequestServices.GetService<IReportConfigStore>();
+        bool isConfigOrigin = configStore is not null
+            && DynamicReportName.IsValid(name)
+            && await configStore.ExistsAsync(name, cancellationToken).ConfigureAwait(false);
+
+        ReportColumnView[] columns = report.Schema.Columns
+            .Select(c => new ReportColumnView(c.Name, c.Type.ToString(), c.DisplayName, c.Format, c.Nullable))
+            .ToArray();
+
+        var detail = new ReportDetailView(
+            Name: report.Name,
+            Columns: columns,
+            PageSize: report.PageSize,
+            Formats: report.OutputFormats,
+            Destinations: report.DestinationTypes,
+            FailureStrategy: report.FailureStrategy.Name,
+            RetryMaxAttempts: report.Retry.Attempts,
+            RetryBackoff: report.Retry.Backoff.ToString(),
+            RetryBaseDelaySeconds: report.Retry.BaseDelay.TotalSeconds,
+            RetryUseJitter: report.Retry.UseJitter,
+            Origin: isConfigOrigin ? "config" : "code",
+            Deletable: isConfigOrigin);
+
+        return Results.Ok(detail);
     }
 
     private static async Task<IResult> CreateReportAsync(

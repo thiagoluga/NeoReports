@@ -18,7 +18,49 @@ public sealed record RunAcceptedResponse(
 /// <param name="Name">The report name.</param>
 /// <param name="OutputCount">Number of configured output formats.</param>
 /// <param name="Columns">Output column names, in order.</param>
-public sealed record ReportSummary(string Name, int OutputCount, IReadOnlyList<string> Columns);
+/// <param name="Formats">Output format ids, in order (e.g. "csv", "xlsx").</param>
+/// <param name="Destinations">Destination type ids, in order (e.g. "local", "s3").</param>
+public sealed record ReportSummary(
+    string Name,
+    int OutputCount,
+    IReadOnlyList<string> Columns,
+    IReadOnlyList<string> Formats,
+    IReadOnlyList<string> Destinations);
+
+/// <summary>A single output column in a report's schema.</summary>
+/// <param name="Name">Stable column key.</param>
+/// <param name="Type">Semantic column type (<see cref="ColumnType"/> name).</param>
+/// <param name="DisplayName">Header label, when set.</param>
+/// <param name="Format">.NET format string used for rendering, when set.</param>
+/// <param name="Nullable">Whether the column may contain null values.</param>
+public sealed record ReportColumnView(string Name, string Type, string? DisplayName, string? Format, bool Nullable);
+
+/// <summary>Full, safe definition of a registered report — never includes source/output/destination property bags.</summary>
+/// <param name="Name">The report name.</param>
+/// <param name="Columns">Output columns, in order.</param>
+/// <param name="PageSize">Page size used when reading the source.</param>
+/// <param name="Formats">Output format ids, in order.</param>
+/// <param name="Destinations">Destination type ids, in order.</param>
+/// <param name="FailureStrategy">Stable name of the strategy applied after a batch exhausts its retries.</param>
+/// <param name="RetryMaxAttempts">Total number of attempts per batch, including the first.</param>
+/// <param name="RetryBackoff">Backoff shape between attempts ("Constant" or "Exponential").</param>
+/// <param name="RetryBaseDelaySeconds">Base delay, in seconds, used for the first retry.</param>
+/// <param name="RetryUseJitter">Whether randomized jitter is added to retry delays.</param>
+/// <param name="Origin">"code" for a report registered at startup, "config" for one registered at runtime (ADR D33).</param>
+/// <param name="Deletable">True when the report can be removed via <c>DELETE /reports/{name}</c> (only "config" reports).</param>
+public sealed record ReportDetailView(
+    string Name,
+    IReadOnlyList<ReportColumnView> Columns,
+    int PageSize,
+    IReadOnlyList<string> Formats,
+    IReadOnlyList<string> Destinations,
+    string FailureStrategy,
+    int RetryMaxAttempts,
+    string RetryBackoff,
+    double RetryBaseDelaySeconds,
+    bool RetryUseJitter,
+    string Origin,
+    bool Deletable);
 
 /// <summary>Response returned when a dynamic report is registered.</summary>
 /// <param name="Name">The report name.</param>
