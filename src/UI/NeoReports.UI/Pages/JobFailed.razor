@@ -124,7 +124,7 @@
     private string HeroDetail => _job is not null
         ? $"failed after {DurationText} · {_job.Stats.Retries} retries recorded"
         : "failed after 1m 22s · 15 retries exhausted · audit-mongo";
-    private TimeSpan? Duration => _job?.StartedAt is { } s && _job?.CompletedAt is { } c ? c - s : null;
+    private TimeSpan? Duration => _job?.StartedAt is { } s && _job.CompletedAt is { } c ? c - s : null;
     private string DurationText => Duration is { } d ? FormatSpan(d) : "1m 22s";
     private string ReadValue => _job is not null ? _job.Stats.RecordsRead.ToString("N0") : "18,402";
     private string WrittenValue => _job is not null ? _job.Stats.RecordsWritten.ToString("N0") : "16,000";

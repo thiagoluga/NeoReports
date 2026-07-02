@@ -120,7 +120,7 @@
         ? $"{_job.Stats.RecordsWritten:N0} rows processed{DurationSuffix}"
         : "42,184 rows processed in 3m 36s · 2 formats · 2 destinations confirmed";
     private string DurationSuffix => Duration is { } d ? $" in {FormatSpan(d)}" : "";
-    private TimeSpan? Duration => _job?.StartedAt is { } s && _job?.CompletedAt is { } c ? c - s : null;
+    private TimeSpan? Duration => _job?.StartedAt is { } s && _job.CompletedAt is { } c ? c - s : null;
     private string DurationText => Duration is { } d ? FormatSpan(d) : "3m 36s";
     private string ReadValue => _job is not null ? _job.Stats.RecordsRead.ToString("N0") : "42,184";
     private string ReadSub => _job is not null ? "records" : "batch size 1k";
