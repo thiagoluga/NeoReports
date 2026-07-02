@@ -1,0 +1,241 @@
+@page "/reports/{Slug}"
+@using NeoReports.UI.Models
+@using NeoReports.UI.Services
+@inject NavigationManager Nav
+
+@if (_report is null)
+{
+    <div class="page">
+        <EmptyState Icon="report-off" Title="Report not found">
+            <ChildContent>
+                No report matches "@Slug".
+            </ChildContent>
+            <Action><Button Variant="outline" Icon="arrow-left" OnClick="@(() => Nav.NavigateTo("reports"))">Back to reports</Button></Action>
+        </EmptyState>
+    </div>
+    return;
+}
+
+<div class="page">
+    @* Header — GET /api/reports/{name} *@
+    <div class="page-head">
+        <div class="title" style="max-width:720px">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <h1 style="font-size:24px">@_report.Name</h1>
+                <div style="display:flex;gap:4px">
+                    @foreach (var t in _report.Tags) { <Chip>@t</Chip> }
+                </div>
+            </div>
+            <p class="sub" style="max-width:480px;margin-top:8px;line-height:1.5">@_report.Description</p>
+        </div>
+        <div style="display:flex;gap:8px;align-self:flex-start;margin-top:6px">
+            <Button Variant="outline" Icon="pencil" OnClick="@(() => Nav.NavigateTo("builder"))">Edit</Button>
+            <Button Variant="primary" Icon="player-play" OnClick="@(() => Nav.NavigateTo("jobs/7c4a01f3"))">Run now</Button>
+            <button class="btn icon-only outline"><i class="ti ti-dots-vertical"></i></button>
+        </div>
+    </div>
+
+    @* Metric strip — mock/future *@
+    <div class="grid-4">
+        <MetricCard Icon="player-play" Label="Total runs" Value="386" Sub="since Jan 12, 2025" />
+        <MetricCard Icon="circle-check" Label="Success rate" Value="98.7%" Sub="vs last month" DeltaDir="up" DeltaText="+0.4pp" />
+        <MetricCard Icon="clock" Label="Avg duration" Value="3m 24s" Sub="last 30 days" />
+        <MetricCard Icon="calendar" Label="Next run" Value="Mon Jun 3" Sub="06:00 BRT · in 6 days" />
+    </div>
+
+    <div class="grid-1-4">
+        @* Configuration *@
+        <Card Title="Configuration" Sub="Current template snapshot">
+            <Action><Button Variant="link">Change history →</Button></Action>
+            <ChildContent>
+            <div>
+                <div class="cfg-row">
+                    <span class="lbl"><i class="ti ti-database"></i>Source</span>
+                    <div class="val">
+                        <span class="row" style="gap:8px">
+                            <CatTile Sm="true" Kind="teal" Icon="database" />
+                            <span style="font-weight:500">@_report.Source</span>
+                            <span class="mono muted" style="font-size:11px">SQL Server</span>
+                        </span>
+                    </div>
+                    <button class="edit-link">edit</button>
+                </div>
+                <div class="cfg-row">
+                    <span class="lbl"><i class="ti ti-adjustments-horizontal"></i>Parameters</span>
+                    <div class="val">
+                        <div class="row" style="flex-wrap:wrap;gap:6px">
+                            @foreach (var (k, v) in _params)
+                            {
+                                <span class="mono" style="font-size:11px;padding:2px 7px;background:var(--bg2);border-radius:4px">
+                                    <span style="color:var(--info-fg)">@k</span><span style="color:var(--fg-faint)"> = </span>@v
+                                </span>
+                            }
+                        </div>
+                    </div>
+                    <button class="edit-link">edit</button>
+                </div>
+                <div class="cfg-row">
+                    <span class="lbl"><i class="ti ti-columns"></i>Columns</span>
+                    <div class="val">
+                        <span>6 selected</span>
+                        <span class="mono muted" style="font-size:11px">id, customer_id, total, created_at, status_id, region</span>
+                    </div>
+                    <button class="edit-link">edit</button>
+                </div>
+                <div class="cfg-row">
+                    <span class="lbl"><i class="ti ti-file-text"></i>Formats</span>
+                    <div class="val">
+                        <div class="pipeline-chips" style="gap:4px">
+                            @foreach (var f in _report.Formats)
+                            {
+                                <Chip Kind="format" Ext="@f.ToLower()">@f</Chip>
+                            }
+                        </div>
+                    </div>
+                    <button class="edit-link">edit</button>
+                </div>
+                <div class="cfg-row">
+                    <span class="lbl"><i class="ti ti-cloud-upload"></i>Destinations</span>
+                    <div class="val"><span>@_report.Destination</span></div>
+                    <button class="edit-link">edit</button>
+                </div>
+                <div class="cfg-row">
+                    <span class="lbl"><i class="ti ti-shield-check"></i>Resilience</span>
+                    <div class="val"><span class="mono" style="font-size:12px">5× retries · exp 2s..30s · jitter · abort if &gt;10% errors</span></div>
+                    <span></span>
+                </div>
+            </div>
+            </ChildContent>
+        </Card>
+
+        @* Schedule *@
+        <Card Title="Schedule" Sub="Monthly recurrence">
+            <Action><Button Variant="link">Edit →</Button></Action>
+            <ChildContent>
+            <div class="row" style="gap:8px;align-items:flex-start">
+                <i class="ti ti-calendar-month" style="font-size:20px;color:var(--fg-muted);margin-top:2px"></i>
+                <div class="col" style="gap:2px">
+                    <span style="font-weight:500;font-size:14px">First Monday · 06:00 BRT</span>
+                    <span class="mono muted" style="font-size:11px">America/Sao_Paulo · host timezone</span>
+                </div>
+            </div>
+            <Banner Variant="info" Icon="clock-play">
+                <span style="font-size:13px;font-weight:500">Next run: Mon Jun 3, 2026</span>
+                <span class="mono" style="font-size:11px">06:00 BRT · in 6 days</span>
+            </Banner>
+            <div>
+                <span class="label-sm">Last 4 weeks + next</span>
+                <div class="cal">
+                    @foreach (var d in new[] { "S","M","T","W","T","F","S" }) { <span class="dow">@d</span> }
+                    @foreach (var d in _cal) { <span class="day @d.State">@d.N</span> }
+                </div>
+            </div>
+            </ChildContent>
+        </Card>
+    </div>
+
+    @* History — GET /api/jobs?report={name} *@
+    <Card Title="Run history" Sub="Last 5">
+        <Action><Button Variant="link">View all →</Button></Action>
+        <ChildContent>
+        <DataGrid Columns="6" Class="compact">
+            <Head>
+                <tr><th>When</th><th>Status</th><th>Duration</th><th>Rows</th><th>By</th><th style="width:60px"></th></tr>
+            </Head>
+            <Body>
+                @foreach (var h in _history)
+                {
+                    <tr class="clickable" @onclick="@(() => Nav.NavigateTo(h.Route))">
+                        <td class="mono">@h.When</td>
+                        <td><JobStatusBadge Status="h.Status" LabelOverride="@(h.Status == JobStatus.Ok ? "Completed" : null)" /></td>
+                        <td class="mono">@h.Duration</td>
+                        <td class="mono">@h.Rows</td>
+                        <td>@h.By</td>
+                        <td><a class="row-link mono" style="font-size:11px">view →</a></td>
+                    </tr>
+                }
+            </Body>
+        </DataGrid>
+        </ChildContent>
+    </Card>
+
+    @* Permissions + recent changes — mock/future *@
+    <div class="grid-2">
+        <Card Title="Permissions" Sub="3 users · 1 group">
+            <Action><Button Variant="link">Manage →</Button></Action>
+            <ChildContent>
+            @foreach (var p in _perms)
+            {
+                <div class="perm-row">
+                    <span class="avatar" style="width:26px;height:26px;font-size:10px;background:@p.Color">@p.Initials</span>
+                    <div class="col" style="gap:0">
+                        <span class="name">@p.Name</span>
+                        <span class="sub mono">@p.Kind</span>
+                    </div>
+                    <span class="role">@p.Role</span>
+                </div>
+            }
+            </ChildContent>
+        </Card>
+
+        <Card Title="Recent changes" Sub="Last 30 days">
+            <Action><Button Variant="link">View all →</Button></Action>
+            <ChildContent>
+                <Timeline Events="_changes" Expanded="true" />
+            </ChildContent>
+        </Card>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Slug { get; set; } = "";
+    private ReportSummary? _report;
+
+    private readonly (string, string)[] _params =
+    {
+        ("@@since", "@@now-1month"), ("@@until", "@@now"), ("@@tenant", "acme-prod"),
+    };
+
+    private sealed record CalDay(string State, string N);
+    private CalDay[] _cal = Array.Empty<CalDay>();
+
+    private sealed record HistoryRow(string When, JobStatus Status, string Duration, string Rows, string By, string Route);
+    private readonly HistoryRow[] _history =
+    {
+        new("May 27 · 14:32", JobStatus.Running, "2m 18s", "26,624", "marina.s · manual", "jobs/7c4a01f3"),
+        new("May 3 · 06:00",  JobStatus.Ok,      "3m 36s", "42,184", "schedule", "jobs/completed"),
+        new("Apr 1 · 06:00",  JobStatus.Ok,      "3m 41s", "39,812", "schedule", "jobs/completed"),
+        new("Mar 1 · 06:00",  JobStatus.Failed,  "1m 22s", "—",      "schedule", "jobs/failed"),
+        new("Feb 1 · 06:00",  JobStatus.Ok,      "4m 02s", "38,118", "schedule", "jobs/completed"),
+    };
+
+    private sealed record Perm(string Name, string Initials, string Kind, string Role, string Color);
+    private readonly Perm[] _perms =
+    {
+        new("Marina Silva", "MS", "user · marina.s", "Admin", "#26215C"),
+        new("João Pereira", "JP", "user · joao.p", "Operator", "#0C447C"),
+        new("Ana Costa", "AC", "user · ana.c", "Stakeholder", "#27500A"),
+        new("Finance team", "FT", "group · finance-team", "Stakeholder", "#633806"),
+    };
+
+    private readonly Timeline.EventRow[] _changes =
+    {
+        new("2d ago", "info", "pencil", "Marina edited the SQL query", "+2 columns · WHERE total > 0"),
+        new("5d ago", "info", "plus", "João added destination s3://acme-reports/retail", "auth: IAM role acme-reports-writer"),
+        new("11d ago", "info", "calendar", "Marina changed schedule from biweekly to monthly", "next run: day 1, 06:00 BRT"),
+        new("18d ago", "info", "sparkles", "Ana created the template from the builder", "based on monthly-sales-v1"),
+    };
+
+    protected override void OnParametersSet()
+    {
+        _report = SampleData.Reports.FirstOrDefault(r => r.Slug == Slug) ?? SampleData.Reports[0];
+        var seed = new[]
+        {
+            "skip","skip","ok","ok","ok","ok","skip",
+            "ok","ok","ok","err","ok","ok","skip",
+            "ok","ok","ok","ok","ok","ok","skip",
+            "ok","ok","ok","ok","ok","next","skip",
+        };
+        _cal = seed.Select((s, i) => new CalDay(s, s == "skip" ? "" : ((i % 31) + 1).ToString())).ToArray();
+    }
+}

@@ -1,0 +1,118 @@
+@page "/builder/review"
+@using NeoReports.UI.Services
+@inject NavigationManager Nav
+@inject BuilderState Wizard
+
+<div class="page">
+    <WizardStepper Steps="Steps" Current="4" />
+
+    <div class="page-head">
+        <div class="title">
+            <h1>Review and save</h1>
+            <div class="sub">Confirm the configuration, save as a template and schedule · step 5 of 5</div>
+        </div>
+    </div>
+
+    @* Summary *@
+    <Card Title="Configuration summary">
+        <div>
+            <div class="sum-row"><CatTile Sm="true" Kind="teal" Icon="database" /><span class="lbl">Source</span><span class="val"><b>@(Wizard.SourceId ?? "sales-db")</b> · <span class="mono muted" style="font-size:11px">SQL Server · query.sql</span></span><button class="edit-link" @onclick="@(() => Nav.NavigateTo("builder"))">edit</button></div>
+            <div class="sum-row"><CatTile Sm="true" Kind="gray" Icon="adjustments-horizontal" /><span class="lbl">Parameters</span><span class="val"><span class="mono" style="font-size:12px">@@since=@@now-1month · @@until=@@now · @@tenant=acme-prod</span></span><button class="edit-link" @onclick="@(() => Nav.NavigateTo("builder/configure"))">edit</button></div>
+            <div class="sum-row"><CatTile Sm="true" Kind="gray" Icon="columns" /><span class="lbl">Columns</span><span class="val">6 selected · <span class="mono muted" style="font-size:11px">id, customer_id, total, created_at, …</span></span><button class="edit-link" @onclick="@(() => Nav.NavigateTo("sources/sales-db/explore"))">edit</button></div>
+            <div class="sum-row"><CatTile Sm="true" Kind="teal" Icon="file-text" /><span class="lbl">Formats</span><span class="val"><span class="pipeline-chips" style="gap:4px">@foreach (var f in Wizard.Formats){<Chip Kind="format" Ext="@f">@f.ToUpper()</Chip>}</span></span><button class="edit-link" @onclick="@(() => Nav.NavigateTo("builder/format"))">edit</button></div>
+            <div class="sum-row"><CatTile Sm="true" Kind="info" Icon="cloud-upload" /><span class="lbl">Destinations</span><span class="val"><span class="pipeline-chips" style="gap:4px">@foreach (var d in Wizard.Destinations){<span class="chip" style="background:var(--info-bg);color:var(--info-fg)">@d</span>}</span></span><button class="edit-link" @onclick="@(() => Nav.NavigateTo("builder/destination"))">edit</button></div>
+            <div class="sum-row"><CatTile Sm="true" Kind="gray" Icon="calculator" /><span class="lbl">Estimate</span><span class="val"><span class="mono muted" style="font-size:12px">~42,000 rows · ~2.8 MB · typical run ~3m 30s</span></span><span></span></div>
+        </div>
+    </Card>
+
+    @* Save as template *@
+    <Card>
+        <TitleContent>
+            <div class="row" style="gap:10px"><span>Save as template</span><span class="muted" style="font-size:12px;font-weight:400">enables reuse and scheduling</span></div>
+        </TitleContent>
+        <Action><Switch @bind-Value="Wizard.SaveAsTemplate" /></Action>
+        <ChildContent>
+        @if (Wizard.SaveAsTemplate)
+        {
+            <div class="col" style="gap:14px">
+                <div class="grid-2">
+                    <div class="field"><span class="label-sm">Name</span><span class="input"><input value="Monthly sales · retail" style="width:100%" /></span></div>
+                    <div class="field"><span class="label-sm">URL identifier</span><span class="input"><span class="mono muted" style="font-size:11px">/reports/</span><input class="mono" value="monthly-sales-retail" style="flex:1" /></span></div>
+                </div>
+                <div class="field"><span class="label-sm">Description</span><textarea style="width:100%;min-height:64px;padding:8px 10px;background:var(--bg);border:0.5px solid var(--border);border-radius:6px;font:400 13px var(--font-sans);color:var(--fg);resize:vertical">Monthly snapshot of sales per store, grouped by category. Includes returns and manual adjustments.</textarea></div>
+                <div class="grid-2">
+                    <div class="field"><span class="label-sm">Tags</span><span class="input"><span class="tag">sales</span><span class="tag">monthly</span><span class="tag">BI</span><input placeholder="add tag" style="min-width:80px;border:0;background:transparent;outline:none;font:inherit;color:inherit" /></span></div>
+                    <div class="field"><span class="label-sm">Visibility</span><Dropdown Value="Team · finance-team" /></div>
+                </div>
+                <div class="col" style="gap:10px;padding-top:6px;border-top:0.5px solid var(--border)">
+                    <div class="row-between"><div class="col" style="gap:2px"><span style="font-weight:500;font-size:13px">Allow other users to run</span><span class="muted" style="font-size:12px">Users with Operator permission can trigger this report manually.</span></div><Switch @bind-Value="_allowExec" /></div>
+                    <div class="row-between"><div class="col" style="gap:2px"><span style="font-weight:500;font-size:13px">Lock editing</span><span class="muted" style="font-size:12px">Only admins can change query, parameters, formats or destinations.</span></div><Switch @bind-Value="_lockEdit" /></div>
+                </div>
+            </div>
+        }
+        </ChildContent>
+    </Card>
+
+    @* Scheduling *@
+    <Card Title="Schedule" Sub="When this report should run">
+        <div class="radio-row @(Wizard.ScheduleMode == "none" ? "selected" : "")" @onclick="@(() => Wizard.ScheduleMode = "none")">
+            <span class="radio"></span>
+            <div><div class="r-title">Don't schedule</div><div class="r-desc">Saves the template but only runs via API or the manual button.</div></div>
+        </div>
+        <div class="radio-row @(Wizard.ScheduleMode == "once" ? "selected" : "")" @onclick="@(() => Wizard.ScheduleMode = "once")">
+            <span class="radio"></span>
+            <div><div class="r-title">Run once</div><div class="r-desc">Runs at the chosen time and marks the template complete.</div></div>
+        </div>
+        <div class="radio-row @(Wizard.ScheduleMode == "recurring" ? "selected" : "")" @onclick="@(() => Wizard.ScheduleMode = "recurring")">
+            <span class="radio"></span>
+            <div style="width:100%">
+                <div class="r-title">Schedule recurring</div>
+                <div class="r-desc">Runs repeatedly. Recommended for operational reports.</div>
+                @if (Wizard.ScheduleMode == "recurring")
+                {
+                    <div class="r-body">
+                        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
+                            <div class="field"><span class="label-sm">Frequency</span><Dropdown Value="Weekly" /></div>
+                            <div class="field"><span class="label-sm">Time</span><span class="input mono"><input class="mono" value="06:00" style="width:60px" /></span></div>
+                            <div class="field"><span class="label-sm">Timezone</span><Dropdown Value="America/Sao_Paulo · BRT" /></div>
+                        </div>
+                        <div class="field">
+                            <span class="label-sm">Days of week</span>
+                            <div class="dow-chips">
+                                @{ var days = new[] { "Sun","Mon","Tue","Wed","Thu","Fri","Sat" }; }
+                                @for (var i = 0; i < 7; i++)
+                                {
+                                    var idx = i;
+                                    <span class="dc @((idx == 0 || idx == 6) ? "weekend" : "") @(Wizard.Weekdays.Contains(idx) ? "active" : "")" @onclick="@(() => ToggleDay(idx))">@days[idx]</span>
+                                }
+                            </div>
+                        </div>
+                        <div class="grid-2">
+                            <div class="field"><span class="label-sm">Start</span><span class="input mono"><input class="mono" value="2026-06-03" /></span></div>
+                            <div class="field"><span class="label-sm">End (optional)</span><span class="input"><input placeholder="no end date" /></span></div>
+                        </div>
+                        <Banner Variant="success" Icon="clock-play">
+                            <span style="font-size:13px;font-weight:500">Next run: Monday, Jun 3 2026 · 06:00 BRT</span>
+                            <span class="mono" style="font-size:11px">in 6 days · following selected days</span>
+                        </Banner>
+                    </div>
+                }
+            </div>
+        </div>
+    </Card>
+
+    <div class="wizard-footer">
+        <Button Variant="outline" Icon="arrow-left" OnClick="@(() => Nav.NavigateTo("builder/destination"))">Back</Button>
+        <div style="display:flex;gap:8px">
+            <Button Variant="outline" Icon="player-play" OnClick="@(() => Nav.NavigateTo("jobs/7c4a01f3"))">Run now</Button>
+            <Button Variant="primary" Icon="check" OnClick="Save">Save and schedule</Button>
+        </div>
+    </div>
+</div>
+
+@code {
+    private readonly string[] Steps = { "Source", "Columns", "Format", "Destination", "Review" };
+    private bool _allowExec = true, _lockEdit = false;
+    private void ToggleDay(int i) { if (!Wizard.Weekdays.Add(i)) Wizard.Weekdays.Remove(i); }
+    private void Save() { Nav.NavigateTo("reports/monthly-sales"); }
+}

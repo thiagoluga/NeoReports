@@ -1,0 +1,218 @@
+/* =============================================================
+   NeoReports Design System — colors & type tokens
+   Import this at the top of every HTML / JSX file.
+   All colors are semantic. All values are tokens, not literals.
+   ============================================================= */
+
+/* Fonts ------------------------------------------------------- */
+/* Geist + Geist Mono via Google Fonts. To self-host for production,
+   see wwwroot/fonts/README.md and swap this @import for @font-face
+   pointing at the woff2 files you drop into wwwroot/fonts/. */
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@400;500&family=Geist+Mono:wght@400;500&display=swap");
+
+:root {
+  /* ---------- Color: neutrals ---------- */
+  --bg:           #FFFFFF;         /* app surface, cards */
+  --bg2:          #F7F7F8;         /* metric strips, code, table headers, footers */
+  --bg3:          #F1F1F2;         /* hover blocks, preview panels */
+  --fg:           #0F0F10;         /* primary text, CTAs */
+  --fg-muted:     #5C5C63;         /* secondary text, sub-meta */
+  --fg-faint:     #8E8E96;         /* placeholders, disabled labels */
+  --border:       rgba(0,0,0,0.10); /* the 0.5px default border */
+  --border-strong:rgba(0,0,0,0.18); /* row hover, focused inputs */
+
+  /* ---------- Color: semantic families ----------
+     Each family has fg (dark text/icon), bg (tinted surface), and dot (solid). */
+  --success-fg:   #27500A;
+  --success-bg:   #EAF3DE;
+  --success-dot:  #4F9A18;
+
+  --info-fg:      #0C447C;
+  --info-bg:      #E6F1FB;
+  --info-dot:     #1E6DC3;
+
+  --danger-fg:    #791F1F;
+  --danger-bg:    #FCEBEB;
+  --danger-dot:   #C03535;
+
+  --warn-fg:      #633806;
+  --warn-bg:      #FAEEDA;
+  --warn-dot:     #B97412;
+
+  --purple-fg:    #26215C;
+  --purple-bg:    #EEEDFE;
+  --purple-dot:   #5C52D9;
+
+  /* Auxiliary tints used for category icons in lists (cards 32×32). */
+  --teal-fg:      #0E4F4A;
+  --teal-bg:      #DDF1EE;
+  --coral-fg:     #7A2B1F;
+  --coral-bg:     #FBE4DC;
+  --gray-fg:      #3F3F46;
+  --gray-bg:      #ECECEE;
+
+  /* ---------- Type ---------- */
+  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, monospace;
+
+  --fw-regular: 400; /* @kind font */
+  --fw-medium:  500; /* @kind font */
+
+  --fs-xs:   10px;   /* timestamps mini, deltas */
+  --fs-sm:   11px;   /* section labels MAIÚSCULOS, sub-meta */
+  --fs-base: 13px;   /* body, controls */
+  --fs-md:   14px;   /* card titles */
+  --fs-lg:   18px;   /* metric values */
+  --fs-xl:   24px;   /* large numbers */
+  --fs-2xl:  28px;   /* progress hero number, page H1 */
+
+  --lh-tight: 1.2; /* @kind font */
+  --lh-body:  1.4; /* @kind font */
+  --lh-prose: 1.5; /* @kind font */
+
+  --ls-label: 0.06em;   /* MAIÚSCULO labels letter-spacing */
+
+  /* ---------- Spacing (4-based) ---------- */
+  --s-1:  4px;
+  --s-2:  6px;
+  --s-3:  8px;
+  --s-4:  10px;
+  --s-5:  12px;
+  --s-6:  14px;
+  --s-7:  16px;
+  --s-8:  20px;
+  --s-9:  24px;
+  --s-10: 32px;
+
+  /* ---------- Radii ---------- */
+  --r-sm: 4px;   /* chips, pills, badges, mini inputs */
+  --r-md: 6px;   /* buttons, inputs */
+  --r-lg: 8px;   /* cards */
+  --r-xl: 10px;  /* logo, large category icons */
+
+  /* ---------- Borders ---------- */
+  --bw-hairline: 0.5px;
+  --bw-strong:   1px;
+  --bw-select:   2px;   /* the only place 2px is used: selected cards in builder */
+
+  /* ---------- Topbar ---------- */
+  --topbar-h: 52px;
+
+  /* ---------- Live-dot animation timing ---------- */
+  --t-live:  1.4s;   /* @kind other */
+  --t-hover: 120ms;  /* @kind other */
+  --t-switch: 150ms; /* @kind other */
+}
+
+/* Dark mode — same tokens, remapped. ----------------------------- */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:           #0B0B0C;
+    --bg2:          #141417;
+    --bg3:          #1B1B1F;
+    --fg:           #F2F2F3;
+    --fg-muted:     #9D9DA5;
+    --fg-faint:     #6E6E76;
+    --border:       rgba(255,255,255,0.10);
+    --border-strong:rgba(255,255,255,0.20);
+
+    --success-fg:   #B8DD8E;
+    --success-bg:   #1C2A12;
+    --success-dot:  #6BB025;
+
+    --info-fg:      #9DC7F1;
+    --info-bg:      #0F2236;
+    --info-dot:     #4791D9;
+
+    --danger-fg:    #F0A8A8;
+    --danger-bg:    #2E1212;
+    --danger-dot:   #D85454;
+
+    --warn-fg:      #ECC288;
+    --warn-bg:      #2A1B0A;
+    --warn-dot:     #D89232;
+
+    --purple-fg:    #BFBAF5;
+    --purple-bg:    #181537;
+    --purple-dot:   #7B71E5;
+
+    --teal-fg:      #98D9D2;
+    --teal-bg:      #0F2624;
+    --coral-fg:     #ECB5A8;
+    --coral-bg:     #2D140E;
+    --gray-fg:      #C7C7CC;
+    --gray-bg:      #1E1E22;
+  }
+}
+
+/* =============================================================
+   Semantic element styles — apply by adding the class.
+   ============================================================= */
+
+html, body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-regular);
+  line-height: var(--lh-body);
+  font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+* { box-sizing: border-box; }
+
+.mono,
+code, kbd, samp, pre {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Headings — sentence case enforced by content, not CSS. */
+.h1 { font-size: var(--fs-2xl); font-weight: var(--fw-medium); line-height: var(--lh-tight); letter-spacing: -0.01em; }
+.h2 { font-size: var(--fs-xl);  font-weight: var(--fw-medium); line-height: var(--lh-tight); letter-spacing: -0.005em; }
+.h3 { font-size: var(--fs-md);  font-weight: var(--fw-medium); line-height: var(--lh-body); }
+
+.body  { font-size: var(--fs-base); font-weight: var(--fw-regular); line-height: var(--lh-body);  color: var(--fg); }
+.muted { color: var(--fg-muted); }
+.faint { color: var(--fg-faint); }
+
+/* Small caps label — used as section header inside cards: SOURCE, QUANDO, etc. */
+.label-sm {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+/* Metric value — large tabular number. */
+.metric-value {
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-medium);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--lh-tight);
+  letter-spacing: -0.01em;
+}
+.metric-sub {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+}
+
+/* Live dot — used in "Executando" badges and "ao vivo" headers. */
+@keyframes live-dot {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
+}
+.live-dot {
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--info-dot);
+  animation: live-dot var(--t-live) ease-in-out infinite;
+}
+.live-dot.success { background: var(--success-dot); }
+.live-dot.danger  { background: var(--danger-dot); }
+.live-dot.warn    { background: var(--warn-dot); }

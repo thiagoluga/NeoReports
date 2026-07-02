@@ -1,0 +1,27 @@
+@* SubNav — settings sub-navigation pills. Marks active by id.
+   Usage:  <SubNav Active="alerts" /> *@
+@inject NavigationManager Nav
+
+<div class="subnav">
+    @foreach (var item in Items)
+    {
+        <span class="subnav-item @(Active == item.Id ? "active" : "")"
+              @onclick="@(() => Nav.NavigateTo(item.Route))">@item.Label</span>
+    }
+</div>
+
+@code {
+    /// <summary>alerts | authentication | plugins | retention | audit</summary>
+    [Parameter] public string Active { get; set; } = "alerts";
+
+    private sealed record Item(string Id, string Label, string Route);
+
+    private readonly Item[] Items =
+    {
+        new("alerts",         "Alerts",         "settings/alerts"),
+        new("authentication", "Authentication", "settings/authentication"),
+        new("plugins",        "Plugins",        "settings/plugins"),
+        new("retention",      "Retention",      "settings/retention"),
+        new("audit",          "Audit",          "settings/audit"),
+    };
+}

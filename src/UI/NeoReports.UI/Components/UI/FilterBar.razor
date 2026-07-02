@@ -1,0 +1,27 @@
+@* FilterBar — search input (flex-1) + slot for filter pills.
+   Usage:
+     <FilterBar @bind-Search="search" Placeholder="Search reports">
+       <Pill Active="true" OnClick="...">status: running <i class="ti ti-x"></i></Pill>
+       <Pill><i class="ti ti-tag"></i>Tag</Pill>
+     </FilterBar> *@
+
+<div class="filter-bar">
+    <span class="input flex-1">
+        <i class="ti ti-search"></i>
+        <input placeholder="@Placeholder" value="@Search" @oninput="OnInput" />
+    </span>
+    @ChildContent
+</div>
+
+@code {
+    [Parameter] public string Search { get; set; } = "";
+    [Parameter] public EventCallback<string> SearchChanged { get; set; }
+    [Parameter] public string Placeholder { get; set; } = "Search";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private async Task OnInput(ChangeEventArgs e)
+    {
+        Search = e.Value?.ToString() ?? "";
+        await SearchChanged.InvokeAsync(Search);
+    }
+}

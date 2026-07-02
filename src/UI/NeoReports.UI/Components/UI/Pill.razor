@@ -1,0 +1,17 @@
+@* Pill — clickable filter pill. Active state uses info background.
+   Usage:  <Pill Active="true" OnClick="...">status: running <i class="ti ti-x"></i></Pill> *@
+
+<span class="pill @(Active ? "active" : "")" @onclick="OnClick">
+    @if (!string.IsNullOrEmpty(Icon))
+    {
+        <i class="ti ti-@Icon"></i>
+    }
+    @ChildContent
+</span>
+
+@code {
+    [Parameter] public bool Active { get; set; }
+    [Parameter] public string? Icon { get; set; }
+    [Parameter] public EventCallback OnClick { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

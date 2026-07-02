@@ -1,0 +1,22 @@
+@*
+   Root router. Sets the default layout (AppLayout with the topbar) and
+   resolves the pages marked with @page.
+*@
+<Router AppAssembly="@typeof(App).Assembly">
+    <Found Context="routeData">
+        <RouteView RouteData="@routeData" DefaultLayout="@typeof(Layout.AppLayout)" />
+        <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+    </Found>
+    <NotFound>
+        <LayoutView Layout="@typeof(Layout.AppLayout)">
+            <div class="page">
+                <div class="page-head">
+                    <div class="title">
+                        <h1>Page not found</h1>
+                        <div class="sub">The requested route does not exist in this app.</div>
+                    </div>
+                </div>
+            </div>
+        </LayoutView>
+    </NotFound>
+</Router>

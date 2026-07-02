@@ -1,0 +1,17 @@
+@* CatTile — category icon inside a tinted tile of its semantic family.
+   Usage:  <CatTile Kind="teal" Icon="table" />
+           <CatTile Kind="coral" Icon="file-text" Sm="true" /> *@
+
+<span class="cat-tile @Kind @(Sm ? "sm" : "")">
+    <i class="ti ti-@Icon"></i>
+</span>
+
+@code {
+    /// <summary>teal | coral | purple | info | warn | gray | success | danger</summary>
+    [Parameter] public string Kind { get; set; } = "gray";
+
+    /// <summary>Tabler icon name without prefix</summary>
+    [Parameter] public string Icon { get; set; } = "database";
+
+    [Parameter] public bool Sm { get; set; }
+}

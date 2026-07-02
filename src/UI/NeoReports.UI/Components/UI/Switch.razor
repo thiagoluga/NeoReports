@@ -1,0 +1,15 @@
+@* Switch — 28×16, on = info color. Two-way binding via @bind-Value.
+   Usage:  <Switch @bind-Value="autoFilter" /> *@
+
+<button type="button" class="sw @(Value ? "on" : "")" @onclick="Toggle" aria-pressed="@Value"></button>
+
+@code {
+    [Parameter] public bool Value { get; set; }
+    [Parameter] public EventCallback<bool> ValueChanged { get; set; }
+
+    private async Task Toggle()
+    {
+        Value = !Value;
+        await ValueChanged.InvokeAsync(Value);
+    }
+}

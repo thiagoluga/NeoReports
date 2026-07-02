@@ -1,0 +1,36 @@
+@* MetricCard — bg2 surface, label with icon, large tabular value, optional sub with delta.
+   Usage:  <MetricCard Icon="player-play" Label="Active jobs" Value="12" Sub="3 queued · 9 running" />
+           <MetricCard Icon="report-analytics" Label="Reports today" Value="486" Sub="vs yesterday"
+                       DeltaDir="up" DeltaText="+3.4%" /> *@
+
+<div class="metric">
+    <span class="m-label">
+        @if (!string.IsNullOrEmpty(Icon))
+        {
+            <i class="ti ti-@Icon"></i>
+        }
+        @Label
+    </span>
+    <span class="m-value">@Value</span>
+    @if (!string.IsNullOrEmpty(Sub) || !string.IsNullOrEmpty(DeltaText))
+    {
+        <span class="m-sub">
+            @if (!string.IsNullOrEmpty(DeltaText))
+            {
+                <span class="delta @DeltaDir">@DeltaText</span>
+            }
+            @Sub
+        </span>
+    }
+</div>
+
+@code {
+    [Parameter] public string? Icon { get; set; }
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public string Value { get; set; } = "";
+    [Parameter] public string? Sub { get; set; }
+
+    /// <summary>"up" (green) | "down" (red)</summary>
+    [Parameter] public string? DeltaDir { get; set; }
+    [Parameter] public string? DeltaText { get; set; }
+}

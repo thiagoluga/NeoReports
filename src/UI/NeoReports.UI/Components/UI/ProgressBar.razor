@@ -1,0 +1,15 @@
+@* ProgressBar — thin bar (list rows) or 8px hero bar.
+   Usage:  <ProgressBar Pct="64" />
+           <ProgressBar Pct="64" Height="8" /> *@
+
+<div class="@(Mini ? "mini-bar" : "progress-bar")">
+    <i style="width:@(Pct)%"></i>
+</div>
+
+@code {
+    /// <summary>0–100</summary>
+    [Parameter] public int Pct { get; set; }
+
+    /// <summary>true = 4px inline bar (table rows); false = 8px hero bar</summary>
+    [Parameter] public bool Mini { get; set; }
+}

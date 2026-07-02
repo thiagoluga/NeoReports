@@ -1,0 +1,29 @@
+@* EmptyState — didactic empty placeholder. Always teach the next action.
+   Usage:
+     <EmptyState Icon="report-off" Title="No reports yet">
+       Register one from code, or build one visually.
+       <Action><Button Variant="primary" Icon="plus">New report</Button></Action>
+     </EmptyState> *@
+
+<div class="empty-state">
+    @if (!string.IsNullOrEmpty(Icon))
+    {
+        <i class="ti ti-@Icon es-icon"></i>
+    }
+    <div class="es-title">@Title</div>
+    @if (ChildContent is not null)
+    {
+        <div class="es-desc">@ChildContent</div>
+    }
+    @if (Action is not null)
+    {
+        <div style="margin-top:6px">@Action</div>
+    }
+</div>
+
+@code {
+    [Parameter] public string? Icon { get; set; }
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment? Action { get; set; }
+}

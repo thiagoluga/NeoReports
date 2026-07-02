@@ -1,0 +1,18 @@
+@* ChipGroup — segmented control (2–4 short options).
+   Usage:  <ChipGroup Options="opts" Value="_val" ValueChanged="v => _val = v" />
+   where opts is (string Value, string Label)[]. *@
+
+<div class="chip-group">
+    @foreach (var (val, label) in Options)
+    {
+        <span class="cg @(Mono ? "mono" : "") @(Value == val ? "active" : "")"
+              @onclick="@(() => ValueChanged.InvokeAsync(val))">@label</span>
+    }
+</div>
+
+@code {
+    [Parameter] public (string Value, string Label)[] Options { get; set; } = Array.Empty<(string, string)>();
+    [Parameter] public string Value { get; set; } = "";
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+    [Parameter] public bool Mono { get; set; }
+}

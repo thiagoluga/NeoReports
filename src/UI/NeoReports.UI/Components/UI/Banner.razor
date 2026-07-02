@@ -1,0 +1,23 @@
+@* Banner — inline tinted callout. Variants: success | info.
+   Usage:
+     <Banner Variant="success" Icon="clock-play">
+       <b>Next run: Monday, Jun 3 2026 · 06:00 BRT</b>
+       <span class="mono">in 6 days</span>
+     </Banner> *@
+
+<div class="banner @Variant">
+    @if (!string.IsNullOrEmpty(Icon))
+    {
+        <i class="ti ti-@Icon"></i>
+    }
+    <div class="col" style="gap:0">
+        @ChildContent
+    </div>
+</div>
+
+@code {
+    /// <summary>success | info</summary>
+    [Parameter] public string Variant { get; set; } = "info";
+    [Parameter] public string? Icon { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

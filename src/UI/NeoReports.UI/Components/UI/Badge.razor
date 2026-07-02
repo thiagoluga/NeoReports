@@ -1,0 +1,24 @@
+@* StatusBadge — dot + icon + text. Triple reinforcement for accessibility.
+   Usage:  <Badge Variant="info" Icon="player-play" Live="true">Running</Badge> *@
+
+<span class="badge @Variant @(Live ? "live" : "")">
+    <span class="dot"></span>
+    @if (!string.IsNullOrEmpty(Icon))
+    {
+        <i class="ti ti-@Icon"></i>
+    }
+    @ChildContent
+</span>
+
+@code {
+    /// <summary>success | info | danger | warn | gray | purple</summary>
+    [Parameter] public string Variant { get; set; } = "gray";
+
+    /// <summary>Tabler icon name without prefix (e.g. "check", "alert-triangle")</summary>
+    [Parameter] public string? Icon { get; set; }
+
+    /// <summary>When true the dot pulses (live jobs)</summary>
+    [Parameter] public bool Live { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

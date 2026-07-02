@@ -201,6 +201,26 @@ not a coding task — it gates Epic C.
 
 ## Epic C — Blazor UI (LAST)
 
-Blazor Server + MudBlazor, built **only** from the Claude Design handoff
-(`tokens.css`, `components.html`, per-screen `.html`, `handoff.md` — see the ADR). Never
-invent design. Deliberately last per the maintainer. See **D24**.
+Blazor Server with **pure design-system CSS** (no MudBlazor — see **D31**, superseding the
+D24-era stack note), built **only** from the Claude Design handoff. The handoff arrived as a
+runnable starter (all 17 screens, en-US, Geist + Tabler): app in `src/UI/NeoReports.UI`,
+screen→route→endpoint map in `docs/ui-handoff.md`. Never invent design. See **D24/D31**.
+
+- [x] **C1 — Starter in the repo.** The full Claude Design starter (17 screens + stubs, 26
+  reusable components, tokens/styles, sample data) added as `src/UI/NeoReports.UI` and to
+  the solution; fixed to compile (Razor named-fragment wrapping, `@page` on `_Host`, en-US
+  leftovers) and smoke-tested: all 19 routes serve 200. Handoff table corrected to the real
+  API surface (no invented endpoints). ✅ builds 0 warnings; all 126 tests still green.
+- [ ] **C2 — Wire the real endpoints.** Replace `SampleData` where the engine has an API
+  today (`GET /api/reports`, `GET /api/jobs/{id}`, run/cancel/download) per the handoff
+  table; keep `mock/future` cells on mocks with graceful degradation.
+- [ ] **C3 — Responsive breakpoints.** Add the `@media` blocks (xl/lg/md/sm) specified in
+  `docs/ui-handoff.md` §(b) to `neoreports.css`.
+- [ ] **C4 — Self-host assets.** Geist/Geist Mono woff2 + Tabler icons into `wwwroot/`
+  per `wwwroot/fonts/README.md`; drop the CDN links.
+- [x] **C5 — Hosting/packaging story.** Resolved (**D32**): the UI ships as a **Razor Class
+  Library** — `NeoReports.UI` has no entry point; a host mounts it with
+  `AddNeoReportsUI()` + `UseNeoReportsUI("<base path>")` (default `/neoreports`,
+  host-configurable; routes, static assets and the Blazor hub all live under the branch).
+  Sample `08-web-ui` is the runnable host (`--NeoReports:UIPath=/...` shows the custom URL).
+  NuGet packaging of the UI (and MIT-vs-Pro) stays deferred (`IsPackable=false`).
