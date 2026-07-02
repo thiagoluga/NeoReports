@@ -262,3 +262,59 @@ screen→route→endpoint map in `docs/ui-handoff.md`. Never invent design. See 
   host-configurable; routes, static assets and the Blazor hub all live under the branch).
   Sample `08-web-ui` is the runnable host (`--NeoReports:UIPath=/...` shows the custom URL).
   NuGet packaging of the UI (and MIT-vs-Pro) stays deferred (`IsPackable=false`).
+
+## Epic D — Live API for the UI (dynamic registration + read endpoints)
+
+Scope authorized in **D33** (2026-07). Full task specifications — files, types, endpoint
+contracts, status codes, edge cases, test plans, acceptance criteria — live in the blueprint
+**`docs/epic-d-dynamic-api.md`**; read it before starting any item. One PR per item, in order
+(D1 → D2 are sequential; D3/D4/D5 are independent of each other; D6–D9 depend on their API
+counterparts). Ground rules for every item: `Abstractions` stays frozen; GET responses never
+echo property bags; dynamic report names are validated (`^[a-zA-Z][a-zA-Z0-9_-]{0,99}$`),
+not sanitized.
+
+- [ ] **D1 — Core: mutable registry + persisted config store.** `IMutableReportRegistry`
+  (`Register`/`Unregister` — `ReportRegistry` already has a thread-safe `Register`);
+  `IReportConfigStore` + file-backed impl (one `{name}.json` per report, atomic tmp+move
+  writes); `AddDynamicReports()` with startup rehydration through the existing lazy registry
+  build (corrupt files logged + skipped, code-first wins name collisions); `${VAR}` whole-value
+  env placeholders (`ReportConfigEnvironment.Substitute`) so secrets stay out of persisted
+  configs. Unit tests per blueprint §D1.
+- [ ] **D2 — AspNetCore: dynamic report endpoints.** `POST /reports` (parse → name regex →
+  409-if-exists → env-substitute → compile → register → persist original document, with
+  rollback on persist failure; 201 + Location), `POST /reports/validate` (dry-run, 200 with
+  `Valid`/`Error`/`NameTaken`, no side effects), `DELETE /reports/{name}` (404 unknown /
+  409 code-first / 204, store-first ordering), `GET /capabilities` (source provider types +
+  writer formats + destination types from DI). Integration tests per blueprint §D2, including
+  the end-to-end POST → run?mode=sync proof.
+- [ ] **D3 — AspNetCore: `GET /jobs`.** Expose the existing `IJobStore.ListAsync(JobQuery)`
+  (filters `status`/`report`/`since`/`limit`≤200/`offset`; `CreatedAt` desc enforced in the
+  endpoint; verify Hangfire DI path registers `IJobStore`). Integration tests per §D3.
+- [ ] **D4 — AspNetCore: report detail + enriched summary.** Public computed metadata on
+  `CompiledReport` (`OutputFormats`, `DestinationTypes`, `RetryOptions`,
+  `FailureStrategyName`); `GET /reports/{name}` → `ReportDetailView` (columns with types,
+  page size, formats, destinations, retry, failure strategy, `Origin` code|config,
+  `Deletable`); `ReportSummary` gains `Formats`/`Destinations`. No property bags in any
+  response (regression-tested). Tests per §D4.
+- [ ] **D5 — AspNetCore: `GET /jobs/{id}/artifacts`.** File name / mime / `SizeBytes` from the
+  existing artifact store (never `Path`); kept out of `JobView` so status polling does no IO;
+  non-completed job → `[]`. Tests per §D5.
+- [ ] **D6 — UI: Builder wired end-to-end.** `BuilderConfigMapper` (`BuilderState` →
+  `ReportConfig` JSON, pure + unit-tested with a golden snapshot); client methods
+  `TryGetCapabilities`/`TryValidateReport`/`TryCreateReport`/`TryDeleteReport`; step 1 sources
+  from capabilities, step 2 Validate button, step 5 Save → navigate to detail and
+  Save & run → navigate to the job screen; demo mode (Save disabled) when no engine. §D6.
+- [ ] **D7 — UI: dashboard + run histories.** `TryListJobsAsync`; dashboard recent-jobs strip
+  (limit 8) + metric cards computed client-side (jobs today, success rate, records exported,
+  avg duration); report-detail history (`?report=`, limit 10) linking to the job screens.
+  SampleData fallback preserved everywhere. §D7.
+- [ ] **D8 — UI: report detail, pipeline, delete, completed artifacts.** Real columns/formats/
+  destinations/retry + origin chip; Delete (danger, confirm) for config-origin reports;
+  pipeline stages from the detail; job-completed file list from D5 with human-readable sizes.
+  §D8.
+- [ ] **D9 — UI: sources page on capabilities.** Provider-type cards from `GET /capabilities`;
+  drop (don't fake) per-source health numbers; source explorer stays SampleData (post-MVP,
+  ADR required). §D9.
+
+**Out of scope for the epic** (recorded in D33/blueprint): `PUT` (edit), scheduling/recurring,
+real progress percentage, source introspection (schema/preview), settings screens, variants.
