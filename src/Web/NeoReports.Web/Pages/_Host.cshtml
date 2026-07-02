@@ -5,10 +5,6 @@
 
 @{
     Layout = null;
-    // The UI is mounted under a configurable base path (UseNeoReportsUi("/...")).
-    // The branch middleware moves the mount point into PathBase, so the <base> tag
-    // adapts to whatever path the host chose.
-    var basePath = HttpContext.Request.PathBase.Value + '/';
 }
 
 <!DOCTYPE html>
@@ -16,7 +12,10 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <base href="@basePath" />
+    @* The UI is mounted under a configurable base path (UseNeoReportsUi). The branch
+       middleware moves the mount point into PathBase, so the base tag adapts to
+       whatever path the host chose; the trailing slash is the href terminator. *@
+    <base href="@(HttpContext.Request.PathBase.Value)/" />
 
     <title>NeoReports</title>
 
