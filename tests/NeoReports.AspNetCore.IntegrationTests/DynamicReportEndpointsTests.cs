@@ -25,6 +25,9 @@ namespace NeoReports.AspNetCore.IntegrationTests;
 public class DynamicReportEndpointsTests : IDisposable
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly string[] IdCustomerColumns = { "Id", "Customer" };
+    private static readonly string[] InMemorySourceOnly = { "inmemory" };
+    private static readonly string[] CsvFormatOnly = { "csv" };
 
     private readonly string _configDir = Path.Join(Path.GetTempPath(), "nr-d2-" + Guid.NewGuid().ToString("N"));
 
@@ -52,21 +55,26 @@ public class DynamicReportEndpointsTests : IDisposable
             services.AddSingleton<IWriterFactory>(new CsvWriterFactory(new CsvOptions()));
         }, testName);
 
+    private static async Task<HttpResponseMessage> PostJsonAsync(HttpClient client, string url, string json)
+    {
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        return await client.PostAsync(url, content);
+    }
+
     [Fact]
     public async Task Create_report_returns_201_and_report_is_runnable()
     {
         using var host = await StartAsync();
         var client = host.GetTestClient();
 
-        var response = await client.PostAsync("/api/reports",
-            new StringContent(ConfigNamed("alpha"), Encoding.UTF8, "application/json"));
+        var response = await PostJsonAsync(client, "/api/reports", ConfigNamed("alpha"));
 
         response.StatusCode.ShouldBe(HttpStatusCode.Created);
         response.Headers.Location!.ToString().ShouldEndWith("/api/reports/alpha");
 
         var body = await response.Content.ReadFromJsonAsync<JsonElement>(Json);
         body.GetProperty("name").GetString().ShouldBe("alpha");
-        body.GetProperty("columns").EnumerateArray().Select(c => c.GetString()).ShouldBe(new[] { "Id", "Customer" });
+        body.GetProperty("columns").EnumerateArray().Select(c => c.GetString()).ShouldBe(IdCustomerColumns);
 
         var reports = await client.GetFromJsonAsync<List<JsonElement>>("/api/reports", Json);
         reports!.ShouldContain(r => r.GetProperty("name").GetString() == "alpha");
@@ -82,8 +90,7 @@ public class DynamicReportEndpointsTests : IDisposable
         using var host = await StartAsync();
         var client = host.GetTestClient();
 
-        var response = await client.PostAsync("/api/reports",
-            new StringContent("{ not valid json", Encoding.UTF8, "application/json"));
+        var response = await PostJsonAsync(client, "/api/reports", "{ not valid json");
 
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
@@ -103,7 +110,7 @@ public class DynamicReportEndpointsTests : IDisposable
         }
         """;
 
-        var response = await client.PostAsync("/api/reports", new StringContent(config, Encoding.UTF8, "application/json"));
+        var response = await PostJsonAsync(client, "/api/reports", config);
 
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
@@ -114,8 +121,8 @@ public class DynamicReportEndpointsTests : IDisposable
         using var host = await StartAsync();
         var client = host.GetTestClient();
 
-        await client.PostAsync("/api/reports", new StringContent(ConfigNamed("dup"), Encoding.UTF8, "application/json"));
-        var second = await client.PostAsync("/api/reports", new StringContent(ConfigNamed("dup"), Encoding.UTF8, "application/json"));
+        await PostJsonAsync(client, "/api/reports", ConfigNamed("dup"));
+        var second = await PostJsonAsync(client, "/api/reports", ConfigNamed("dup"));
 
         second.StatusCode.ShouldBe(HttpStatusCode.Conflict);
     }
@@ -129,8 +136,7 @@ public class DynamicReportEndpointsTests : IDisposable
         using var host = await StartAsync();
         var client = host.GetTestClient();
 
-        var response = await client.PostAsync("/api/reports",
-            new StringContent(ConfigNamed(invalidName), Encoding.UTF8, "application/json"));
+        var response = await PostJsonAsync(client, "/api/reports", ConfigNamed(invalidName));
 
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         Directory.Exists(_configDir).ShouldBeFalse();
@@ -144,7 +150,7 @@ public class DynamicReportEndpointsTests : IDisposable
 
         var config = ConfigNamed("needs-env", new Dictionary<string, object?> { ["key"] = "${NR_D2_MISSING_VAR}" });
 
-        var response = await client.PostAsync("/api/reports", new StringContent(config, Encoding.UTF8, "application/json"));
+        var response = await PostJsonAsync(client, "/api/reports", config);
 
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
@@ -159,7 +165,7 @@ public class DynamicReportEndpointsTests : IDisposable
             var client = host.GetTestClient();
 
             var config = ConfigNamed("with-env", new Dictionary<string, object?> { ["key"] = "${NR_D2_SET_VAR}" });
-            var response = await client.PostAsync("/api/reports", new StringContent(config, Encoding.UTF8, "application/json"));
+            var response = await PostJsonAsync(client, "/api/reports", config);
 
             response.StatusCode.ShouldBe(HttpStatusCode.Created);
             var stored = await File.ReadAllTextAsync(Path.Join(_configDir, "with-env.json"));
@@ -177,13 +183,12 @@ public class DynamicReportEndpointsTests : IDisposable
         using var host = await StartAsync();
         var client = host.GetTestClient();
 
-        var response = await client.PostAsync("/api/reports/validate",
-            new StringContent(ConfigNamed("preview"), Encoding.UTF8, "application/json"));
+        var response = await PostJsonAsync(client, "/api/reports/validate", ConfigNamed("preview"));
 
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         var body = await response.Content.ReadFromJsonAsync<JsonElement>(Json);
         body.GetProperty("valid").GetBoolean().ShouldBeTrue();
-        body.GetProperty("columns").EnumerateArray().Select(c => c.GetString()).ShouldBe(new[] { "Id", "Customer" });
+        body.GetProperty("columns").EnumerateArray().Select(c => c.GetString()).ShouldBe(IdCustomerColumns);
         body.GetProperty("nameTaken").GetBoolean().ShouldBeFalse();
 
         // Validation must never register or persist.
@@ -207,7 +212,7 @@ public class DynamicReportEndpointsTests : IDisposable
         }
         """;
 
-        var response = await client.PostAsync("/api/reports/validate", new StringContent(config, Encoding.UTF8, "application/json"));
+        var response = await PostJsonAsync(client, "/api/reports/validate", config);
 
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         var body = await response.Content.ReadFromJsonAsync<JsonElement>(Json);
@@ -221,9 +226,8 @@ public class DynamicReportEndpointsTests : IDisposable
         using var host = await StartAsync();
         var client = host.GetTestClient();
 
-        await client.PostAsync("/api/reports", new StringContent(ConfigNamed("existing"), Encoding.UTF8, "application/json"));
-        var response = await client.PostAsync("/api/reports/validate",
-            new StringContent(ConfigNamed("existing"), Encoding.UTF8, "application/json"));
+        await PostJsonAsync(client, "/api/reports", ConfigNamed("existing"));
+        var response = await PostJsonAsync(client, "/api/reports/validate", ConfigNamed("existing"));
 
         var body = await response.Content.ReadFromJsonAsync<JsonElement>(Json);
         body.GetProperty("valid").GetBoolean().ShouldBeTrue();
@@ -236,7 +240,7 @@ public class DynamicReportEndpointsTests : IDisposable
         using var host = await StartAsync();
         var client = host.GetTestClient();
 
-        var response = await client.PostAsync("/api/reports/validate", new StringContent(string.Empty, Encoding.UTF8, "application/json"));
+        var response = await PostJsonAsync(client, "/api/reports/validate", string.Empty);
 
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
@@ -247,7 +251,7 @@ public class DynamicReportEndpointsTests : IDisposable
         using var host = await StartAsync();
         var client = host.GetTestClient();
 
-        await client.PostAsync("/api/reports", new StringContent(ConfigNamed("removable"), Encoding.UTF8, "application/json"));
+        await PostJsonAsync(client, "/api/reports", ConfigNamed("removable"));
 
         var delete = await client.DeleteAsync("/api/reports/removable");
 
@@ -257,7 +261,7 @@ public class DynamicReportEndpointsTests : IDisposable
         reports!.ShouldNotContain(r => r.GetProperty("name").GetString() == "removable");
 
         // Re-creating the same name must succeed.
-        var recreate = await client.PostAsync("/api/reports", new StringContent(ConfigNamed("removable"), Encoding.UTF8, "application/json"));
+        var recreate = await PostJsonAsync(client, "/api/reports", ConfigNamed("removable"));
         recreate.StatusCode.ShouldBe(HttpStatusCode.Created);
     }
 
@@ -300,8 +304,8 @@ public class DynamicReportEndpointsTests : IDisposable
 
         var body = await client.GetFromJsonAsync<JsonElement>("/api/capabilities", Json);
 
-        body.GetProperty("sources").EnumerateArray().Select(s => s.GetString()).ShouldBe(new[] { "inmemory" });
-        body.GetProperty("formats").EnumerateArray().Select(s => s.GetString()).ShouldBe(new[] { "csv" });
+        body.GetProperty("sources").EnumerateArray().Select(s => s.GetString()).ShouldBe(InMemorySourceOnly);
+        body.GetProperty("formats").EnumerateArray().Select(s => s.GetString()).ShouldBe(CsvFormatOnly);
         body.GetProperty("destinations").EnumerateArray().ShouldBeEmpty();
     }
 
