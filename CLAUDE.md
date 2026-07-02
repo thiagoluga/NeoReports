@@ -91,6 +91,28 @@ Stack (see **D31**): Blazor Server + **pure design-system CSS — no MudBlazor**
 - Every PR closes one acceptance criterion of the spec and comes with tests.
 - Changed a decision? Update `DECISIONS.md` in the same PR.
 
+## Model policy (maintainer-set, 2026-07)
+
+Cost/quality policy for agent sessions on this repo. The agent cannot change its own
+session's model — the maintainer picks it in the client; what the agent controls is
+delegation and escalation advice.
+
+- **Sessions start on Sonnet 5** (the maintainer selects it). It is the default for all
+  remaining work — the tasks are well specified (handoff docs, PLAN items) and Sonnet-tier
+  handles them at a fraction of the cost.
+- **Escalate a bounded subtask, not the session.** When a delimited piece of work clearly
+  needs more capability — an architectural decision, a hard debug after failed attempts, a
+  deep review — delegate just that piece to a **subagent with `model: "opus"`**, giving it a
+  self-contained prompt (subagents start cold, with none of the session context). Integrate
+  the result and continue on the session model.
+- **If the whole session is thrashing** (2+ failed attempts at the same root cause, or the
+  task turns out to be architecturally much harder than planned), stop and tell the
+  maintainer explicitly: "recommend switching this session to Opus 4.8". Do not keep
+  burning attempts.
+- Escalation is the exception, not the rhythm — if most subtasks are being delegated up,
+  the session should just run on Opus instead.
+- **Never escalate to Fable** (any surface) without an explicit maintainer request.
+
 ## Agent standing permissions (granted by the maintainer)
 
 The agent has **standing** permission (allowed to do everything in the cycle below, without asking for confirmation each time):
