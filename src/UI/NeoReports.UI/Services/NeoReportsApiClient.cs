@@ -84,7 +84,7 @@ internal sealed class NeoReportsApiClient(
         }
         catch (Exception ex) when (IsTransient(ex))
         {
-            logger.LogWarning(ex, "GET {ApiBase}reports unavailable; falling back to sample data.", apiBase);
+            logger.LogWarning(ex, "GET {ApiBase}reports unavailable; falling back to sample data.", Sanitize(apiBase.ToString()));
             return null;
         }
     }
@@ -103,7 +103,7 @@ internal sealed class NeoReportsApiClient(
         }
         catch (Exception ex) when (IsTransient(ex))
         {
-            logger.LogWarning(ex, "GET {ApiBase}jobs/{JobId} unavailable; falling back to sample data.", apiBase, jobId);
+            logger.LogWarning(ex, "GET {ApiBase}jobs/{JobId} unavailable; falling back to sample data.", Sanitize(apiBase.ToString()), Sanitize(jobId));
             return null;
         }
     }
@@ -120,7 +120,7 @@ internal sealed class NeoReportsApiClient(
         }
         catch (Exception ex) when (IsTransient(ex))
         {
-            logger.LogWarning(ex, "POST {ApiBase}jobs/{JobId}/cancel failed.", apiBase, jobId);
+            logger.LogWarning(ex, "POST {ApiBase}jobs/{JobId}/cancel failed.", Sanitize(apiBase.ToString()), Sanitize(jobId));
             return false;
         }
     }
@@ -132,7 +132,7 @@ internal sealed class NeoReportsApiClient(
         {
             using var response = await http.PostAsJsonAsync(
                 new Uri(apiBase, $"reports/{Uri.EscapeDataString(reportName)}/run"),
-                new { parameters = (object?)null }, Json, cancellationToken).ConfigureAwait(false);
+                new RunRequestBody(null), Json, cancellationToken).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
                 return null;
 
@@ -142,7 +142,7 @@ internal sealed class NeoReportsApiClient(
         }
         catch (Exception ex) when (IsTransient(ex))
         {
-            logger.LogWarning(ex, "POST {ApiBase}reports/{ReportName}/run failed.", apiBase, reportName);
+            logger.LogWarning(ex, "POST {ApiBase}reports/{ReportName}/run failed.", Sanitize(apiBase.ToString()), Sanitize(reportName));
             return null;
         }
     }
@@ -150,4 +150,11 @@ internal sealed class NeoReportsApiClient(
     public string BuildDownloadUrl(string jobId) => new Uri(ApiBase, $"jobs/{Uri.EscapeDataString(jobId)}/download").ToString();
 
     private static bool IsTransient(Exception ex) => ex is HttpRequestException or JsonException or TaskCanceledException;
+
+    /// <summary>Strips CR/LF from a value before it reaches a log message template — jobId/reportName
+    /// ultimately originate from the URL or an HTTP response, so an unsanitized value could forge
+    /// extra log lines (CWE-117).</summary>
+    private static string Sanitize(string value) => value.Replace('\r', '_').Replace('\n', '_');
+
+    private sealed record RunRequestBody(object? Parameters);
 }
