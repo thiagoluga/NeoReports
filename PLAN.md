@@ -415,5 +415,14 @@ not sanitized.
 detail, and sources are all live. See `docs/epic-d-dynamic-api.md` for the full design and
 `DECISIONS.md` (D33) for the scope decision.
 
+**Follow-up: `samples/09-web-ui-live`** mounts `NeoReports.UI` and the engine (`AddDynamicReports`)
+in one host with a self-contained `InMemorySalesSourceProvider`, so the full dynamic-registration
+flow (Builder → validate → save/run → real CSV/XLSX on disk → report detail/dashboard/sources →
+delete) can be clicked through end to end without a database or cloud account. Hands-on testing
+of that sample found step 1 of the Builder set `Wizard.SourceType` from `GET /api/capabilities`
+with no visible control to change it — the "Engine source type" selector (mirroring D6's "Engine
+destination" pattern) was added to close the gap. `docs/ui-handoff.md` and the sample's README
+are updated accordingly.
+
 **Out of scope for the epic** (recorded in D33/blueprint): `PUT` (edit), scheduling/recurring,
 real progress percentage, source introspection (schema/preview), settings screens, variants.

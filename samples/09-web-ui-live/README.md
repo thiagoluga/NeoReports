@@ -26,7 +26,9 @@ absence means `GET /api/capabilities` succeeded and returned at least the `inmem
 
 ### 2. Register a report
 
-- **Step 1 — Source**: pick any card (purely visual here) and Continue.
+- **Step 1 — Source**: the **Engine source type** card at the top has a real dropdown — pick
+  `inmemory` (the only registered provider in this sample). The cards below it are illustrative
+  only; picking one doesn't affect the report. Continue.
 - **Step 2 — Configure**: fill in the **Engine configuration** card:
   - *Report name*: `my-first-report`
   - *Connection string variable*: leave empty (the in-memory source ignores it)
