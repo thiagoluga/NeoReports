@@ -147,12 +147,12 @@ public static class NeoReportsEndpointRouteBuilderExtensions
 
         // The config store is optional: hosts that never call AddDynamicReports() have no
         // IReportConfigStore registered, and every report is origin "code" there.
-        var configStore = http.RequestServices.GetService<IReportConfigStore>();
+        IReportConfigStore? configStore = http.RequestServices.GetService<IReportConfigStore>();
         bool isConfigOrigin = configStore is not null
             && DynamicReportName.IsValid(name)
             && await configStore.ExistsAsync(name, cancellationToken).ConfigureAwait(false);
 
-        var columns = report.Schema.Columns
+        ReportColumnView[] columns = report.Schema.Columns
             .Select(c => new ReportColumnView(c.Name, c.Type.ToString(), c.DisplayName, c.Format, c.Nullable))
             .ToArray();
 

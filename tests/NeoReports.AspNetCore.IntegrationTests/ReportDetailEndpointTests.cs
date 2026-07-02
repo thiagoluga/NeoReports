@@ -23,6 +23,7 @@ namespace NeoReports.AspNetCore.IntegrationTests;
 public class ReportDetailEndpointTests
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly string[] CsvFormatOnly = { "csv" };
 
     [Fact]
     public async Task Detail_of_code_first_report_has_origin_code_and_is_not_deletable()
@@ -36,7 +37,7 @@ public class ReportDetailEndpointTests
         body.GetProperty("origin").GetString().ShouldBe("code");
         body.GetProperty("deletable").GetBoolean().ShouldBeFalse();
         body.GetProperty("pageSize").GetInt32().ShouldBe(1000);
-        body.GetProperty("formats").EnumerateArray().Select(f => f.GetString()).ShouldBe(new[] { "csv" });
+        body.GetProperty("formats").EnumerateArray().Select(f => f.GetString()).ShouldBe(CsvFormatOnly);
         body.GetProperty("destinations").EnumerateArray().ShouldBeEmpty();
 
         var columns = body.GetProperty("columns").EnumerateArray().ToArray();
@@ -117,7 +118,7 @@ public class ReportDetailEndpointTests
         var reports = await client.GetFromJsonAsync<List<JsonElement>>("/api/reports", Json);
 
         var sales = reports!.Single(r => r.GetProperty("name").GetString() == "sales");
-        sales.GetProperty("formats").EnumerateArray().Select(f => f.GetString()).ShouldBe(new[] { "csv" });
+        sales.GetProperty("formats").EnumerateArray().Select(f => f.GetString()).ShouldBe(CsvFormatOnly);
         sales.GetProperty("destinations").EnumerateArray().ShouldBeEmpty();
     }
 
