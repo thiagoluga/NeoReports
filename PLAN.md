@@ -379,10 +379,24 @@ not sanitized.
   metric/table values render unchanged from before this PR when the engine is unreachable (UI-
   only sample host); report-detail history renders 5 demo rows and a clicked row correctly
   navigates to `/jobs/completed/{id}`; no console/server errors.
-- [ ] **D8 — UI: report detail, pipeline, delete, completed artifacts.** Real columns/formats/
-  destinations/retry + origin chip; Delete (danger, confirm) for config-origin reports;
-  pipeline stages from the detail; job-completed file list from D5 with human-readable sizes.
-  §D8.
+- [x] **D8 — UI: report detail, pipeline, delete, completed artifacts.** `GET /reports/{name}`
+  (D4) replaces the old list-based lookup on `ReportDetail`: real columns, formats,
+  destinations, retry/failure-strategy summary, and an `origin: code|config` chip next to the
+  title tags. Delete button (danger variant, two-click "Delete report" → "Confirm delete"
+  local-state confirm — the codebase had no existing confirm-dialog pattern to reuse, e.g. the
+  Cancel button on the running-job screen acts immediately with no confirmation, so this is a
+  new minimal safety step, not an invented design language) shown only when `Deletable`;
+  `DELETE /reports/{name}` → navigate to `/reports` on success, inline danger banner on
+  failure. Job completed: `GET /jobs/{id}/artifacts` (D5) replaces the hardcoded 2-file list
+  with real name/size/mime, `EmptyState` when a completed job has none. **Pipeline stages
+  deliberately NOT wired**: `PipelineView` is a single fixed "regional-sales" demo with no
+  route parameter to select a report, and its variant rows are explicitly post-MVP (D23) — wiring
+  only the shared source/columns section would be cosmetic without a way to pick a report, so
+  it stays 100% `SampleData` (documented in `docs/ui-handoff.md`, not silently dropped).
+  ✅ solution builds 0 warnings; 190/190 tests green (no new tests — UI pages aren't unit-tested
+  in this repo). Browser-verified: both screens render their demo fallback unchanged (no
+  origin chip/delete button on `ReportDetail`, original 2-file list on `JobCompleted`) when
+  the engine is unreachable; no console/server errors.
 - [ ] **D9 — UI: sources page on capabilities.** Provider-type cards from `GET /capabilities`;
   drop (don't fake) per-source health numbers; source explorer stays SampleData (post-MVP,
   ADR required). §D9.

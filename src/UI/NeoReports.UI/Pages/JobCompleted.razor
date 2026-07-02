@@ -39,9 +39,29 @@
         <MetricCard Icon="refresh" Label="Retries" Value="@RetriesValue" Sub="recovered · resilience OK" />
     </div>
 
-    @* Files — GET /api/jobs/{id}/download *@
+    @* Files — GET /api/jobs/{id}/artifacts (Epic D / D8); GET /api/jobs/{id}/download *@
     <Card Title="Generated files" Sub="Final snapshot · available for 7 days">
         <div>
+        @if (_artifacts is not null)
+        {
+            @if (_artifacts.Count == 0)
+            {
+                <EmptyState Icon="file-off" Title="No files recorded for this job" />
+            }
+            else
+            {
+                @foreach (var a in _artifacts)
+                {
+                    <div class="file-row">
+                        <CatTile Sm="true" Kind="teal" Icon="@FileIcon(a.FileName)" />
+                        <div class="file-name"><b>@a.FileName</b><span>@FormatBytes(a.SizeBytes) · @a.MimeType</span></div>
+                        <div class="file-actions"><Button Variant="primary" Size="sm" Icon="download" OnClick="Download">Download</Button></div>
+                    </div>
+                }
+            }
+        }
+        else
+        {
             <div class="file-row">
                 <CatTile Sm="true" Kind="teal" Icon="table" />
                 <div class="file-name"><b>sales-2026-05-27.csv</b><span>2.41 MB · 42,184 rows · UTF-8 · comma-delimited</span></div>
@@ -52,6 +72,7 @@
                 <div class="file-name"><b>sales-2026-05-27.xlsx</b><span>3.82 MB · 42,184 rows · "Sales" sheet · auto-filter · freeze header</span></div>
                 <div class="file-actions"><Button Variant="outline" Size="sm" Icon="eye">Preview</Button><Button Variant="primary" Size="sm" Icon="download" OnClick="Download">Download</Button></div>
             </div>
+        }
         </div>
     </Card>
 
@@ -111,6 +132,7 @@
     [Parameter] public string? Id { get; set; }
     private string EffectiveId => Id ?? "7c4a01f3";
     private ApiJobView? _job;
+    private IReadOnlyList<ApiArtifact>? _artifacts;
 
     private string Title => _job?.ReportName ?? "Monthly sales · retail";
     private string SubLine => _job is not null
@@ -150,6 +172,8 @@
     {
         // GET /api/jobs/{id} — falls back to the demo content above when unreachable or unknown.
         _job = await Api.TryGetJobAsync(EffectiveId);
+        if (_job is not null)
+            _artifacts = await Api.TryGetJobArtifactsAsync(EffectiveId);
     }
 
     private void Download()
@@ -161,4 +185,20 @@
     private static string FormatSpan(TimeSpan span) => span.TotalHours >= 1
         ? $"{(int)span.TotalHours}h {span.Minutes}m"
         : $"{span.Minutes}m {span.Seconds}s";
+
+    private static string FileIcon(string fileName) => System.IO.Path.GetExtension(fileName).ToLowerInvariant() switch
+    {
+        ".csv" => "table",
+        ".xlsx" => "file-spreadsheet",
+        ".json" => "braces",
+        ".zip" => "file-alert",
+        _ => "file",
+    };
+
+    private static string FormatBytes(long bytes) => bytes switch
+    {
+        >= 1024 * 1024 => $"{bytes / 1024.0 / 1024.0:0.##} MB",
+        >= 1024 => $"{bytes / 1024.0:0.##} KB",
+        _ => $"{bytes} B",
+    };
 }
