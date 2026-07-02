@@ -329,7 +329,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         };
 
         IReadOnlyList<ReportJob> jobs = await jobStore.ListAsync(query, cancellationToken).ConfigureAwait(false);
-        var ordered = jobs.OrderByDescending(j => j.CreatedAt).Select(JobView.From).ToArray();
+        JobView[] ordered = jobs.OrderByDescending(j => j.CreatedAt).Select(JobView.From).ToArray();
         return Results.Ok(ordered);
     }
 
