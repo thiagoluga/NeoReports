@@ -4,9 +4,10 @@
 using NeoReports.Web.Models;
 
 namespace NeoReports.Web.Services;
+
 public static class SampleData
 {
-    public static readonly List<ReportSummary> Reports = new()
+    public static readonly IReadOnlyList<ReportSummary> Reports = Array.AsReadOnly(new ReportSummary[]
     {
         new("monthly-sales", "Monthly sales · retail",
             "Monthly snapshot of sales per store, grouped by category. Includes returns and manual adjustments.",
@@ -44,9 +45,9 @@ public static class SampleData
             "sales-db", new[] { "XLSX", "CSV", "PDF" }, "3 destinations",
             "Every day · 06:00", "next: Wed 28 · in 1 day", "yesterday", "06:00:00 · 3 variants",
             "purple", "stack-2", "Open", "arrow-right", IsPipeline: true),
-    };
+    });
 
-    public static readonly List<SourceSummary> Sources = new()
+    public static readonly IReadOnlyList<SourceSummary> Sources = Array.AsReadOnly(new SourceSummary[]
     {
         new("sales-db", "sales-db", "SQL Server",
             "Server=tcp:sales.prod.acme.local,1433;Initial Catalog=sales;Encrypt=true",
@@ -66,9 +67,9 @@ public static class SampleData
         new("product-pg", "product-pg", "PostgreSQL",
             "postgresql://product.prod.acme.local:5432/product?sslmode=require",
             Health.Ok, "keyset · 1,000 rows/page", "78ms", 3, "5h ago", "info", "brand-postgresql"),
-    };
+    });
 
-    public static readonly List<ColumnDef> Columns = new()
+    public static readonly IReadOnlyList<ColumnDef> Columns = Array.AsReadOnly(new ColumnDef[]
     {
         new("id", "num", true, "rename", "Sale ID"),
         new("customer_id", "num", true),
@@ -80,9 +81,9 @@ public static class SampleData
         new("notes", "text", false),
         new("updated_at", "date", false),
         new("tenant_id", "text", false),
-    };
+    });
 
-    public static readonly List<FormatOption> Formats = new()
+    public static readonly IReadOnlyList<FormatOption> Formats = Array.AsReadOnly(new FormatOption[]
     {
         new("csv", "CSV", ".csv", "teal", "table", "Delimited tabular text."),
         new("xlsx", "Excel", ".xlsx", "teal", "file-spreadsheet", "Spreadsheet with native types, sheets, formulas."),
@@ -90,9 +91,9 @@ public static class SampleData
         new("json", "JSON", ".json", "purple", "braces", "Hierarchical structure · one line per record."),
         new("txt", "Text", ".txt", "gray", "file", "Plain text · customizable template."),
         new("xml", "XML", ".xml", "purple", "code", "Structured document · schema-validatable."),
-    };
+    });
 
-    public static readonly List<DestinationOption> Destinations = new()
+    public static readonly IReadOnlyList<DestinationOption> Destinations = Array.AsReadOnly(new DestinationOption[]
     {
         new("download", "Download", "gray", "download", "Serve the file via a temporary signed URL."),
         new("s3", "AWS S3", "info", "brand-aws", "Upload to an S3 bucket with IAM credentials."),
@@ -103,9 +104,9 @@ public static class SampleData
         new("email", "Email", "warn", "mail", "Attachment or signed link in an email body."),
         new("webhook", "Webhook", "warn", "webhook", "POST the binary to a custom HTTP endpoint."),
         new("custom", "Custom", "gray", "puzzle", "External plugin · IDestination interface."),
-    };
+    });
 
-    public static readonly List<PluginInfo> Plugins = new()
+    public static readonly IReadOnlyList<PluginInfo> Plugins = Array.AsReadOnly(new PluginInfo[]
     {
         new("sources", "NeoReports.Sources.SqlServer", "teal", "database", "built-in", "Official SQL Server driver · pooling + retry · keyset support.", "v1.2.4", 12, "ok"),
         new("sources", "NeoReports.Sources.Postgres", "info", "brand-postgresql", "built-in", "Official PostgreSQL driver · keyset/offset pagination.", "v1.2.4", 7, "ok"),
@@ -122,5 +123,5 @@ public static class SampleData
         new("jobs", "NeoReports.Workers.Default", "gray", "cpu", "built-in", "Default worker · in-process execution with retry.", "v1.2.4", 42, "ok"),
         new("auth", "NeoReports.Auth.HostAuth", "gray", "shield", "built-in", "Default filter inheriting HttpContext.User from the host.", "v1.2.4", 1, "ok"),
         new("auth", "Acme.Auth.JwtFilter", "purple", "key", "custom", "Custom filter for corporate JWT.", "v1.0.0", 1, "ok"),
-    };
+    });
 }

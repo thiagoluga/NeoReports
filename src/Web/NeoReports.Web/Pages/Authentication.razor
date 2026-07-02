@@ -90,7 +90,7 @@
 </div>
 
 @code {
-    private record Filter(string Name, string Desc, bool BuiltIn, string Order, bool On);
+    private sealed record Filter(string Name, string Desc, bool BuiltIn, string Order, bool On);
     private readonly Filter[] _filters =
     {
         new("HostAuth", "inherits HttpContext.User from the host (Azure AD)", true, "#1", true),
@@ -100,7 +100,7 @@
         new("SignedUrl", "allows download via HMAC URL without full auth", true, "bypass", true),
     };
 
-    private record MatrixRow(string Area, string Icon, string[] Perms);
+    private sealed record MatrixRow(string Area, string Icon, string[] Perms);
     private readonly MatrixRow[] _matrix =
     {
         new("Dashboard", "layout-dashboard", new[] { "view", "view", "view", "view", "deny" }),
@@ -111,7 +111,7 @@
         new("Download signed URL", "link", new[] { "via link", "via link", "via link", "via link", "via link" }),
     };
 
-    private record AuditEvent(string Name, string Desc, bool On);
+    private sealed record AuditEvent(string Name, string Desc, bool On);
     private readonly AuditEvent[] _events =
     {
         new("Reportly.Execute", "logs every manual or scheduled run", true),
@@ -121,7 +121,7 @@
         new("View", "each report view on the dashboard · high volume", false),
     };
 
-    private string PolicyClass(string p) => p switch
+    private static string PolicyClass(string p) => p switch
     {
         "deny" => "deny",
         "readonly" => "readonly",

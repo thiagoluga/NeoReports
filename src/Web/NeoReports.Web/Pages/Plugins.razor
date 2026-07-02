@@ -89,10 +89,10 @@
     };
 
     private IEnumerable<PluginInfo> Visible => _filter == "all" ? SampleData.Plugins : SampleData.Plugins.Where(p => p.Group == _filter);
-    private int Count(string id) => id == "all" ? SampleData.Plugins.Count : SampleData.Plugins.Count(p => p.Group == id);
+    private static int Count(string id) => id == "all" ? SampleData.Plugins.Count : SampleData.Plugins.Count(p => p.Group == id);
 
-    private int _active => SampleData.Plugins.Count(p => p.Health == "ok");
-    private int _updates => SampleData.Plugins.Count(p => p.Health == "update");
-    private int _custom => SampleData.Plugins.Count(p => p.Origin == "custom");
-    private int _errors => SampleData.Plugins.Count(p => p.Health == "license-error");
+    private static int _active => SampleData.Plugins.Count(p => p.Health == "ok");
+    private static int _updates => SampleData.Plugins.Count(p => p.Health == "update");
+    private static int _custom => SampleData.Plugins.Count(p => p.Origin == "custom");
+    private static int _errors => SampleData.Plugins.Count(p => p.Health == "license-error");
 }

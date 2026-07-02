@@ -196,10 +196,10 @@
         ("@@since", "@@now-1month"), ("@@until", "@@now"), ("@@tenant", "acme-prod"),
     };
 
-    private record CalDay(string State, string N);
+    private sealed record CalDay(string State, string N);
     private CalDay[] _cal = Array.Empty<CalDay>();
 
-    private record HistoryRow(string When, JobStatus Status, string Duration, string Rows, string By, string Route);
+    private sealed record HistoryRow(string When, JobStatus Status, string Duration, string Rows, string By, string Route);
     private readonly HistoryRow[] _history =
     {
         new("May 27 · 14:32", JobStatus.Running, "2m 18s", "26,624", "marina.s · manual", "jobs/7c4a01f3"),
@@ -209,7 +209,7 @@
         new("Feb 1 · 06:00",  JobStatus.Ok,      "4m 02s", "38,118", "schedule", "jobs/completed"),
     };
 
-    private record Perm(string Name, string Initials, string Kind, string Role, string Color);
+    private sealed record Perm(string Name, string Initials, string Kind, string Role, string Color);
     private readonly Perm[] _perms =
     {
         new("Marina Silva", "MS", "user · marina.s", "Admin", "#26215C"),

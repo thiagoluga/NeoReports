@@ -103,7 +103,7 @@
         new("Read+write", "failed"), new("Upload", ""),
     };
 
-    private record Alert(string Rule, string Icon, string Kind, string[] Channels);
+    private sealed record Alert(string Rule, string Icon, string Kind, string[] Channels);
     private readonly Alert[] _alerts =
     {
         new("Critical failure", "alert-triangle", "danger", new[] { "mail", "brand-slack" }),

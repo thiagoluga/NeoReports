@@ -14,7 +14,7 @@
     /// <summary>alerts | authentication | plugins | retention | audit</summary>
     [Parameter] public string Active { get; set; } = "alerts";
 
-    private record Item(string Id, string Label, string Route);
+    private sealed record Item(string Id, string Label, string Route);
 
     private readonly Item[] Items =
     {

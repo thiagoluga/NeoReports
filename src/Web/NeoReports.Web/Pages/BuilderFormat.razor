@@ -81,9 +81,9 @@
                         </div>
                     </div>
                 }
-                @foreach (var id in Wizard.Formats.Where(f => f is not "csv" and not "xlsx"))
+                @foreach (var f in Wizard.Formats.Where(f => f is not "csv" and not "xlsx")
+                    .Select(id => SampleData.Formats.First(x => x.Id == id)))
                 {
-                    var f = SampleData.Formats.First(x => x.Id == id);
                     <div class="config-card">
                         <div class="cc-head">
                             <CatTile Kind="@f.Kind" Icon="@f.Icon" />

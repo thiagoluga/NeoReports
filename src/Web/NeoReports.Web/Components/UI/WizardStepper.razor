@@ -4,7 +4,7 @@
 <div class="wizard">
     @for (var i = 0; i < Steps.Length; i++)
     {
-        var state = i < Current ? "done" : i == Current ? "active" : "";
+        var state = StateOf(i);
         if (i > 0)
         {
             <span class="wconn"></span>
@@ -30,4 +30,10 @@
 
     /// <summary>Current step index (0-based)</summary>
     [Parameter] public int Current { get; set; }
+
+    private string StateOf(int i)
+    {
+        if (i < Current) return "done";
+        return i == Current ? "active" : "";
+    }
 }

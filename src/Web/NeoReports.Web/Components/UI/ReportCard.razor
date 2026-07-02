@@ -39,7 +39,7 @@
                 <i class="ti ti-arrow-right arrow" style="font-size:12px"></i>
                 @foreach (var f in Report.Formats)
                 {
-                    <span class="chip format @(f.ToLower() is "pdf" ? "pdf" : f.ToLower() is "json" or "xml" ? "json" : "")">@f</span>
+                    <span class="chip format @FormatClass(f)">@f</span>
                 }
                 <i class="ti ti-arrow-right arrow" style="font-size:12px"></i>
                 <span class="chip">@Report.Destination</span>
@@ -57,4 +57,11 @@
     [Parameter] public ReportSummary Report { get; set; } = default!;
     [Parameter] public EventCallback OnOpen { get; set; }
     [Parameter] public EventCallback OnPrimary { get; set; }
+
+    private static string FormatClass(string format) => format.ToLowerInvariant() switch
+    {
+        "pdf" => "pdf",
+        "json" or "xml" => "json",
+        _ => "",
+    };
 }

@@ -122,14 +122,14 @@
 </div>
 
 @code {
-    private string JobRoute(JobStatus s) => s switch
+    private static string JobRoute(JobStatus s) => s switch
     {
         JobStatus.Failed => "jobs/failed",
         JobStatus.Ok => "jobs/completed",
         _ => "jobs/7c4a01f3",
     };
 
-    private string DurationOf(ReportSummary r)
+    private static string DurationOf(ReportSummary r)
     {
         if (r.Status == JobStatus.Paused) return "—";
         var parts = r.LastSub.Split('·');

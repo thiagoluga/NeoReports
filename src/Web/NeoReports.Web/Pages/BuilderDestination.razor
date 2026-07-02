@@ -92,9 +92,9 @@
                         </div>
                     </div>
                 }
-                @foreach (var id in Wizard.Destinations.Where(d => d is not "sharepoint" and not "email"))
+                @foreach (var d in Wizard.Destinations.Where(d => d is not "sharepoint" and not "email")
+                    .Select(id => SampleData.Destinations.First(x => x.Id == id)))
                 {
-                    var d = SampleData.Destinations.First(x => x.Id == id);
                     <div class="config-card">
                         <div class="cc-head">
                             <CatTile Kind="@d.Kind" Icon="@d.Icon" />

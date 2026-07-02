@@ -24,7 +24,7 @@
 </div>
 
 @code {
-    private record NavItem(string Label, string Href, string Match);
+    private sealed record NavItem(string Label, string Href, string Match);
 
     private readonly NavItem[] Items =
     {

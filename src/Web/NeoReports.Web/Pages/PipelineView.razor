@@ -126,7 +126,7 @@
 </div>
 
 @code {
-    private record Variant(string Name, string Type, string? Filter, string Format, bool FormatIsPdf,
+    private sealed record Variant(string Name, string Type, string? Filter, string Format, bool FormatIsPdf,
         string Destination, string DestIcon, string Schedule, string IconKind, string IconName,
         string StatusVariant, string StatusIcon, string StatusLabel, string Time, string Rows);
 

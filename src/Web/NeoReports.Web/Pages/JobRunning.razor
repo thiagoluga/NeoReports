@@ -116,8 +116,8 @@
     protected override void OnInitialized()
     {
         var data = new[] { 120,140,130,150,200,240,220,260,280,312,300,290,280,200,180,220,240,230,210,194 };
-        int W = 600, H = 90, P = 6; int max = data.Max(), min = data.Min();
-        double stepX = (W - P * 2) / (double)(data.Length - 1);
+        double W = 600, H = 90, P = 6; int max = data.Max(), min = data.Min();
+        double stepX = (W - P * 2) / (data.Length - 1);
         var pts = data.Select((d, i) => (x: P + i * stepX, y: H - P - ((d - min) / (double)(max - min)) * (H - P * 2 - 6))).ToArray();
         _linePath = string.Join(" ", pts.Select((p, i) => $"{(i == 0 ? "M" : "L")}{p.x:0.#},{p.y:0.#}"));
         _areaPath = $"{_linePath} L{pts[^1].x:0.#},{H - P} L{P},{H - P} Z";

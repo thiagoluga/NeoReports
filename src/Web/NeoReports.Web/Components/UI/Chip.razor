@@ -13,7 +13,7 @@
         <span class="chip token" style="background:var(--info-bg);color:var(--info-fg);font-family:var(--font-mono);font-size:11px;padding:2px 6px;border-radius:3px">@ChildContent</span>
         break;
     case "format":
-        <span class="chip format @(Ext == "pdf" ? "pdf" : Ext == "json" || Ext == "xml" ? "json" : "")">@ChildContent</span>
+        <span class="chip format @FormatClass">@ChildContent</span>
         break;
     default:
         <span class="tag">@ChildContent</span>
@@ -28,4 +28,11 @@
     [Parameter] public string? Ext { get; set; }
 
     [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private string FormatClass => Ext switch
+    {
+        "pdf" => "pdf",
+        "json" or "xml" => "json",
+        _ => "",
+    };
 }

@@ -72,7 +72,7 @@
 </div>
 
 @code {
-    private record Channel(string Kind, string Icon, string Name, string Detail, int UsedIn, bool On);
+    private sealed record Channel(string Kind, string Icon, string Name, string Detail, int UsedIn, bool On);
     private readonly Channel[] _channels =
     {
         new("warn", "mail", "Email · SMTP", "finance@acme.com · ops@acme.com · 3 more", 3, true),
@@ -83,7 +83,7 @@
         new("gray", "bell", "In-app", "all admins · 4 recipients", 2, true),
     };
 
-    private record Rule(string Kind, string Icon, string Name, string Scope, bool On, string? Priority, string[] When, string[] Sends, string Limit);
+    private sealed record Rule(string Kind, string Icon, string Name, string Scope, bool On, string? Priority, string[] When, string[] Sends, string Limit);
     private readonly Rule[] _rules =
     {
         new("danger", "alert-triangle", "Critical failure", "applies to all reports tagged \"critical\"", true, "critical",

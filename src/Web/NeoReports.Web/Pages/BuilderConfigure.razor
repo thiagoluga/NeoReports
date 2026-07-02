@@ -116,7 +116,7 @@
 @code {
     private readonly string[] Steps = { "Source", "Columns", "Format", "Destination", "Review" };
 
-    private record P(string Name, string Val, string Type, string Origin);
+    private sealed record P(string Name, string Val, string Type, string Origin);
     private readonly P[] _params =
     {
         new("@@since", "@@now-1month", "datetime", "expression"),
@@ -130,6 +130,6 @@
     private readonly (string, string)[] _sortOpts = { ("ASC","ASC"), ("DESC","DESC") };
     private readonly (string, string)[] _backoffOpts = { ("linear","linear"), ("exponential","exponential"), ("fixed","fixed") };
     private readonly string[] _errorTypes = { "deadlock", "lock-timeout", "network", "5xx", "429", "custom" };
-    private HashSet<string> _retryErrors = new() { "deadlock", "lock-timeout", "network", "5xx", "429" };
+    private readonly HashSet<string> _retryErrors = new() { "deadlock", "lock-timeout", "network", "5xx", "429" };
     private void ToggleErr(string e) { if (!_retryErrors.Add(e)) _retryErrors.Remove(e); }
 }

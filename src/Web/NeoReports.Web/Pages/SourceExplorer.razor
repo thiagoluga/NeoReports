@@ -136,7 +136,7 @@
         _cols = _cols.Select(c => c with { Selected = !allOn }).ToList();
     }
 
-    private record Param(string Key, string Value, string Type);
+    private sealed record Param(string Key, string Value, string Type);
     private readonly Param[] _params =
     {
         new("@@since", "2026-04-27", "datetime"),
