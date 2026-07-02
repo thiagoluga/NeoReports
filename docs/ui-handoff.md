@@ -28,7 +28,7 @@ degrade gracefully once a real endpoint exists.
 | Builder · 4 Destination | `/builder/destination` `BuilderDestination` | WizardStepper, DestinationCard, Dropdown, Switch, CatTile | client-side only | none (pure config) |
 | Builder · 5 Review | `/builder/review` `BuilderReview` | WizardStepper, Card, Chip, Switch, Banner, Dropdown, CatTile, BuilderState | save: `POST /api/reports` (`201`, `409` if the name exists); run now: `POST /api/reports/{name}/run` | save error (toast, incl. `409` name conflict), schedule preview |
 | Job running | `/jobs/{id}` `JobRunning` | Card, MetricCard, PhaseStepper, Timeline, ProgressBar, CatTile, Badge | `GET /api/jobs/{id}` (poll/stream); cancel: `POST /api/jobs/{id}/cancel` | live updates, connection lost, cancel-in-progress |
-| Job completed | `/jobs/completed` `JobCompleted` | Card, MetricCard, PhaseStepper, Timeline, CatTile, Badge, Button | `GET /api/jobs/{id}`; download: `GET /api/jobs/{id}/download` | download error, expired files |
+| Job completed | `/jobs/completed` `JobCompleted` | Card, MetricCard, PhaseStepper, Timeline, CatTile, Badge, Button | `GET /api/jobs/{id}`; files: `GET /api/jobs/{id}/artifacts` (Epic D / D5); download: `GET /api/jobs/{id}/download` | download error, expired files |
 | Job failed | `/jobs/failed` `JobFailed` | Card, MetricCard, PhaseStepper, CatTile, Badge, Button | `GET /api/jobs/{id}`; resume/retry: `POST /api/reports/{name}/run` | partial-output present/absent, resume unavailable |
 | Alerts | `/settings/alerts` `Alerts` | SubNav, Card, CatTile, Switch, Badge, Timeline | alert config + activity: **mock/future** | loading, empty (no rules → CTA), channel-disconnected |
 | Authentication | `/settings/authentication` `Authentication` | SubNav, Card, CatTile, Switch, Badge, Dropdown | filter chain + policy matrix: **mock/future** | loading, save error |
@@ -52,6 +52,7 @@ GET  /api/jobs?status=&report=&since=&limit=&offset= → list jobs (Epic D / D3)
 GET  /api/jobs/{id}
 POST /api/jobs/{id}/cancel
 GET  /api/jobs/{id}/download
+GET  /api/jobs/{id}/artifacts        → finished output files, name/mime/size (Epic D / D5)
 ```
 Everything else (aggregate dashboard metrics, source health, alert/auth/plugin config)
 is `mock/future` — do **not** invent endpoints; wire these once the engine exposes them.

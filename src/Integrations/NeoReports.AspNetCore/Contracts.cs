@@ -76,6 +76,12 @@ public sealed record ReportCreatedResponse(string Name, IReadOnlyList<string> Co
 public sealed record ValidateReportResponse(
     bool Valid, string? Error, string? Name, IReadOnlyList<string>? Columns, bool NameTaken);
 
+/// <summary>A finished output file of a completed job, without its on-disk path.</summary>
+/// <param name="FileName">The file name as it would be downloaded.</param>
+/// <param name="MimeType">The file's MIME type.</param>
+/// <param name="SizeBytes">The file size, in bytes.</param>
+public sealed record ArtifactView(string FileName, string MimeType, long SizeBytes);
+
 /// <summary>What the host can build dynamic reports out of, from its own DI registrations.</summary>
 /// <param name="Sources">Registered <c>IConfigSourceProvider</c> type ids, sorted.</param>
 /// <param name="Formats">Registered <c>IWriterFactory</c> format ids, sorted.</param>

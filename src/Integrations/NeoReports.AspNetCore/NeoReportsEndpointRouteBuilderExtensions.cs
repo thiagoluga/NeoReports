@@ -31,6 +31,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
     /// <item><c>GET  {prefix}/jobs/{id}</c> — job status + stats</item>
     /// <item><c>POST {prefix}/jobs/{id}/cancel</c> — request cancellation</item>
     /// <item><c>GET  {prefix}/jobs/{id}/download</c> — download the finished result</item>
+    /// <item><c>GET  {prefix}/jobs/{id}/artifacts</c> — list finished output files (name/mime/size, never the on-disk path)</item>
     /// </list>
     /// Authorization is inherited from the host; set <see cref="NeoReportsEndpointOptions.RequireAuthorization"/>
     /// to apply <c>RequireAuthorization</c> to the group.
@@ -69,6 +70,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         group.MapGet("/jobs/{id}", GetJobAsync);
         group.MapPost("/jobs/{id}/cancel", CancelJobAsync);
         group.MapGet("/jobs/{id}/download", DownloadAsync);
+        group.MapGet("/jobs/{id}/artifacts", GetJobArtifactsAsync);
 
         return group;
     }
@@ -433,5 +435,25 @@ public static class NeoReportsEndpointRouteBuilderExtensions
 
         zip.Position = 0;
         return Results.File(zip, "application/zip", $"{job.ReportName}-{id}.zip");
+    }
+
+    private static async Task<IResult> GetJobArtifactsAsync(
+        string id, IReportJobScheduler scheduler, IReportArtifactStore artifactStore, CancellationToken cancellationToken)
+    {
+        ReportJob? job = await scheduler.GetAsync(id, cancellationToken).ConfigureAwait(false);
+        if (job is null)
+            return Results.NotFound(new { error = $"No job with id '{id}'." });
+
+        // Kept out of JobView so the frequent status poll never touches the file system; a
+        // non-completed job simply has no artifacts yet rather than being an error.
+        if (job.Status is not ReportJobStatus.Completed)
+            return Results.Ok(Array.Empty<ArtifactView>());
+
+        IReadOnlyList<ReportArtifact> artifacts = await artifactStore.ListAsync(id, cancellationToken).ConfigureAwait(false);
+        ArtifactView[] views = artifacts
+            .Select(a => new ArtifactView(a.FileName, a.MimeType, a.SizeBytes))
+            .ToArray();
+
+        return Results.Ok(views);
     }
 }
