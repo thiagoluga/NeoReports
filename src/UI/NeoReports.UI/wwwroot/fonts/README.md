@@ -1,55 +1,57 @@
 # Self-hosted fonts & icons
 
-The design tool that produced this starter **cannot ship binary font files**, so
-`wwwroot/fonts/` needs three sets of assets fetched once. After that everything is
-fully offline — no Google/CDN calls.
+`wwwroot/fonts/` ships the binary assets checked in; nothing loads from a CDN or
+Google Fonts at runtime. This file documents what's here and how to refresh it.
 
-## 1. Geist + Geist Mono (woff2)
-
-`tokens.css` already declares `@font-face` for these exact filenames:
+## 1. Geist + Geist Mono (variable woff2)
 
 ```
-wwwroot/fonts/Geist-Regular.woff2
-wwwroot/fonts/Geist-Medium.woff2
-wwwroot/fonts/GeistMono-Regular.woff2
-wwwroot/fonts/GeistMono-Medium.woff2
+wwwroot/fonts/Geist-Variable.woff2       (~29 KB)
+wwwroot/fonts/GeistMono-Variable.woff2   (~23 KB)
 ```
 
-Geist is OFL-licensed (free for commercial use). Get the woff2 files from either:
+Both are **variable fonts**: Google serves one physical file per family covering the
+whole weight axis, and requesting weight 400 vs 500 resolves to the *same* URL — so
+`tokens.css` declares a single `@font-face` per family with a weight **range**
+(`font-weight: 400 500;`), not two separate static files. Only the `latin` Unicode
+subset is included (this repo's UI copy is English-only, per `CLAUDE.md`); Cyrillic,
+Vietnamese, and other subsets Google also offers were not fetched.
 
-- **Vercel Geist** repo: https://github.com/vercel/geist-font → `packages/next/dist/fonts/`
-- **Google Fonts**: https://fonts.google.com/specimen/Geist and https://fonts.google.com/specimen/Geist+Mono (download → convert ttf→woff2 with `woff2_compress` or https://cloudconvert.com)
-- **Fontsource** (easiest, already woff2):
-  ```bash
-  npm i @fontsource/geist-sans @fontsource/geist-mono
-  # copy the 400 + 500 weight woff2 files from node_modules/@fontsource/...
-  ```
-
-Only weights **400** and **500** are used — don't ship the rest.
-
-## 2. Tabler Icons webfont (self-host)
-
-`_Host.cshtml` currently links Tabler from jsDelivr CDN. For production, self-host:
+Geist is OFL-licensed (free for commercial use, self-hosting included). To refresh
+or add a subset, request the Google Fonts CSS2 endpoint with a browser user agent
+(a default `curl` user agent gets served ttf/woff instead of woff2) and pull the
+`url(...)` from the matching `@font-face` block:
 
 ```bash
-npm i @tabler/icons-webfont@3.30.0
-# copy from node_modules/@tabler/icons-webfont/dist/:
-#   tabler-icons.min.css        -> wwwroot/css/tabler-icons.min.css
-#   fonts/tabler-icons.woff2    -> wwwroot/fonts/tabler-icons.woff2  (+ .woff, .ttf)
+curl -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+  "https://fonts.googleapis.com/css2?family=Geist:wght@400;500&family=Geist+Mono:wght@400;500&display=swap"
 ```
 
-Then in `_Host.cshtml` replace the CDN `<link>` with:
+## 2. Tabler Icons webfont (self-hosted)
 
-```html
-<link rel="stylesheet" href="css/tabler-icons.min.css" />
+```
+wwwroot/css/tabler-icons.min.css
+wwwroot/fonts/tabler-icons.woff2   (~890 KB)
+wwwroot/fonts/tabler-icons.woff    (~1.2 MB, fallback for the rare browser without woff2)
 ```
 
-(The `.min.css` references `./fonts/tabler-icons.*` relative to itself — keep the
-`fonts/` folder next to the css, or edit the `src:` url in the css to point at
-`../fonts/`.)
+`_Host.cshtml` links `_content/NeoReports.UI/css/tabler-icons.min.css`, whose
+`@font-face` `url()`s are relative (`../fonts/tabler-icons.*`) to resolve correctly
+once both files are RCL static web assets. The upstream package also ships a `.ttf`
+fallback (adds ~2.5 MB); it's deliberately not included — woff2/woff already cover
+every browser this design system targets.
 
-## Why this isn't automated
+To refresh to a newer Tabler release:
 
-Font binaries are large and license-bound; the design environment can't fetch or
-emit them. Everything else in this project is text and ships as-is. Once these
-files are dropped in, delete the CDN `<link>` and the app is 100% self-contained.
+```bash
+curl -o tabler-icons.min.css https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@<version>/dist/tabler-icons.min.css
+curl -o tabler-icons.woff2   https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@<version>/dist/fonts/tabler-icons.woff2
+curl -o tabler-icons.woff    https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@<version>/dist/fonts/tabler-icons.woff
+# then rewrite ./fonts/ -> ../fonts/ in the css and drop the .ttf src() entry
+```
+
+## Verifying self-containment
+
+With no engine mounted, run the sample and check the browser's network panel (or
+`preview_network` in this repo's tooling) — there should be zero requests to
+`fonts.googleapis.com`, `fonts.gstatic.com`, or any CDN.

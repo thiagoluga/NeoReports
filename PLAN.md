@@ -244,8 +244,18 @@ screen→route→endpoint map in `docs/ui-handoff.md`. Never invent design. See 
   a resized viewport hit a preview-tool limitation (confirmed by reproducing the same
   no-op on a pre-existing, already-shipped button), not a defect in the new code; the same
   click handler pattern works normally at the default desktop viewport.
-- [ ] **C4 — Self-host assets.** Geist/Geist Mono woff2 + Tabler icons into `wwwroot/`
-  per `wwwroot/fonts/README.md`; drop the CDN links.
+- [x] **C4 — Self-host assets.** Fetched the real binaries (the Claude Design environment
+  couldn't ship them) and dropped the CDN links entirely. Geist and Geist Mono are variable
+  fonts — Google serves one physical file per family across the whole weight axis, so
+  `tokens.css` now declares one `@font-face` per family with a weight **range**
+  (`font-weight: 400 500;`) instead of duplicating a binary per static weight; only the
+  `latin` subset was fetched (en-US-only UI). Tabler icons: `tabler-icons.min.css` +
+  woff2/woff copied in (its `.ttf` fallback, ~2.5MB, was deliberately dropped — woff2/woff
+  already cover every target browser); `_Host.cshtml` now links the local stylesheet.
+  `wwwroot/fonts/README.md` rewritten to describe what's actually checked in and how to
+  refresh it. ✅ solution builds 0 warnings; all 126 tests green; verified via the preview
+  tool's network panel — zero requests to `fonts.googleapis.com`, `fonts.gstatic.com`, or
+  any CDN; fonts/icons render correctly on screen.
 - [x] **C5 — Hosting/packaging story.** Resolved (**D32**): the UI ships as a **Razor Class
   Library** — `NeoReports.UI` has no entry point; a host mounts it with
   `AddNeoReportsUI()` + `UseNeoReportsUI("<base path>")` (default `/neoreports`,

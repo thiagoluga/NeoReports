@@ -64,7 +64,7 @@ NeoReports.UI/
 └─ wwwroot/
    ├─ css/tokens.css    # design-system tokens (colors, type, spacing, dark mode)
    ├─ css/neoreports.css# component styles (same classes as the prototype)
-   ├─ fonts/README.md   # how to self-host Geist + Tabler
+   ├─ fonts/            # self-hosted Geist/Geist Mono/Tabler binaries + README.md
    └─ assets/logo-mark.svg
 ```
 
@@ -77,14 +77,21 @@ NeoReports.UI/
 ## Wiring to the real engine
 
 See **`docs/ui-handoff.md`** for the screen → route → components → endpoint → states table,
-responsive breakpoints, and the full Tabler icon inventory. `SampleData` is the only
-mock layer — replace it with calls to the NeoReports API / EF Core.
+responsive breakpoints, and the full Tabler icon inventory. `INeoReportsApiClient`
+(`Services/NeoReportsApiClient.cs`) calls the real endpoints where the handoff table says
+one exists — reports list, report detail, run/cancel/download, all three job states —
+falling back to `SampleData` when no engine is mounted or a call fails. Cells the handoff
+marks `mock/future` (schedule, aggregate metrics, permissions, pipeline/variants, sources,
+settings) are still `SampleData` only.
 
 ## Fidelity notes
 
 - Forms are cosmetic (no validation/persistence) — this is a UI starter, not production logic.
-- Job running progress is a decorative timer (60→70% loop); wire `GET /api/jobs/{id}`.
-- Logo is a placeholder; Geist + Tabler load from CDN until self-hosted (see `wwwroot/fonts/README.md`).
+- The progress *percentage* on the running-job screen stays a decorative animation (no
+  server-side row total to compute a real one against); the counters below it (read/written/
+  retries) and the status badge/cancel button are wired to `GET /api/jobs/{id}`.
+- Logo is a placeholder. Geist, Geist Mono, and Tabler icons are self-hosted binaries in
+  `wwwroot/fonts/` (see that folder's `README.md`) — no CDN or Google Fonts calls at runtime.
 
 ## Style rules (non-negotiable)
 Sentence case · en-US copy, English technical terms · mono font for technical data ·
