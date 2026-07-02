@@ -440,7 +440,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
     private static async Task<IResult> GetJobArtifactsAsync(
         string id, IReportJobScheduler scheduler, IReportArtifactStore artifactStore, CancellationToken cancellationToken)
     {
-        var job = await scheduler.GetAsync(id, cancellationToken).ConfigureAwait(false);
+        ReportJob? job = await scheduler.GetAsync(id, cancellationToken).ConfigureAwait(false);
         if (job is null)
             return Results.NotFound(new { error = $"No job with id '{id}'." });
 
@@ -449,7 +449,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         if (job.Status is not ReportJobStatus.Completed)
             return Results.Ok(Array.Empty<ArtifactView>());
 
-        var artifacts = await artifactStore.ListAsync(id, cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<ReportArtifact> artifacts = await artifactStore.ListAsync(id, cancellationToken).ConfigureAwait(false);
         ArtifactView[] views = artifacts
             .Select(a => new ArtifactView(a.FileName, a.MimeType, a.SizeBytes))
             .ToArray();
