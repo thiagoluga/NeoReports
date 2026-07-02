@@ -308,9 +308,14 @@ not sanitized.
   invalid JSON, unknown source type, duplicate name, invalid name (3 cases, no file created),
   missing/set env var, validate valid/broken/name-taken/empty-body, delete dynamic/code-first/
   unknown, capabilities reflecting registered providers).
-- [ ] **D3 — AspNetCore: `GET /jobs`.** Expose the existing `IJobStore.ListAsync(JobQuery)`
-  (filters `status`/`report`/`since`/`limit`≤200/`offset`; `CreatedAt` desc enforced in the
-  endpoint; verify Hangfire DI path registers `IJobStore`). Integration tests per §D3.
+- [x] **D3 — AspNetCore: `GET /jobs`.** Exposes the existing `IJobStore.ListAsync(JobQuery)`:
+  `status` (enum name, case-insensitive, invalid → 400), `report`, `since` (ISO-8601, invalid →
+  400), `limit` (default 50, clamped to 1–200), `offset` (negative clamped to 0); `CreatedAt`
+  desc re-enforced in the endpoint regardless of store ordering. Both DI paths already
+  registered `IJobStore` (`AddNeoReportsInMemoryJobs` and `AddNeoReportsHangfireJobs` both do —
+  no gap to fix). ✅ solution builds 0 warnings; 173/173 tests green (8 new: empty store,
+  descending order, report-name filter, status filter + invalid status, since filter, limit=0
+  clamped to 1, large limit/negative offset don't error).
 - [ ] **D4 — AspNetCore: report detail + enriched summary.** Public computed metadata on
   `CompiledReport` (`OutputFormats`, `DestinationTypes`, `RetryOptions`,
   `FailureStrategyName`); `GET /reports/{name}` → `ReportDetailView` (columns with types,

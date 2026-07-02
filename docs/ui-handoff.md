@@ -16,7 +16,7 @@ degrade gracefully once a real endpoint exists.
 
 | Screen | Route (`.razor`) | Components used | Endpoint (real API) | States to handle |
 |---|---|---|---|---|
-| Dashboard | `/` `Dashboard` | MetricCard, Card, DataGrid, JobStatusBadge, ProgressBar, CatTile, Button | jobs strip: **mock/future** (no jobs-list endpoint yet; only `GET /api/jobs/{id}`). Metrics/sources/destinations: **mock/future** | loading (skeleton rows), empty (no recent jobs), error (engine down) |
+| Dashboard | `/` `Dashboard` | MetricCard, Card, DataGrid, JobStatusBadge, ProgressBar, CatTile, Button | jobs strip: `GET /api/jobs` (Epic D / D3). Aggregate metrics/sources/destinations: **mock/future** | loading (skeleton rows), empty (no recent jobs), error (engine down) |
 | Reports list | `/reports` `Reports` | ReportCard, FilterBar, Pill, EmptyState, Button | `GET /api/reports` (client-side filter) | loading, empty (no reports → EmptyState CTA), error |
 | Report detail | `/reports/{slug}` `ReportDetail` | Card, MetricCard, Chip, Banner, DataGrid, Timeline, JobStatusBadge, CatTile | `GET /api/reports` (find by name client-side; no per-report endpoint yet). History/metrics/perms/changes: **mock/future** | not-found (bad slug → EmptyState), loading, empty history |
 | Pipeline + variants | `/pipeline` `PipelineView` | Card, MetricCard, Badge, CatTile, Button | `GET /api/reports` (pipeline shape from the list; no per-report endpoint yet). Variant runs: **mock/future** | loading, per-variant error/paused |
@@ -47,6 +47,7 @@ POST /api/reports                   → register a dynamic report (Epic D / D2)
 POST /api/reports/validate          → dry-run compile, never registers (Epic D / D2)
 DELETE /api/reports/{name}          → remove a dynamic report; 409 for code-registered (Epic D / D2)
 GET  /api/capabilities              → registered source/format/destination type ids (Epic D / D2)
+GET  /api/jobs?status=&report=&since=&limit=&offset= → list jobs (Epic D / D3)
 GET  /api/jobs/{id}
 POST /api/jobs/{id}/cancel
 GET  /api/jobs/{id}/download
