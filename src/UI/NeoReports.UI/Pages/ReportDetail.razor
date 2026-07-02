@@ -25,6 +25,10 @@
                 <h1 style="font-size:24px">@_report.Name</h1>
                 <div style="display:flex;gap:4px">
                     @foreach (var t in _report.Tags) { <Chip>@t</Chip> }
+                    @if (_detail is not null)
+                    {
+                        <Chip Kind="token">origin: @_detail.Origin</Chip>
+                    }
                 </div>
             </div>
             <p class="sub" style="max-width:480px;margin-top:8px;line-height:1.5">@_report.Description</p>
@@ -32,9 +36,22 @@
         <div style="display:flex;gap:8px;align-self:flex-start;margin-top:6px">
             <Button Variant="outline" Icon="pencil" OnClick="@(() => Nav.NavigateTo("builder"))">Edit</Button>
             <Button Variant="primary" Icon="player-play" OnClick="RunNowAsync">Run now</Button>
+            @if (_detail is { Deletable: true })
+            {
+                <Button Variant="danger" Icon="trash" Loading="_deleting" OnClick="DeleteAsync">
+                    @(_confirmingDelete ? "Confirm delete" : "Delete report")
+                </Button>
+            }
             <button class="btn icon-only outline"><i class="ti ti-dots-vertical"></i></button>
         </div>
     </div>
+    @if (_deleteError is not null)
+    {
+        <Banner Variant="danger" Icon="alert-triangle">
+            <b>Could not delete the report</b>
+            <span style="font-size:12px">@_deleteError</span>
+        </Banner>
+    }
 
     @* Metric strip — mock/future *@
     <div class="grid-4">
@@ -78,8 +95,16 @@
                 <div class="cfg-row">
                     <span class="lbl"><i class="ti ti-columns"></i>Columns</span>
                     <div class="val">
-                        <span>6 selected</span>
-                        <span class="mono muted" style="font-size:11px">id, customer_id, total, created_at, status_id, region</span>
+                        @if (_detail is not null)
+                        {
+                            <span>@_detail.Columns.Count selected</span>
+                            <span class="mono muted" style="font-size:11px">@string.Join(", ", _detail.Columns.Select(c => c.Name))</span>
+                        }
+                        else
+                        {
+                            <span>6 selected</span>
+                            <span class="mono muted" style="font-size:11px">id, customer_id, total, created_at, status_id, region</span>
+                        }
                     </div>
                     <button class="edit-link">edit</button>
                 </div>
@@ -102,7 +127,7 @@
                 </div>
                 <div class="cfg-row">
                     <span class="lbl"><i class="ti ti-shield-check"></i>Resilience</span>
-                    <div class="val"><span class="mono" style="font-size:12px">5× retries · exp 2s..30s · jitter · abort if &gt;10% errors</span></div>
+                    <div class="val"><span class="mono" style="font-size:12px">@ResilienceSummary</span></div>
                     <span></span>
                 </div>
             </div>
@@ -200,7 +225,17 @@
 @code {
     [Parameter] public string Slug { get; set; } = "";
     private ReportSummary? _report;
+    private ApiReportDetail? _detail;
     private bool _isLive;
+    private bool _deleting;
+    private bool _confirmingDelete;
+    private string? _deleteError;
+
+    private string ResilienceSummary => _detail is null
+        ? "5× retries · exp 2s..30s · jitter · abort if >10% errors"
+        : $"{_detail.RetryMaxAttempts}× attempts · {_detail.RetryBackoff.ToLowerInvariant()} {_detail.RetryBaseDelaySeconds:0.#}s" +
+          (_detail.RetryUseJitter ? " · jitter" : "") +
+          $" · on failure: {_detail.FailureStrategy}";
 
     private async Task RunNowAsync()
     {
@@ -212,6 +247,34 @@
 
         var jobId = await Api.TryRunReportAsync(_report.Name);
         Nav.NavigateTo(jobId is not null ? $"jobs/{jobId}" : "jobs/failed");
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (_detail is null)
+            return;
+
+        if (!_confirmingDelete)
+        {
+            _confirmingDelete = true;
+            return;
+        }
+
+        _deleting = true;
+        _deleteError = null;
+        try
+        {
+            bool ok = await Api.TryDeleteReportAsync(_detail.Name);
+            if (ok)
+                Nav.NavigateTo("reports");
+            else
+                _deleteError = "The engine rejected the delete request.";
+        }
+        finally
+        {
+            _deleting = false;
+            _confirmingDelete = false;
+        }
     }
 
     private readonly (string, string)[] _params =
@@ -284,26 +347,26 @@
     protected override async Task OnParametersSetAsync()
     {
         // Demo slugs resolve from sample data first (unaffected by whether an engine is
-        // mounted); an unknown slug falls back to GET /api/reports so a real registered
-        // report at least shows its name/columns instead of "not found".
+        // mounted); an unknown slug falls back to GET /api/reports/{name} (Epic D / D4) so a
+        // real registered report shows its actual columns/formats/destinations/retry/origin
+        // instead of "not found".
         _report = SampleData.Reports.FirstOrDefault(r => r.Slug == Slug);
         if (_report is null)
         {
-            var live = await Api.TryGetReportsAsync();
-            var match = live?.FirstOrDefault(r => string.Equals(r.Name, Slug, StringComparison.Ordinal));
-            if (match is not null)
+            _detail = await Api.TryGetReportDetailAsync(Slug);
+            if (_detail is not null)
             {
                 _isLive = true;
                 _report = new ReportSummary(
                     Slug: Slug,
-                    Name: match.Name,
-                    Description: $"{match.OutputCount} output(s) · {match.Columns.Count} column(s). " +
-                                 "Schedule, history and permissions aren't exposed by the engine yet.",
+                    Name: _detail.Name,
+                    Description: $"{_detail.Columns.Count} column(s) · {_detail.Formats.Count} format(s). " +
+                                 "Schedule, metrics and permissions aren't exposed by the engine yet.",
                     Tags: Array.Empty<string>(),
                     Status: JobStatus.Never,
                     Source: "—",
-                    Formats: Array.Empty<string>(),
-                    Destination: "—",
+                    Formats: _detail.Formats.ToArray(),
+                    Destination: _detail.Destinations.Count > 0 ? string.Join(" + ", _detail.Destinations) : "—",
                     ScheduleTitle: "Not scheduled",
                     ScheduleSub: "trigger via API or the run button",
                     LastTitle: "—",

@@ -53,6 +53,27 @@ public enum ApiCreateOutcome
 /// <summary>Result of <see cref="INeoReportsApiClient.TryCreateReportAsync"/>.</summary>
 public sealed record ApiCreateResult(ApiCreateOutcome Outcome, string? Name, string? Error);
 
+/// <summary>A single output column, as returned by <c>GET /api/reports/{name}</c>.</summary>
+public sealed record ApiReportColumn(string Name, string Type, string? DisplayName, string? Format, bool Nullable);
+
+/// <summary>The full, safe definition of a registered report, as returned by <c>GET /api/reports/{name}</c>.</summary>
+public sealed record ApiReportDetail(
+    string Name,
+    IReadOnlyList<ApiReportColumn> Columns,
+    int PageSize,
+    IReadOnlyList<string> Formats,
+    IReadOnlyList<string> Destinations,
+    string FailureStrategy,
+    int RetryMaxAttempts,
+    string RetryBackoff,
+    double RetryBaseDelaySeconds,
+    bool RetryUseJitter,
+    string Origin,
+    bool Deletable);
+
+/// <summary>A finished output file of a completed job, as returned by <c>GET /api/jobs/{id}/artifacts</c>.</summary>
+public sealed record ApiArtifact(string FileName, string MimeType, long SizeBytes);
+
 /// <summary>
 /// Reads and drives NeoReports engine jobs/reports over its HTTP API (<c>MapNeoReports</c>). Every
 /// call is best-effort: on a network error, timeout, or unexpected shape it logs and returns a
@@ -101,6 +122,15 @@ public interface INeoReportsApiClient
 
     /// <summary>Removes a runtime-registered report. Returns whether the engine accepted the request.</summary>
     Task<bool> TryDeleteReportAsync(string name, CancellationToken cancellationToken = default);
+
+    /// <summary>Reads the full definition of one report, or <c>null</c> if it doesn't exist or the API isn't reachable.</summary>
+    Task<ApiReportDetail?> TryGetReportDetailAsync(string name, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lists a completed job's output files, or <c>null</c> if the job doesn't exist or the API
+    /// isn't reachable. An empty (non-null) list means the job exists but isn't complete yet.
+    /// </summary>
+    Task<IReadOnlyList<ApiArtifact>?> TryGetJobArtifactsAsync(string jobId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Locates the NeoReports engine API the UI calls.</summary>
@@ -305,6 +335,44 @@ internal sealed class NeoReportsApiClient(
         {
             logger.LogWarning(ex, "DELETE {ApiBase}reports/{Name} failed.", Sanitize(apiBase.ToString()), Sanitize(name));
             return false;
+        }
+    }
+
+    public async Task<ApiReportDetail?> TryGetReportDetailAsync(string name, CancellationToken cancellationToken = default)
+    {
+        var apiBase = ApiBase;
+        try
+        {
+            using var response = await http.GetAsync(
+                new Uri(apiBase, $"reports/{Uri.EscapeDataString(name)}"), cancellationToken).ConfigureAwait(false);
+            if (response.StatusCode == HttpStatusCode.NotFound)
+                return null;
+            response.EnsureSuccessStatusCode();
+            return await response.Content.ReadFromJsonAsync<ApiReportDetail>(Json, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsTransient(ex))
+        {
+            logger.LogWarning(ex, "GET {ApiBase}reports/{Name} unavailable; falling back to sample data.", Sanitize(apiBase.ToString()), Sanitize(name));
+            return null;
+        }
+    }
+
+    public async Task<IReadOnlyList<ApiArtifact>?> TryGetJobArtifactsAsync(string jobId, CancellationToken cancellationToken = default)
+    {
+        var apiBase = ApiBase;
+        try
+        {
+            using var response = await http.GetAsync(
+                new Uri(apiBase, $"jobs/{Uri.EscapeDataString(jobId)}/artifacts"), cancellationToken).ConfigureAwait(false);
+            if (response.StatusCode == HttpStatusCode.NotFound)
+                return null;
+            response.EnsureSuccessStatusCode();
+            return await response.Content.ReadFromJsonAsync<IReadOnlyList<ApiArtifact>>(Json, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsTransient(ex))
+        {
+            logger.LogWarning(ex, "GET {ApiBase}jobs/{JobId}/artifacts unavailable; falling back to sample data.", Sanitize(apiBase.ToString()), Sanitize(jobId));
+            return null;
         }
     }
 
