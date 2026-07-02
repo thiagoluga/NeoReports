@@ -8,6 +8,10 @@ namespace NeoReports.UI.UnitTests;
 /// <summary>Epic D / D6: <see cref="BuilderConfigMapper.ToConfigJson"/> — BuilderState to config JSON.</summary>
 public class BuilderConfigMapperTests
 {
+    private static readonly string[] IdCustomerAmountColumns = { "Id", "Customer", "Amount" };
+    private static readonly string[] CsvXlsxFormats = { "csv", "xlsx" };
+    private static readonly string[] ZetaAlphaMiddleColumns = { "Zeta", "Alpha", "Middle" };
+
     private static BuilderState FullState() => new()
     {
         ReportName = "monthly-sales",
@@ -40,11 +44,11 @@ public class BuilderConfigMapperTests
 
         JsonElement[] columns = root.GetProperty("columns").EnumerateArray().ToArray();
         columns.Length.ShouldBe(3);
-        columns.Select(c => c.GetProperty("name").GetString()).ShouldBe(new[] { "Id", "Customer", "Amount" });
+        columns.Select(c => c.GetProperty("name").GetString()).ShouldBe(IdCustomerAmountColumns);
         columns.ShouldAllBe(c => c.GetProperty("type").GetString() == "String");
 
         JsonElement[] outputs = root.GetProperty("outputs").EnumerateArray().ToArray();
-        outputs.Select(o => o.GetProperty("format").GetString()).ShouldBe(new[] { "csv", "xlsx" });
+        outputs.Select(o => o.GetProperty("format").GetString()).ShouldBe(CsvXlsxFormats);
 
         JsonElement[] destinations = root.GetProperty("destinations").EnumerateArray().ToArray();
         destinations.ShouldHaveSingleItem();
@@ -62,7 +66,7 @@ public class BuilderConfigMapperTests
 
         doc.RootElement.GetProperty("columns").EnumerateArray()
             .Select(c => c.GetProperty("name").GetString())
-            .ShouldBe(new[] { "Zeta", "Alpha", "Middle" });
+            .ShouldBe(ZetaAlphaMiddleColumns);
     }
 
     [Fact]
