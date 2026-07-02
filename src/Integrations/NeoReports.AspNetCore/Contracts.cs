@@ -20,6 +20,27 @@ public sealed record RunAcceptedResponse(
 /// <param name="Columns">Output column names, in order.</param>
 public sealed record ReportSummary(string Name, int OutputCount, IReadOnlyList<string> Columns);
 
+/// <summary>Response returned when a dynamic report is registered.</summary>
+/// <param name="Name">The report name.</param>
+/// <param name="Columns">Output column names, in order.</param>
+public sealed record ReportCreatedResponse(string Name, IReadOnlyList<string> Columns);
+
+/// <summary>Result of a dry-run compile of a report configuration (<c>POST /reports/validate</c>).</summary>
+/// <param name="Valid"><c>true</c> when the document parsed and compiled successfully.</param>
+/// <param name="Error">The failure message, when <paramref name="Valid"/> is <c>false</c>.</param>
+/// <param name="Name">The report name, when it could be determined.</param>
+/// <param name="Columns">Output column names, in order, when the config compiled.</param>
+/// <param name="NameTaken"><c>true</c> when a report is already registered under <paramref name="Name"/>.</param>
+public sealed record ValidateReportResponse(
+    bool Valid, string? Error, string? Name, IReadOnlyList<string>? Columns, bool NameTaken);
+
+/// <summary>What the host can build dynamic reports out of, from its own DI registrations.</summary>
+/// <param name="Sources">Registered <c>IConfigSourceProvider</c> type ids, sorted.</param>
+/// <param name="Formats">Registered <c>IWriterFactory</c> format ids, sorted.</param>
+/// <param name="Destinations">Registered <c>IDestinationFactory</c> type ids, sorted.</param>
+public sealed record CapabilitiesResponse(
+    IReadOnlyList<string> Sources, IReadOnlyList<string> Formats, IReadOnlyList<string> Destinations);
+
 /// <summary>Status and statistics view of a job.</summary>
 /// <param name="Id">Job id.</param>
 /// <param name="ReportName">Report the job runs.</param>

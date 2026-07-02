@@ -1,10 +1,13 @@
 using System.IO.Compression;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using NeoReports.Abstractions;
+using NeoReports.Core;
 using NeoReports.Core.Artifacts;
+using NeoReports.Core.Configuration;
 using NeoReports.Core.Pipeline;
 using NeoReports.Core.Registry;
 
@@ -18,6 +21,10 @@ public static class NeoReportsEndpointRouteBuilderExtensions
     /// <list type="bullet">
     /// <item><c>POST {prefix}/reports/{name}/run</c> — async (202 + jobId) or <c>?mode=sync</c> (streams a single output)</item>
     /// <item><c>GET  {prefix}/reports</c> — list registered reports</item>
+    /// <item><c>POST {prefix}/reports</c> — register a report at runtime from a config document (ADR D33)</item>
+    /// <item><c>POST {prefix}/reports/validate</c> — dry-run compile a config document; never registers or persists</item>
+    /// <item><c>DELETE {prefix}/reports/{name}</c> — remove a runtime-registered report (code-first reports return 409)</item>
+    /// <item><c>GET  {prefix}/capabilities</c> — source/format/destination type ids the host has registered</item>
     /// <item><c>GET  {prefix}/jobs/{id}</c> — job status + stats</item>
     /// <item><c>POST {prefix}/jobs/{id}/cancel</c> — request cancellation</item>
     /// <item><c>GET  {prefix}/jobs/{id}/download</c> — download the finished result</item>
@@ -50,6 +57,10 @@ public static class NeoReportsEndpointRouteBuilderExtensions
 
         group.MapPost("/reports/{name}/run", RunReportAsync);
         group.MapGet("/reports", ListReports);
+        group.MapPost("/reports", CreateReportAsync);
+        group.MapPost("/reports/validate", ValidateReportAsync);
+        group.MapDelete("/reports/{name}", DeleteReportAsync);
+        group.MapGet("/capabilities", GetCapabilities);
         group.MapGet("/jobs/{id}", GetJobAsync);
         group.MapPost("/jobs/{id}/cancel", CancelJobAsync);
         group.MapGet("/jobs/{id}/download", DownloadAsync);
@@ -119,6 +130,160 @@ public static class NeoReportsEndpointRouteBuilderExtensions
             .OrderBy(r => r.Name, StringComparer.Ordinal)
             .ToArray();
         return Results.Ok(reports);
+    }
+
+    private static async Task<IResult> CreateReportAsync(
+        HttpContext http,
+        [FromServices] IMutableReportRegistry registry,
+        [FromServices] IReportConfigStore configStore,
+        CancellationToken cancellationToken)
+    {
+        string document = await ReadBodyAsync(http, cancellationToken).ConfigureAwait(false);
+
+        ReportConfig config;
+        try
+        {
+            config = new JsonReportConfigParser().Parse(document);
+        }
+        catch (ConfigurationException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+
+        if (!DynamicReportName.IsValid(config.Name))
+        {
+            return Results.BadRequest(new
+            {
+                error = $"'{config.Name}' is not a valid report name. Names must match {DynamicReportName.Pattern}.",
+            });
+        }
+
+        if (registry.Contains(config.Name))
+            return Results.Conflict(new { error = $"A report named '{config.Name}' already exists." });
+
+        CompiledReport compiled;
+        try
+        {
+            ReportConfig substituted = ReportConfigEnvironment.Substitute(config);
+            compiled = ReportConfigCompiler.Compile(substituted, http.RequestServices);
+        }
+        catch (ConfigurationException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+
+        try
+        {
+            registry.Register(compiled);
+        }
+        catch (ConfigurationException ex)
+        {
+            // A concurrent request registered the same name between the Contains check above and
+            // here; the registry's own duplicate-name guard is the source of truth.
+            return Results.Conflict(new { error = ex.Message });
+        }
+
+        try
+        {
+            // The store persists the ORIGINAL document (with any ${VAR} placeholders unresolved),
+            // never the substituted one — a secret must never reach disk.
+            await configStore.SaveAsync(config.Name, document, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            registry.Unregister(config.Name);
+            return Results.Problem(
+                title: "Failed to persist the dynamic report.",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+
+        var columns = compiled.Schema.Columns.Select(c => c.Name).ToArray();
+        return Results.Created(
+            $"{http.Request.PathBase}/api/reports/{config.Name}", new ReportCreatedResponse(config.Name, columns));
+    }
+
+    private static async Task<IResult> ValidateReportAsync(
+        HttpContext http, [FromServices] IReportRegistry registry, CancellationToken cancellationToken)
+    {
+        string document = await ReadBodyAsync(http, cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(document))
+            return Results.BadRequest(new { error = "Report configuration document is empty." });
+
+        string? name = null;
+        try
+        {
+            ReportConfig config = new JsonReportConfigParser().Parse(document);
+            name = config.Name;
+
+            if (!DynamicReportName.IsValid(config.Name))
+            {
+                return Results.Ok(new ValidateReportResponse(
+                    Valid: false,
+                    Error: $"'{config.Name}' is not a valid report name. Names must match {DynamicReportName.Pattern}.",
+                    Name: config.Name,
+                    Columns: null,
+                    NameTaken: registry.Contains(config.Name)));
+            }
+
+            ReportConfig substituted = ReportConfigEnvironment.Substitute(config);
+            CompiledReport compiled = ReportConfigCompiler.Compile(substituted, http.RequestServices);
+            var columns = compiled.Schema.Columns.Select(c => c.Name).ToArray();
+
+            return Results.Ok(new ValidateReportResponse(
+                Valid: true, Error: null, Name: config.Name, Columns: columns, NameTaken: registry.Contains(config.Name)));
+        }
+        catch (ConfigurationException ex)
+        {
+            return Results.Ok(new ValidateReportResponse(
+                Valid: false, Error: ex.Message, Name: name, Columns: null,
+                NameTaken: name is not null && registry.Contains(name)));
+        }
+    }
+
+    private static async Task<IResult> DeleteReportAsync(
+        string name,
+        [FromServices] IMutableReportRegistry registry,
+        [FromServices] IReportConfigStore configStore,
+        CancellationToken cancellationToken)
+    {
+        if (!registry.Contains(name))
+            return Results.NotFound(new { error = $"No report named '{name}' is registered." });
+
+        bool inStore = DynamicReportName.IsValid(name) &&
+            await configStore.ExistsAsync(name, cancellationToken).ConfigureAwait(false);
+        if (!inStore)
+        {
+            return Results.Conflict(new
+            {
+                error = $"Report '{name}' is code-registered and cannot be deleted at runtime.",
+            });
+        }
+
+        // Store first: if the process dies between the two calls, the report stays registered
+        // until restart but won't rehydrate on the next one — self-healing. The opposite order
+        // would resurrect a "deleted" report on the next rehydration.
+        await configStore.DeleteAsync(name, cancellationToken).ConfigureAwait(false);
+        registry.Unregister(name);
+        return Results.NoContent();
+    }
+
+    private static IResult GetCapabilities(HttpContext http)
+    {
+        var sources = http.RequestServices.GetServices<IConfigSourceProvider>().Select(p => p.Type)
+            .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(s => s, StringComparer.Ordinal).ToArray();
+        var formats = http.RequestServices.GetServices<IWriterFactory>().Select(f => f.Format)
+            .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(s => s, StringComparer.Ordinal).ToArray();
+        var destinations = http.RequestServices.GetServices<IDestinationFactory>().Select(f => f.Type)
+            .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(s => s, StringComparer.Ordinal).ToArray();
+
+        return Results.Ok(new CapabilitiesResponse(sources, formats, destinations));
+    }
+
+    private static async Task<string> ReadBodyAsync(HttpContext http, CancellationToken cancellationToken)
+    {
+        using var reader = new StreamReader(http.Request.Body);
+        return await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<IResult> GetJobAsync(
