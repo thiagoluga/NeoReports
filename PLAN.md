@@ -211,9 +211,23 @@ screen→route→endpoint map in `docs/ui-handoff.md`. Never invent design. See 
   the solution; fixed to compile (Razor named-fragment wrapping, `@page` on `_Host`, en-US
   leftovers) and smoke-tested: all 19 routes serve 200. Handoff table corrected to the real
   API surface (no invented endpoints). ✅ builds 0 warnings; all 126 tests still green.
-- [ ] **C2 — Wire the real endpoints.** Replace `SampleData` where the engine has an API
-  today (`GET /api/reports`, `GET /api/jobs/{id}`, run/cancel/download) per the handoff
-  table; keep `mock/future` cells on mocks with graceful degradation.
+- [x] **C2 — Wire the real endpoints.** New `INeoReportsApiClient`/`NeoReportsApiClient`
+  (`src/UI/NeoReports.UI/Services`) calls `GET /api/reports`, `GET /api/jobs/{id}`,
+  `POST /api/jobs/{id}/cancel`, `POST /api/reports/{name}/run`, and builds the download URL —
+  registered by `AddNeoReportsUI()` via `AddHttpClient`, resolving the engine's scheme+host
+  from `NavigationManager.BaseUri` (independent of the UI's own mount path, since
+  `MapNeoReports` and `UseNeoReportsUI` are separate route branches). Every call is
+  best-effort (`Try*`, catches network/JSON/timeout) so a page never breaks when no engine
+  is mounted — it falls back to `SampleData`. Wired: **Reports list** (real reports overlay
+  sample ones), **Report detail** (unknown slugs resolve by name against the live list before
+  "not found"), **Run now/Run** buttons (real async trigger → lands on the new job), and all
+  three **Job pages** (`Running`/`Completed`/`Failed`, each gaining a second `@page` route
+  with `{Id}` and polling `GET /api/jobs/{id}` for real status/counters; `Running` redirects
+  to `Completed`/`Failed` on terminal status; `Cancel`/`Download`/`Retry` call the real
+  endpoints). Cells with no engine API today (schedule, metrics, permissions, pipeline
+  variants, sources, settings) are untouched — still `SampleData`. ✅ solution builds 0
+  warnings; all 126 tests green; sample host smoke-tested on all touched routes with no
+  engine mounted (graceful fallback, 0 unhandled exceptions in the server log).
 - [ ] **C3 — Responsive breakpoints.** Add the `@media` blocks (xl/lg/md/sm) specified in
   `docs/ui-handoff.md` §(b) to `neoreports.css`.
 - [ ] **C4 — Self-host assets.** Geist/Geist Mono woff2 + Tabler icons into `wwwroot/`
