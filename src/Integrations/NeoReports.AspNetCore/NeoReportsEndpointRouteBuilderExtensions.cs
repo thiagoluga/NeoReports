@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO.Compression;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -25,6 +26,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
     /// <item><c>POST {prefix}/reports/validate</c> — dry-run compile a config document; never registers or persists</item>
     /// <item><c>DELETE {prefix}/reports/{name}</c> — remove a runtime-registered report (code-first reports return 409)</item>
     /// <item><c>GET  {prefix}/capabilities</c> — source/format/destination type ids the host has registered</item>
+    /// <item><c>GET  {prefix}/jobs</c> — list jobs, filterable by status/report/since, paged</item>
     /// <item><c>GET  {prefix}/jobs/{id}</c> — job status + stats</item>
     /// <item><c>POST {prefix}/jobs/{id}/cancel</c> — request cancellation</item>
     /// <item><c>GET  {prefix}/jobs/{id}/download</c> — download the finished result</item>
@@ -61,6 +63,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         group.MapPost("/reports/validate", ValidateReportAsync);
         group.MapDelete("/reports/{name}", DeleteReportAsync);
         group.MapGet("/capabilities", GetCapabilities);
+        group.MapGet("/jobs", ListJobsAsync);
         group.MapGet("/jobs/{id}", GetJobAsync);
         group.MapPost("/jobs/{id}/cancel", CancelJobAsync);
         group.MapGet("/jobs/{id}/download", DownloadAsync);
@@ -284,6 +287,50 @@ public static class NeoReportsEndpointRouteBuilderExtensions
     {
         using var reader = new StreamReader(http.Request.Body);
         return await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> ListJobsAsync(
+        string? status,
+        string? report,
+        string? since,
+        int? limit,
+        int? offset,
+        [FromServices] IJobStore jobStore,
+        CancellationToken cancellationToken)
+    {
+        ReportJobStatus? statusFilter = null;
+        if (!string.IsNullOrEmpty(status))
+        {
+            if (!Enum.TryParse(status, ignoreCase: true, out ReportJobStatus parsedStatus))
+                return Results.BadRequest(new { error = $"'{status}' is not a valid job status." });
+
+            statusFilter = parsedStatus;
+        }
+
+        DateTimeOffset? sinceFilter = null;
+        if (!string.IsNullOrEmpty(since))
+        {
+            if (!DateTimeOffset.TryParse(
+                since, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out DateTimeOffset parsedSince))
+            {
+                return Results.BadRequest(new { error = $"'{since}' is not a valid ISO-8601 timestamp." });
+            }
+
+            sinceFilter = parsedSince;
+        }
+
+        var query = new JobQuery
+        {
+            Status = statusFilter,
+            ReportName = report,
+            Since = sinceFilter,
+            Limit = Math.Clamp(limit ?? 50, 1, 200),
+            Offset = Math.Max(offset ?? 0, 0),
+        };
+
+        IReadOnlyList<ReportJob> jobs = await jobStore.ListAsync(query, cancellationToken).ConfigureAwait(false);
+        JobView[] ordered = jobs.OrderByDescending(j => j.CreatedAt).Select(JobView.From).ToArray();
+        return Results.Ok(ordered);
     }
 
     private static async Task<IResult> GetJobAsync(

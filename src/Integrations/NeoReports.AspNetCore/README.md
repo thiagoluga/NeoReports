@@ -16,6 +16,7 @@ reports and jobs, via Minimal API.
 | POST | `/reports/validate` | dry-run compile a config document → `200 { valid, error, name, columns, nameTaken }`; never registers or persists |
 | DELETE | `/reports/{name}` | remove a runtime-registered report → `204` (`409` for a code-registered report, `404` if unknown) |
 | GET | `/capabilities` | source/format/destination type ids the host has registered |
+| GET | `/jobs` | list jobs, filterable by `status`/`report`/`since`, paged (`limit` ≤ 200, `offset`) |
 | GET | `/jobs/{id}` | job status + stats |
 | POST | `/jobs/{id}/cancel` | request cooperative cancellation |
 | GET | `/jobs/{id}/download` | download the result (multi-output → zip) |
