@@ -9,7 +9,10 @@
             <img src="_content/NeoReports.UI/assets/logo-mark.svg" width="26" height="26" alt="" />
             <b>NeoReports</b>
         </a>
-        <nav class="nav">
+        <button class="icon-btn nav-toggle" aria-label="Menu" aria-expanded="@_menuOpen" @onclick="ToggleMenu">
+            <i class="ti ti-@(_menuOpen ? "x" : "menu-2")"></i>
+        </button>
+        <nav class="nav @(_menuOpen ? "open" : "")">
             @foreach (var item in Items)
             {
                 <a class="nav-item @(IsActive(item.Match) ? "active" : "")" href="@item.Href">@item.Label</a>
@@ -36,9 +39,20 @@
         new("Settings",  "settings/alerts",  "settings"),
     };
 
+    private bool _menuOpen;
+
     protected override void OnInitialized() => Nav.LocationChanged += OnLocationChanged;
     public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
-    private void OnLocationChanged(object? sender, EventArgs e) => InvokeAsync(StateHasChanged);
+
+    private void OnLocationChanged(object? sender, EventArgs e)
+    {
+        // Close the mobile menu on navigation — the layout persists across pages, so the
+        // toggle state would otherwise survive into the next screen.
+        _menuOpen = false;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void ToggleMenu() => _menuOpen = !_menuOpen;
 
     private bool IsActive(string match)
     {

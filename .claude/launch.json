@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web-ui-sample",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "samples/08-web-ui", "--no-launch-profile", "--", "--environment", "Development"],
+      "port": 5000
+    }
+  ]
+}

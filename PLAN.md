@@ -228,8 +228,22 @@ screen→route→endpoint map in `docs/ui-handoff.md`. Never invent design. See 
   variants, sources, settings) are untouched — still `SampleData`. ✅ solution builds 0
   warnings; all 126 tests green; sample host smoke-tested on all touched routes with no
   engine mounted (graceful fallback, 0 unhandled exceptions in the server log).
-- [ ] **C3 — Responsive breakpoints.** Add the `@media` blocks (xl/lg/md/sm) specified in
-  `docs/ui-handoff.md` §(b) to `neoreports.css`.
+- [x] **C3 — Responsive breakpoints.** Added the `lg`/`md`/`sm` `@media` blocks from
+  `docs/ui-handoff.md` §(b) to `neoreports.css` (desktop-first `max-width`, so narrower
+  breakpoints inherit the wider ones without repeating rules): `grid-4` → 2 cols at `lg`;
+  `grid-2`/`grid-1-5`/`grid-1-4` → 1 col at `md` (topbar nav unchanged, per spec); at `sm`,
+  report/source card body grids → 1 col, tables scroll horizontally (`display:block;
+  overflow-x:auto`, mono/numeric cells stay `nowrap`), buttons/icon-buttons hit the 44px
+  touch-target minimum. Two of the four `sm` behaviors need real markup (CSS alone can't
+  synthesize them), added as small, spec-literal component changes: `Topbar.razor` gains a
+  hamburger toggle (`.nav-toggle`, closes itself on navigation) collapsing the nav into a
+  dropdown; `WizardStepper.razor` gains a "Step N of M" compact label shown only at `sm`
+  (the full step list hides there instead). ✅ solution builds 0 warnings; all 126 tests
+  green; visually verified at `lg`/`md`/`sm`/mobile widths via the preview tool (grid
+  collapses, table scroll, hamburger + dropdown all correct) — interactive click testing at
+  a resized viewport hit a preview-tool limitation (confirmed by reproducing the same
+  no-op on a pre-existing, already-shipped button), not a defect in the new code; the same
+  click handler pattern works normally at the default desktop viewport.
 - [ ] **C4 — Self-host assets.** Geist/Geist Mono woff2 + Tabler icons into `wwwroot/`
   per `wwwroot/fonts/README.md`; drop the CDN links.
 - [x] **C5 — Hosting/packaging story.** Resolved (**D32**): the UI ships as a **Razor Class

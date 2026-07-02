@@ -2,6 +2,9 @@
    Usage:  <WizardStepper Steps="@(new[]{"Source","Columns","Format","Destination","Review"})" Current="2" /> *@
 
 <div class="wizard">
+    @* Shown only under the sm breakpoint (see neoreports.css); the full step list below is
+       hidden there instead — too dense to read at that width. *@
+    <span class="wizard-compact">Step @(Current + 1) of @Steps.Length</span>
     @for (var i = 0; i < Steps.Length; i++)
     {
         var state = StateOf(i);
