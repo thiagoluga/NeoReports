@@ -1,5 +1,3 @@
-using NeoReports.UI.Models;
-
 namespace NeoReports.UI.Services;
 
 /// <summary>
@@ -8,16 +6,7 @@ namespace NeoReports.UI.Services;
 /// </summary>
 public sealed class BuilderState
 {
-    public string Query { get; set; } = "";
-    public Dictionary<string, string> Parameters { get; set; } = [];
     public HashSet<string> Formats { get; set; } = ["csv", "xlsx"];
-
-    public string ScheduleMode { get; set; } = "recurring"; // none | once | recurring
-    public HashSet<int> Weekdays { get; set; } = [1];  // 0=Sun .. 6=Sat
-    public bool SaveAsTemplate { get; set; } = true;
-
-    // Real, engine-backed fields (Epic D / D6) — everything above this line stays cosmetic
-    // (no ReportConfig equivalent) and is never sent to the engine.
 
     /// <summary>Unique report name; also the URL identifier once saved.</summary>
     public string ReportName { get; set; } = "";
@@ -77,12 +66,7 @@ public sealed class BuilderState
     /// <summary>Reset everything (when starting a new report).</summary>
     public void Reset()
     {
-        Query = "";
-        Parameters.Clear();
         Formats = ["csv", "xlsx"];
-        ScheduleMode = "recurring";
-        Weekdays = [1];
-        SaveAsTemplate = true;
 
         ReportName = "";
         SourceType = "sql";
