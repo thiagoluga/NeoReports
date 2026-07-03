@@ -262,18 +262,9 @@
         return new ReportMetrics(jobs.Count.ToString(), successRate, avgDuration);
     }
 
-    private string ResilienceSummary
-    {
-        get
-        {
-            if (_detail is null)
-                return "5× retries · exp 2s..30s · jitter · abort if >10% errors";
-
-            string jitter = _detail.RetryUseJitter ? " · jitter" : "";
-            return $"{_detail.RetryMaxAttempts}× attempts · {_detail.RetryBackoff.ToLowerInvariant()} {_detail.RetryBaseDelaySeconds:0.#}s" +
-                   jitter + $" · on failure: {_detail.FailureStrategy}";
-        }
-    }
+    private string ResilienceSummary => _detail is null
+        ? "5× retries · exp 2s..30s · jitter · abort if >10% errors"
+        : ResilienceFormatter.Format(_detail);
 
     private async Task RunNowAsync()
     {

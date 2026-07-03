@@ -76,11 +76,41 @@
         </div>
     </Card>
 
+    @* Destinations — real destination types from GET /api/reports/{name} once resolved; no
+       per-destination delivery confirmation exists, so this only lists what's configured. *@
     <Card>
         <TitleContent>Destinations</TitleContent>
-        <SubContent><span style="color:var(--success-fg)"><i class="ti ti-check" style="font-size:12px;margin-right:4px"></i>2 of 2 delivered</span></SubContent>
+        <SubContent>
+        @if (_reportDetail is not null)
+        {
+            <span class="mono muted" style="font-size:12px">@_reportDetail.Destinations.Count configured</span>
+        }
+        else
+        {
+            <span style="color:var(--success-fg)"><i class="ti ti-check" style="font-size:12px;margin-right:4px"></i>2 of 2 delivered</span>
+        }
+        </SubContent>
         <ChildContent>
         <div>
+        @if (_reportDetail is not null)
+        {
+            @if (_reportDetail.Destinations.Count == 0)
+            {
+                <span class="muted" style="font-size:12px">No destinations configured</span>
+            }
+            else
+            {
+                @foreach (var d in _reportDetail.Destinations)
+                {
+                    <div class="dest-row">
+                        <CatTile Sm="true" Kind="info" Icon="cloud-upload" />
+                        <div><div class="d-name">@d</div></div>
+                    </div>
+                }
+            }
+        }
+        else
+        {
             <div class="dest-row">
                 <CatTile Sm="true" Kind="info" Icon="cloud-upload" />
                 <div><div class="d-name">SharePoint · acme.sharepoint.com</div><div class="d-path">/Sales/2026/05/sales-2026-05-27.xlsx</div></div>
@@ -93,10 +123,7 @@
                 <span class="d-time">✓ 14:35:54</span>
                 <Button Variant="outline" Size="sm" Icon="external-link">Open</Button>
             </div>
-        </div>
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--bg2);border-radius:var(--r-md);margin-top:4px">
-            <span class="muted" style="font-size:12px">Want to send to another destination?</span>
-            <Button Variant="outline" Size="sm" Icon="plus">Send to…</Button>
+        }
         </div>
         </ChildContent>
     </Card>
@@ -108,19 +135,24 @@
                 <Timeline Events="_events" Expanded="true" />
             </ChildContent>
         </Card>
+        @* Configuration — Report/Formats/Buffer/Retry policy real once GET /api/reports/{name}
+           resolves. "Worker" and "Run by" are dropped rather than replaced: v1 is single-worker
+           (no worker-pool concept) and jobs carry no "triggered by" identity. *@
         <Card Title="Configuration" Sub="Snapshot of what ran">
             <div class="kv">
                 <span class="k">Report</span><span class="v mono">@(_job?.ReportName ?? "sales-db · SQL Server")</span>
-                <span class="k">Formats</span><span class="v">CSV, XLSX</span>
-                <span class="k">Buffer</span><span class="v mono">1,000 rows/page</span>
-                <span class="k">Retry policy</span><span class="v mono">5× · exp 2s..30s · jitter</span>
-                <span class="k">Worker</span><span class="v mono">worker-04 · default pool</span>
+                <span class="k">Formats</span><span class="v">@FormatsText</span>
+                <span class="k">Buffer</span><span class="v mono">@BufferText</span>
+                <span class="k">Retry policy</span><span class="v mono">@RetryPolicyText</span>
             </div>
-            <div class="row" style="padding-top:12px;border-top:0.5px solid var(--border);margin-top:4px">
-                <span class="muted" style="font-size:12px">Run by</span>
-                <span style="font-weight:500;font-size:13px">marina.s</span>
-                <span class="mono muted" style="font-size:11px;margin-left:auto">manual · 14:32:06</span>
-            </div>
+            @if (_job is null)
+            {
+                <div class="row" style="padding-top:12px;border-top:0.5px solid var(--border);margin-top:4px">
+                    <span class="muted" style="font-size:12px">Run by</span>
+                    <span style="font-weight:500;font-size:13px">marina.s</span>
+                    <span class="mono muted" style="font-size:11px;margin-left:auto">manual · 14:32:06</span>
+                </div>
+            }
         </Card>
     </div>
 </div>
@@ -132,6 +164,7 @@
     [Parameter] public string? Id { get; set; }
     private string EffectiveId => Id ?? "7c4a01f3";
     private ApiJobView? _job;
+    private ApiReportDetail? _reportDetail;
     private IReadOnlyList<ApiArtifact>? _artifacts;
 
     private string Title => _job?.ReportName ?? "Monthly sales · retail";
@@ -149,6 +182,17 @@
     private string WrittenValue => _job is not null ? _job.Stats.RecordsWritten.ToString("N0") : "42,184";
     private string WrittenSub => _job is not null ? "records" : "0 dropped";
     private string RetriesValue => _job is not null ? _job.Stats.Retries.ToString() : "1";
+
+    // Configuration card — real once GET /api/reports/{name} resolves for the job's report.
+    private string FormatsText => _reportDetail is not null
+        ? string.Join(", ", _reportDetail.Formats.Select(f => f.ToUpperInvariant()))
+        : "CSV, XLSX";
+    private string BufferText => _reportDetail is not null
+        ? $"{_reportDetail.PageSize:N0} rows/page"
+        : "1,000 rows/page";
+    private string RetryPolicyText => _reportDetail is not null
+        ? ResilienceFormatter.Format(_reportDetail)
+        : "5× · exp 2s..30s · jitter";
 
     private readonly PhaseStepper.Phase[] _phases =
     {
@@ -173,7 +217,10 @@
         // GET /api/jobs/{id} — falls back to the demo content above when unreachable or unknown.
         _job = await Api.TryGetJobAsync(EffectiveId);
         if (_job is not null)
+        {
             _artifacts = await Api.TryGetJobArtifactsAsync(EffectiveId);
+            _reportDetail = await Api.TryGetReportDetailAsync(_job.ReportName);
+        }
     }
 
     private void Download()
