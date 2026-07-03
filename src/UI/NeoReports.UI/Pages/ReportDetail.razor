@@ -53,12 +53,13 @@
         </Banner>
     }
 
-    @* Metric strip — mock/future *@
+    @* Metric strip — Total runs/Success rate/Avg duration computed from GET /api/jobs when live
+       (Epic D / D7 pattern); Next run stays honest ("Not scheduled") since v1 has no scheduler. *@
     <div class="grid-4">
-        <MetricCard Icon="player-play" Label="Total runs" Value="386" Sub="since Jan 12, 2025" />
-        <MetricCard Icon="circle-check" Label="Success rate" Value="98.7%" Sub="vs last month" DeltaDir="up" DeltaText="+0.4pp" />
-        <MetricCard Icon="clock" Label="Avg duration" Value="3m 24s" Sub="last 30 days" />
-        <MetricCard Icon="calendar" Label="Next run" Value="Mon Jun 3" Sub="06:00 BRT · in 6 days" />
+        <MetricCard Icon="player-play" Label="Total runs" Value="@_metrics.TotalRuns" Sub="@(_isLive ? "known jobs" : "since Jan 12, 2025")" />
+        <MetricCard Icon="circle-check" Label="Success rate" Value="@_metrics.SuccessRate" Sub="@(_isLive ? "known jobs · terminal" : "vs last month")" DeltaDir="@(_isLive ? null : "up")" DeltaText="@(_isLive ? null : "+0.4pp")" />
+        <MetricCard Icon="clock" Label="Avg duration" Value="@_metrics.AvgDuration" Sub="@(_isLive ? "completed jobs" : "last 30 days")" />
+        <MetricCard Icon="calendar" Label="Next run" Value="@(_isLive ? "Not scheduled" : "Mon Jun 3")" Sub="@(_isLive ? "trigger via API or the run button" : "06:00 BRT · in 6 days")" />
     </div>
 
     <div class="grid-1-4">
@@ -73,7 +74,10 @@
                         <span class="row" style="gap:8px">
                             <CatTile Sm="true" Kind="teal" Icon="database" />
                             <span style="font-weight:500">@_report.Source</span>
-                            <span class="mono muted" style="font-size:11px">SQL Server</span>
+                            @if (!_isLive)
+                            {
+                                <span class="mono muted" style="font-size:11px">SQL Server</span>
+                            }
                         </span>
                     </div>
                     <button class="edit-link">edit</button>
@@ -231,6 +235,33 @@
     private bool _confirmingDelete;
     private string? _deleteError;
 
+    private sealed record ReportMetrics(string TotalRuns, string SuccessRate, string AvgDuration)
+    {
+        public static readonly ReportMetrics Demo = new("386", "98.7%", "3m 24s");
+    }
+
+    private ReportMetrics _metrics = ReportMetrics.Demo;
+
+    private static ReportMetrics ComputeMetrics(IReadOnlyList<ApiJobView> jobs)
+    {
+        var terminal = jobs.Where(j => j.Status is "Completed" or "Failed" or "Cancelled").ToArray();
+        var completed = jobs.Where(j => j.Status == "Completed").ToArray();
+
+        string successRate = terminal.Length > 0
+            ? $"{100.0 * completed.Length / terminal.Length:0.0}%"
+            : "—";
+
+        var durations = completed
+            .Where(j => j.StartedAt is not null && j.CompletedAt is not null)
+            .Select(j => j.CompletedAt!.Value - j.StartedAt!.Value)
+            .ToArray();
+        string avgDuration = durations.Length > 0
+            ? FormatDuration(DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch + TimeSpan.FromTicks((long)durations.Average(d => d.Ticks)))
+            : "—";
+
+        return new ReportMetrics(jobs.Count.ToString(), successRate, avgDuration);
+    }
+
     private string ResilienceSummary
     {
         get
@@ -368,7 +399,7 @@
                     Slug: Slug,
                     Name: _detail.Name,
                     Description: $"{_detail.Columns.Count} column(s) · {_detail.Formats.Count} format(s). " +
-                                 "Schedule, metrics and permissions aren't exposed by the engine yet.",
+                                 "Schedule and permissions aren't exposed by the engine yet.",
                     Tags: Array.Empty<string>(),
                     Status: JobStatus.Never,
                     Source: "—",
@@ -387,9 +418,14 @@
 
         if (_isLive)
         {
-            var jobs = await Api.TryListJobsAsync(report: _report.Name, limit: 10);
+            // limit: 200 so the metric strip reflects the report's full known history, not just
+            // the 10 rows shown in the table below (same pattern as Dashboard's ComputeMetrics).
+            var jobs = await Api.TryListJobsAsync(report: _report.Name, limit: 200);
             if (jobs is not null)
-                _history = jobs.Count > 0 ? jobs.Select(ToHistoryRow).ToArray() : Array.Empty<HistoryRow>();
+            {
+                _history = jobs.Count > 0 ? jobs.Take(10).Select(ToHistoryRow).ToArray() : Array.Empty<HistoryRow>();
+                _metrics = ComputeMetrics(jobs);
+            }
         }
 
         var seed = new[]
