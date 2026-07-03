@@ -1,7 +1,8 @@
 # Sample 09 — Web UI with a live engine
 
-`samples/08-web-ui` hosts `NeoReports.UI` alone, so every screen runs on `SampleData` (demo
-mode). This sample mounts the UI **and** the engine in the same host — `NeoReports.Core` +
+`samples/08-web-ui` hosts `NeoReports.UI` alone, so every screen shows its honest empty/"engine
+unreachable" state (D36 — no mock data ships). This sample mounts the UI **and** the engine in
+the same host — `NeoReports.Core` +
 `NeoReports.AspNetCore`, with dynamic report registration enabled (`AddDynamicReports`, Epic D /
 ADR D33) — so you can click through the real, end-to-end flow: register a report from the
 Builder, validate it, save it, run it, download a real file, and delete it.
@@ -70,21 +71,19 @@ ls samples/09-web-ui-live/out/
 - **Sources** (`/sources`) — an **Engine source types** card shows `inmemory`, from
   `GET /api/capabilities`.
 
-### 5. What's still demo, even here
+### 5. What's not here anymore
 
-This sample proves the *dynamic-registration* path end to end, but a few screens are
-intentionally still `SampleData` regardless of the engine being live — see
-`docs/ui-handoff.md` for the full breakdown:
+As of D36, the UI no longer ships mock content that has no real backing — it was removed
+outright rather than left as decoration. This includes Pipeline, Source explorer, the five
+Settings screens, the decorative source/destination/format catalogs, and several cards embedded
+in otherwise-real screens (Permissions, Recent changes, Schedule, Parameters, fake job
+telemetry). See `docs/ui-removed-mock-content.md` for the full list, why each was removed, and
+what a real version would need.
 
-- **Pipeline** (`/pipeline`) — a single fixed demo pipeline; variants are post-MVP (D23).
-- **Source explorer** (`/sources/{name}/explore`) — schema/data preview needs its own ADR
-  (introspection is security-sensitive).
-- **Settings** (Alerts / Authentication / Plugins / Retention / Audit) — out of v1 scope.
-- On the Builder: the *Format*/*Destination* decorative catalogs (SharePoint, Email, S3…),
-  parameters table, pagination/resilience controls, and the Review step's schedule/template
-  fields are cosmetic — only the fields the engine actually consumes are wired.
+What's left cosmetic and *not* removed (each has a real reason, not just unfinished wiring):
 - The running-job progress **percentage** stays a decorative animation by design (no
   server-side row total to compute a real one against); the counters below it are real.
+- Scheduling (recurring runs) is deferred, not removed — see D35.
 
 ## Cleaning up
 

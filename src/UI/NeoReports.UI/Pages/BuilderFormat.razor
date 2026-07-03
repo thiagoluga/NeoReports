@@ -1,7 +1,9 @@
 @page "/builder/format"
+@using NeoReports.UI.Models
 @using NeoReports.UI.Services
 @inject NavigationManager Nav
 @inject BuilderState Wizard
+@inject INeoReportsApiClient Api
 
 <div class="page">
     <WizardStepper Steps="Steps" Current="2" />
@@ -13,88 +15,31 @@
         </div>
     </div>
 
-    <div>
-        <p class="label-sm" style="margin-bottom:10px">Available formats</p>
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
-            @foreach (var f in SampleData.Formats)
-            {
-                <FormatCard Format="f" Selected="Wizard.Formats.Contains(f.Id)" OnClick="@(() => Toggle(f.Id))" />
-            }
-        </div>
-    </div>
-
-    @if (Wizard.Formats.Count > 0)
+    @* Available formats — GET /api/capabilities (Epic D / D36 follow-up). Previously a fixed
+       6-option catalog (CSV/XLSX/PDF/JSON/TXT/XML) regardless of what the engine actually has
+       registered; v1 only ships CSV and XLSX writers, so PDF/JSON/TXT/XML were always dead ends.
+       Per-format configuration (delimiter/encoding, sheet name/auto-filter, etc.) was removed:
+       none of it was ever sent to the engine — OutputConfig only carries the format id. *@
+    @if (!Wizard.EngineAvailable)
+    {
+        <Banner Variant="info" Icon="info-circle">
+            <span style="font-size:12px">No engine capabilities were found in step 1 — nothing to select here yet.</span>
+        </Banner>
+    }
+    else if (_engineFormats.Count == 0)
+    {
+        <EmptyState Icon="file-off" Title="No output formats registered">
+            <ChildContent>The engine has no <span class="mono">IWriterFactory</span> registered.</ChildContent>
+        </EmptyState>
+    }
+    else
     {
         <div>
-            <p class="label-sm" style="margin-bottom:10px">Per-format configuration</p>
-            <div class="col" style="gap:12px">
-                @if (Wizard.Formats.Contains("csv"))
+            <p class="label-sm" style="margin-bottom:10px">Available formats</p>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+                @foreach (var f in _engineFormats.Select(ToFormatOption))
                 {
-                    <div class="config-card">
-                        <div class="cc-head">
-                            <CatTile Kind="teal" Icon="table" />
-                            <div class="info"><b>CSV</b><span>sales-{date:YYYY-MM-DD}.csv</span></div>
-                            <button class="btn icon-only sm subtle"><i class="ti ti-trash"></i></button>
-                        </div>
-                        <div class="cc-split">
-                            <div class="left">
-                                <div class="cgr"><span class="lbl">Delimiter</span><div class="ctl"><ChipGroup Mono="true" Options="_delimOpts" Value="_delim" ValueChanged="v => _delim = v" /></div></div>
-                                <div class="cgr"><span class="lbl">Encoding</span><div class="ctl"><Dropdown Mono="true" MinWidth="140" Value="UTF-8 (with BOM)" /></div></div>
-                                <div class="cgr"><span class="lbl">Quoting</span><div class="ctl"><Dropdown Mono="true" MinWidth="140" Value="when needed" /></div></div>
-                                <div class="cgr"><span class="lbl">Header</span><div class="ctl"><Switch @bind-Value="_csvHeader" /><span class="hint">first row with column names</span></div></div>
-                            </div>
-                            <div class="right">
-                                <span class="preview-label">Preview</span>
-                                <pre style="margin:0;font:400 11px/1.5 var(--font-mono);white-space:pre">@CsvPreview</pre>
-                            </div>
-                        </div>
-                    </div>
-                }
-                @if (Wizard.Formats.Contains("xlsx"))
-                {
-                    <div class="config-card">
-                        <div class="cc-head">
-                            <CatTile Kind="teal" Icon="file-spreadsheet" />
-                            <div class="info"><b>Excel</b><span>sales-{date:YYYY-MM-DD}.xlsx</span></div>
-                            <button class="btn icon-only sm subtle"><i class="ti ti-trash"></i></button>
-                        </div>
-                        <div class="cc-split">
-                            <div class="left">
-                                <div class="cgr"><span class="lbl">Sheet name</span><div class="ctl"><span class="input text"><input value="Sales" /></span></div></div>
-                                <div class="cgr"><span class="lbl">Auto-filter</span><div class="ctl"><Switch @bind-Value="_xFilter" /><span class="hint">apply filter to columns</span></div></div>
-                                <div class="cgr"><span class="lbl">Freeze header</span><div class="ctl"><Switch @bind-Value="_xFreeze" /><span class="hint">keep header row visible</span></div></div>
-                                <div class="cgr"><span class="lbl">Native types</span><div class="ctl"><Switch @bind-Value="_xTypes" /><span class="hint">numbers, dates, booleans as Excel types</span></div></div>
-                            </div>
-                            <div class="right">
-                                <span class="preview-label">Preview · "Sales" sheet</span>
-                                <div style="background:var(--bg);border:0.5px solid var(--border);border-radius:var(--r-md);overflow:hidden">
-                                    <table class="preview-tbl">
-                                        <thead><tr><th>id</th><th>customer_id</th><th class="num">total</th><th>created_at</th></tr></thead>
-                                        <tbody>
-                                            <tr><td>184201</td><td>4012</td><td class="num">$ 1,428.90</td><td>05/27/2026 14:31</td></tr>
-                                            <tr><td>184200</td><td>4012</td><td class="num">$ 89.00</td><td>05/27/2026 14:29</td></tr>
-                                            <tr><td>184199</td><td>2007</td><td class="num">$ 12,450.00</td><td>05/27/2026 14:21</td></tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                }
-                @foreach (var f in Wizard.Formats.Where(f => f is not "csv" and not "xlsx")
-                    .Select(id => SampleData.Formats.First(x => x.Id == id)))
-                {
-                    <div class="config-card">
-                        <div class="cc-head">
-                            <CatTile Kind="@f.Kind" Icon="@f.Icon" />
-                            <div class="info"><b>@f.Name</b><span>{report.name}-{date:YYYY-MM-DD}@f.Ext</span></div>
-                            <button class="btn icon-only sm subtle"><i class="ti ti-trash"></i></button>
-                        </div>
-                        <div style="padding:14px 16px;display:flex;align-items:center;gap:10px;color:var(--fg-muted);font-size:12px">
-                            <i class="ti ti-info-circle" style="font-size:14px"></i>
-                            Expanded @f.Name options — encoding, structure and template settings.
-                        </div>
-                    </div>
+                    <FormatCard Format="f" Selected="Wizard.Formats.Contains(f.Id)" OnClick="@(() => Toggle(f.Id))" />
                 }
             </div>
         </div>
@@ -103,7 +48,7 @@
     <div class="wizard-footer">
         <Button Variant="outline" Icon="arrow-left" OnClick="@(() => Nav.NavigateTo("builder/configure"))">Back</Button>
         <div style="display:flex;align-items:center;gap:12px">
-            <span class="mono muted" style="font-size:12px">@Wizard.Formats.Count format@(Wizard.Formats.Count == 1 ? "" : "s") selected · est. output ~@((Wizard.Formats.Count * 2.8).ToString("0.0")) MB</span>
+            <span class="mono muted" style="font-size:12px">@Wizard.Formats.Count format@(Wizard.Formats.Count == 1 ? "" : "s") selected</span>
             <Button Variant="primary" IconRight="arrow-right" OnClick="@(() => Nav.NavigateTo("builder/destination"))">Continue</Button>
         </div>
     </div>
@@ -111,15 +56,27 @@
 
 @code {
     private readonly string[] Steps = { "Source", "Columns", "Format", "Destination", "Review" };
-    private string _delim = ",";
-    private bool _csvHeader = true, _xFilter = true, _xFreeze = true, _xTypes = true;
-    private readonly (string, string)[] _delimOpts = { (",", ","), (";", ";"), ("|", "|"), ("\\t", "\\t") };
+    private IReadOnlyList<string> _engineFormats = Array.Empty<string>();
+
+    private static readonly Dictionary<string, (string Name, string Ext, string Kind, string Icon, string Description)> KnownFormats = new()
+    {
+        ["csv"] = ("CSV", ".csv", "teal", "table", "Delimited tabular text."),
+        ["xlsx"] = ("Excel", ".xlsx", "teal", "file-spreadsheet", "Spreadsheet with native types, sheets, formulas."),
+    };
+
+    private static FormatOption ToFormatOption(string id) =>
+        KnownFormats.TryGetValue(id, out var known)
+            ? new FormatOption(id, known.Name, known.Ext, known.Kind, known.Icon, known.Description)
+            : new FormatOption(id, id.ToUpperInvariant(), $".{id}", "gray", "file", "Registered output format.");
 
     private void Toggle(string id) { if (!Wizard.Formats.Add(id)) Wizard.Formats.Remove(id); }
 
-    private string CsvPreview =>
-        (_csvHeader ? $"id{_delim}customer_id{_delim}total{_delim}created_at\n" : "") +
-        $"184201{_delim}4012{_delim}1428.90{_delim}2026-05-27T14:31:02\n" +
-        $"184200{_delim}4012{_delim}89.00{_delim}2026-05-27T14:29:11\n" +
-        $"184199{_delim}2007{_delim}12450.00{_delim}2026-05-27T14:21:48";
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Wizard.EngineAvailable)
+            return;
+
+        ApiCapabilities? capabilities = await Api.TryGetCapabilitiesAsync();
+        _engineFormats = capabilities?.Formats ?? Array.Empty<string>();
+    }
 }

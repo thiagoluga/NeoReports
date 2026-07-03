@@ -13,22 +13,31 @@
         <Button Variant="primary" Icon="plus" OnClick="@(() => Nav.NavigateTo("builder"))">New report</Button>
     </div>
 
-    @* Metric strip — real when the engine is reachable (GET /api/jobs, computed client-side);
-       demo values otherwise, since the engine doesn't expose aggregate metrics directly. *@
+    @* Metric strip — GET /api/jobs, computed client-side; "—" placeholders when the engine
+       is unreachable, since the engine doesn't expose aggregate metrics directly. *@
     <div class="grid-4">
-        <MetricCard Icon="report-analytics" Label="Jobs today" Value="@_metrics.JobsToday" Sub="@(_isLive ? "since 00:00 UTC" : "vs yesterday")" DeltaDir="@(_isLive ? null : "up")" DeltaText="@(_isLive ? null : "+3.4%")" />
-        <MetricCard Icon="circle-check" Label="Success rate" Value="@_metrics.SuccessRate" Sub="@(_isLive ? "today · terminal jobs" : "last 7 days")" />
-        <MetricCard Icon="file-text" Label="Records exported" Value="@_metrics.RecordsExported" Sub="@(_isLive ? "today" : "last 7 days")" />
-        <MetricCard Icon="clock" Label="Avg duration" Value="@_metrics.AvgDuration" Sub="@(_isLive ? "today · completed" : "vs week")" DeltaDir="@(_isLive ? null : "down")" DeltaText="@(_isLive ? null : "-18s")" />
+        <MetricCard Icon="report-analytics" Label="Jobs today" Value="@_metrics.JobsToday" Sub="since 00:00 UTC" />
+        <MetricCard Icon="circle-check" Label="Success rate" Value="@_metrics.SuccessRate" Sub="today · terminal jobs" />
+        <MetricCard Icon="file-text" Label="Records exported" Value="@_metrics.RecordsExported" Sub="today" />
+        <MetricCard Icon="clock" Label="Avg duration" Value="@_metrics.AvgDuration" Sub="today · completed" />
     </div>
 
-    @* Recent jobs — GET /api/jobs (limit 8), falling back to sample report templates *@
-    <Card Title="Recent jobs" Sub="@(_isLive ? "Newest first" : "Last 24 hours")">
+    @* Recent jobs — GET /api/jobs (limit 8) *@
+    <Card Title="Recent jobs" Sub="Newest first">
         <Action>
-            <Button Variant="link" OnClick="@(() => Nav.NavigateTo(_isLive && _recentJobs.Count > 0 ? JobRoute(_recentJobs[0]) : "jobs/7c4a01f3"))">View all →</Button>
+            @if (_recentJobs.Count > 0)
+            {
+                <Button Variant="link" OnClick="@(() => Nav.NavigateTo(JobRoute(_recentJobs[0])))">View all →</Button>
+            }
         </Action>
         <ChildContent>
-        @if (_recentJobs.Count == 0)
+        @if (!_isLive)
+        {
+            <EmptyState Icon="report-off" Title="Engine unreachable">
+                <ChildContent>Recent jobs will show up here once the engine API is reachable.</ChildContent>
+            </EmptyState>
+        }
+        else if (_recentJobs.Count == 0)
         {
             <EmptyState Icon="report-off" Title="No recent jobs">
                 <ChildContent>Trigger a report from the builder or the reports list to see it here.</ChildContent>
@@ -71,49 +80,33 @@
         </ChildContent>
     </Card>
 
-    @* Destinations → Recent files when live: real filenames/sizes from the completed jobs
-       above, via GET /api/jobs/{id}/artifacts (Epic D / D6, follow-up). The "Sources" card
-       (usage-frequency ranking) was removed — no source registry or usage tracking exists in
-       the engine (D36); see docs/ui-removed-mock-content.md. *@
+    @* Recent files — real filenames/sizes from the completed jobs above, via
+       GET /api/jobs/{id}/artifacts (Epic D / D6, follow-up). The "Sources" card
+       (usage-frequency ranking) and the fake "Destinations" upload list were removed — no
+       source registry, usage tracking, or per-destination delivery confirmation exists in the
+       engine (D36); see docs/ui-removed-mock-content.md. *@
     <div>
-        <Card Title="@(_isLive ? "Recent files" : "Destinations")" Sub="@(_isLive ? "From completed jobs" : "Latest uploads")">
-            <Action><Button Variant="link" OnClick="@(() => Nav.NavigateTo("reports"))">@(_isLive ? "View reports →" : "Manage →")</Button></Action>
+        <Card Title="Recent files" Sub="From completed jobs">
+            <Action><Button Variant="link" OnClick="@(() => Nav.NavigateTo("reports"))">View reports →</Button></Action>
             <ChildContent>
-            @if (_isLive)
+            @if (!_isLive)
             {
-                @if (_recentFiles.Count == 0)
-                {
-                    <span class="muted" style="font-size:12px">No files generated yet</span>
-                }
-                else
-                {
-                    @foreach (var f in _recentFiles)
-                    {
-                        <div class="list-row">
-                            <CatTile Kind="teal" Icon="@FileFormatting.Icon(f.FileName)" Sm="true" />
-                            <div class="col" style="gap:0"><span class="name">@f.FileName</span><span class="sub">@f.ReportName · @FileFormatting.Bytes(f.SizeBytes)</span></div>
-                            <span class="right">@(f.CompletedAt?.ToLocalTime().ToString("HH:mm:ss") ?? "—")</span>
-                        </div>
-                    }
-                }
+                <span class="muted" style="font-size:12px">Engine unreachable</span>
+            }
+            else if (_recentFiles.Count == 0)
+            {
+                <span class="muted" style="font-size:12px">No files generated yet</span>
             }
             else
             {
-                <div class="list-row">
-                    <CatTile Kind="info" Icon="cloud-upload" Sm="true" />
-                    <div class="col" style="gap:0"><span class="name">SharePoint · /Sales/2026</span><span class="sub">last upload</span></div>
-                    <span class="right">14:35:54</span>
-                </div>
-                <div class="list-row">
-                    <CatTile Kind="info" Icon="brand-aws" Sm="true" />
-                    <div class="col" style="gap:0"><span class="name">s3://acme-reports/billing</span><span class="sub">last upload</span></div>
-                    <span class="right">14:18:02</span>
-                </div>
-                <div class="list-row">
-                    <CatTile Kind="warn" Icon="mail" Sm="true" />
-                    <div class="col" style="gap:0"><span class="name">email · ana@@acme.com</span><span class="sub">last upload</span></div>
-                    <span class="right">12:02:11</span>
-                </div>
+                @foreach (var f in _recentFiles)
+                {
+                    <div class="list-row">
+                        <CatTile Kind="teal" Icon="@FileFormatting.Icon(f.FileName)" Sm="true" />
+                        <div class="col" style="gap:0"><span class="name">@f.FileName</span><span class="sub">@f.ReportName · @FileFormatting.Bytes(f.SizeBytes)</span></div>
+                        <span class="right">@(f.CompletedAt?.ToLocalTime().ToString("HH:mm:ss") ?? "—")</span>
+                    </div>
+                }
             }
             </ChildContent>
         </Card>
@@ -127,16 +120,14 @@
 
     private sealed record DashboardMetrics(string JobsToday, string SuccessRate, string RecordsExported, string AvgDuration)
     {
-        public static readonly DashboardMetrics Demo = new("486", "98.4%", "—", "3m 12s");
+        public static readonly DashboardMetrics Unavailable = new("—", "—", "—", "—");
     }
 
     private sealed record DashboardFileRow(string ReportName, string FileName, long SizeBytes, DateTimeOffset? CompletedAt);
 
     private bool _isLive;
-    private IReadOnlyList<DashboardJobRow> _recentJobs = SampleData.Reports
-        .Select(ToRow)
-        .ToArray();
-    private DashboardMetrics _metrics = DashboardMetrics.Demo;
+    private IReadOnlyList<DashboardJobRow> _recentJobs = Array.Empty<DashboardJobRow>();
+    private DashboardMetrics _metrics = DashboardMetrics.Unavailable;
     private IReadOnlyList<DashboardFileRow> _recentFiles = Array.Empty<DashboardFileRow>();
 
     private static string JobRoute(DashboardJobRow r) => r.Status switch
@@ -145,23 +136,6 @@
         JobStatus.Ok => $"jobs/completed/{r.Id}",
         _ => $"jobs/{r.Id}",
     };
-
-    private static DashboardJobRow ToRow(ReportSummary r) => new(
-        Id: r.Status == JobStatus.Failed ? "8b2f01a9" : "7c4a01f3",
-        Name: r.Name,
-        CatKind: r.CatKind,
-        CatIcon: r.CatIcon,
-        SourceLabel: $"{r.Source} → {string.Join(" + ", r.Formats)}",
-        Status: r.Status,
-        ProgressLabel: r.Status switch
-        {
-            JobStatus.Running => "64%",
-            JobStatus.Failed => "15/15 retries",
-            JobStatus.Paused => "waiting",
-            _ => "Completed",
-        },
-        Started: r.LastTitle,
-        Duration: DurationOf(r));
 
     private static DashboardJobRow ToRow(ApiJobView j) => new(
         Id: j.Id,
@@ -190,13 +164,6 @@
 
         TimeSpan span = c - s;
         return span.TotalMinutes >= 1 ? $"{(int)span.TotalMinutes}m {span.Seconds}s" : $"{span.Seconds}s";
-    }
-
-    private static string DurationOf(ReportSummary r)
-    {
-        if (r.Status == JobStatus.Paused) return "—";
-        var parts = r.LastSub.Split('·');
-        return parts.Length > 1 ? parts[1].Trim() : "—";
     }
 
     protected override async Task OnInitializedAsync()
