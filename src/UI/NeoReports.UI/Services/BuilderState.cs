@@ -51,6 +51,24 @@ public sealed class BuilderState
     /// <summary>Destination-specific path/key template.</summary>
     public string DestinationPath { get; set; } = "";
 
+    // Resilience — mirrors the engine's own defaults (RetryOptions/FailureStrategyBuilder), so an
+    // untouched wizard produces the same policy as omitting "resilience" from the config entirely.
+
+    /// <summary>Total attempts per batch, including the first.</summary>
+    public int RetryMaxAttempts { get; set; } = 1;
+
+    /// <summary>Backoff shape: "Constant" or "Exponential".</summary>
+    public string RetryBackoff { get; set; } = "Constant";
+
+    /// <summary>Base delay, in seconds, used for the first retry.</summary>
+    public double RetryBaseDelaySeconds { get; set; } = 1;
+
+    /// <summary>Whether to add randomized jitter to retry delays.</summary>
+    public bool RetryJitter { get; set; }
+
+    /// <summary>What happens after a batch exhausts its retries: "abort" or "skip-and-log".</summary>
+    public string FailureStrategy { get; set; } = "abort";
+
     /// <summary>
     /// True once step 1 has confirmed the engine API is reachable and reports at least one
     /// registered capability. While false, the wizard stays browsable (SampleData) but Save is
@@ -79,6 +97,11 @@ public sealed class BuilderState
         ColumnNames = "Id";
         DestinationType = "";
         DestinationPath = "";
+        RetryMaxAttempts = 1;
+        RetryBackoff = "Constant";
+        RetryBaseDelaySeconds = 1;
+        RetryJitter = false;
+        FailureStrategy = "abort";
         EngineAvailable = false;
     }
 }

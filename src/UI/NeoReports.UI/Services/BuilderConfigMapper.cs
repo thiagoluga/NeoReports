@@ -47,13 +47,21 @@ public static class BuilderConfigMapper
             ? null
             : new[] { new DestinationDocument(state.DestinationType, BuildDestinationProperties(state)) };
 
+        var resilience = new ResilienceDocument(
+            MaxAttempts: state.RetryMaxAttempts,
+            Backoff: state.RetryBackoff,
+            BaseDelaySeconds: state.RetryBaseDelaySeconds,
+            Jitter: state.RetryJitter,
+            OnFailure: state.FailureStrategy);
+
         var document = new ConfigDocument(
             Name: state.ReportName,
             Source: new SourceDocument(state.SourceType, sourceProperties),
             Columns: columns,
             Outputs: outputs,
             Destinations: destinations,
-            PageSize: state.PageSize);
+            PageSize: state.PageSize,
+            Resilience: resilience);
 
         return JsonSerializer.Serialize(document, Json);
     }
@@ -69,7 +77,8 @@ public static class BuilderConfigMapper
         IReadOnlyList<ColumnDocument> Columns,
         IReadOnlyList<OutputDocument> Outputs,
         IReadOnlyList<DestinationDocument>? Destinations,
-        int PageSize);
+        int PageSize,
+        ResilienceDocument Resilience);
 
     private sealed record SourceDocument(string Type, IReadOnlyDictionary<string, object?> Properties);
 
@@ -78,4 +87,6 @@ public static class BuilderConfigMapper
     private sealed record OutputDocument(string Format);
 
     private sealed record DestinationDocument(string Type, IReadOnlyDictionary<string, object?>? Properties);
+
+    private sealed record ResilienceDocument(int MaxAttempts, string Backoff, double BaseDelaySeconds, bool Jitter, string OnFailure);
 }

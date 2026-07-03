@@ -20,7 +20,7 @@ headline feature — make the **Builder wizard actually create runnable reports*
 
 | Capability | Where | State |
 |---|---|---|
-| Config model (`ReportConfig`, `SourceConfig`, `ColumnConfig`, `OutputConfig`, `SectionConfig`, `DestinationConfig`) | `src/NeoReports.Abstractions/Configuration.cs` | Done. Serializer-agnostic records. |
+| Config model (`ReportConfig`, `SourceConfig`, `ColumnConfig`, `OutputConfig`, `SectionConfig`, `DestinationConfig`, `ResilienceConfig`) | `src/NeoReports.Abstractions/Configuration.cs` | Done. Serializer-agnostic records. `Resilience` (D34, follow-up) is optional — omitting it keeps the engine's default retry/failure policy. |
 | JSON parser (`JsonReportConfigParser : IReportConfigParser`) | `src/NeoReports.Core/Configuration/JsonReportConfigParser.cs` | Done. Throws `ConfigurationException` on malformed input. |
 | Compiler (`ReportConfigCompiler.Compile(ReportConfig, IServiceProvider)` → `CompiledReport`) | `src/NeoReports.Core/Configuration/ReportConfigCompiler.cs` | Done. Static, side-effect free; resolves `IConfigSourceProvider` / `IWriterFactory` / `IDestinationFactory` from DI by type/format id; throws `ConfigurationException` on invalid config or missing provider. |
 | Registry with runtime `Register` | `src/NeoReports.Core/Registry/ReportRegistry.cs` | `Register(CompiledReport)` exists, thread-safe (`ConcurrentDictionary`), throws on duplicate name. **Missing:** `Unregister`, and neither is on `IReportRegistry`. |
@@ -400,6 +400,7 @@ options. Field mapping — **read `BuilderState.cs` first** and reconcile; the i
 | 3 Format | chosen format + options | `outputs[0].format` + safe `properties` |
 | 4 Destination | chosen destination + path template | `destinations[0]` |
 | 5 Review | report name (validated client-side with the same regex, mirrored message) | `name` |
+| 2 Configure (Resilience card, D34 follow-up) | max attempts, backoff shape, base delay, jitter, on-failure strategy | `resilience.{maxAttempts,backoff,baseDelaySeconds,jitter,onFailure}` — defaults mirror the engine's own (1 attempt, Constant 1s, no jitter, abort), so an untouched wizard sends the same effective policy as omitting the field |
 
 Fields the wizard collects that have no config equivalent (schedule toggle, notification
 switches…) are **not serialized** — they remain cosmetic, and the Review step labels them

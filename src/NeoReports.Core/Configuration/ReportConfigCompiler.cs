@@ -68,6 +68,9 @@ public static class ReportConfigCompiler
         if (config.Filter is not null)
             builder.Filter(JsonLogicFilter.Compile(config.Filter));
 
+        if (config.Resilience is { } resilience)
+            ApplyResilience(builder, resilience);
+
         foreach (OutputSpec output in regularOutputs)
             builder.To(output);
         foreach ((SectionedOutputSpec spec, IReadOnlyList<SectionConfig> sections) in sectionedOutputs)
@@ -76,6 +79,46 @@ public static class ReportConfigCompiler
             builder.UploadTo(destination);
 
         return builder.Build();
+    }
+
+    private static void ApplyResilience(ReportBuilder<ReportRecord> builder, ResilienceConfig resilience)
+    {
+        bool hasBackoff = resilience.Backoff is not null || resilience.BaseDelaySeconds is not null;
+        if (resilience.MaxAttempts is not null || hasBackoff || resilience.Jitter is not null)
+        {
+            builder.Retry(r =>
+            {
+                if (resilience.MaxAttempts is int attempts)
+                    r.MaxAttempts(attempts);
+
+                if (hasBackoff)
+                {
+                    TimeSpan delay = TimeSpan.FromSeconds(resilience.BaseDelaySeconds ?? 1);
+                    if (resilience.Backoff is null || string.Equals(resilience.Backoff, "Constant", StringComparison.OrdinalIgnoreCase))
+                        r.Constant(delay);
+                    else if (string.Equals(resilience.Backoff, "Exponential", StringComparison.OrdinalIgnoreCase))
+                        r.Exponential(delay);
+                    else
+                        throw new ConfigurationException($"Unknown resilience.backoff value '{resilience.Backoff}'. Use 'Constant' or 'Exponential'.");
+                }
+
+                if (resilience.Jitter is true)
+                    r.WithJitter();
+            });
+        }
+
+        if (resilience.OnFailure is not null)
+        {
+            builder.OnFailure(f =>
+            {
+                if (string.Equals(resilience.OnFailure, "abort", StringComparison.OrdinalIgnoreCase))
+                    f.AbortReport();
+                else if (string.Equals(resilience.OnFailure, "skip-and-log", StringComparison.OrdinalIgnoreCase))
+                    f.SkipBatchAndLog();
+                else
+                    throw new ConfigurationException($"Unknown resilience.onFailure value '{resilience.OnFailure}'. Use 'abort' or 'skip-and-log'.");
+            });
+        }
     }
 
     private static void Validate(ReportConfig config)
