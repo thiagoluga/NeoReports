@@ -14,12 +14,13 @@
         </div>
     </div>
 
-    @* Recap *@
+    @* Recap — reflects the real engine source type/connection variable picked in step 1,
+       not the decorative source card (that catalog has no engine equivalent). *@
     <div class="recap">
         <CatTile Kind="teal" Icon="database" />
         <div style="min-width:0">
-            <div class="r-name">@(Wizard.SourceId ?? "sales-db") <span class="muted" style="font-weight:400;font-size:12px">· SQL Server</span></div>
-            <div class="r-meta">Server=tcp:sales.prod.acme.local,1433;Initial Catalog=sales;Encrypt=true</div>
+            <div class="r-name">@Wizard.SourceType <span class="muted" style="font-weight:400;font-size:12px">· engine source type</span></div>
+            <div class="r-meta">@(string.IsNullOrWhiteSpace(Wizard.ConnectionStringVariable) ? "no connection string variable set" : $"${{{Wizard.ConnectionStringVariable}}}")</div>
         </div>
         <button class="btn link" @onclick="@(() => Nav.NavigateTo("builder"))">Change →</button>
     </div>
