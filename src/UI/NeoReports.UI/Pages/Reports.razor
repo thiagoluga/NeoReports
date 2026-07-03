@@ -13,12 +13,21 @@
         <Button Variant="primary" Icon="plus" OnClick="@(() => Nav.NavigateTo("builder"))">New report</Button>
     </div>
 
-    @* Count strip — mock/future: aggregate counts not exposed by the engine yet *@
+    @* Count strip — running/failed computed from GET /api/jobs when live. "Active schedules" and
+       "paused" are dropped when live: v1 has no scheduler, and jobs never reach Paused. *@
     <div class="count-strip">
+    @if (_isLive)
+    {
+        <span class="c"><span class="dot" style="background:var(--info-dot)"></span><b>@_runningNow</b> running now</span>
+        <span class="c"><span class="dot" style="background:var(--danger-dot)"></span><b>@_failedCount</b> failed</span>
+    }
+    else
+    {
         <span class="c"><span class="dot" style="background:var(--success-dot)"></span><b>32</b> active schedules</span>
         <span class="c"><span class="dot" style="background:var(--info-dot)"></span><b>9</b> running now</span>
         <span class="c"><span class="dot" style="background:var(--warn-dot)"></span><b>3</b> paused</span>
         <span class="c"><span class="dot" style="background:var(--danger-dot)"></span><b>1</b> failed</span>
+    }
     </div>
 
     @* Filter bar — GET /api/reports (client-side filter here) *@
@@ -61,6 +70,8 @@
     private string? _statusFilter = "running";
     private IReadOnlyList<ReportSummary> _reports = SampleData.Reports;
     private bool _isLive;
+    private int _runningNow;
+    private int _failedCount;
 
     private IEnumerable<ReportSummary> Filtered =>
         _reports.Where(r =>
@@ -79,6 +90,13 @@
             _reports = live.Select(ToReportSummary).ToArray();
             _statusFilter = null;
             _isLive = true;
+
+            var jobs = await Api.TryListJobsAsync(limit: 200);
+            if (jobs is not null)
+            {
+                _runningNow = jobs.Count(j => j.Status is "Running" or "Retrying");
+                _failedCount = jobs.Count(j => j.Status == "Failed");
+            }
         }
     }
 
