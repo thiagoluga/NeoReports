@@ -29,14 +29,17 @@
         </Banner>
     }
 
-    @* Summary *@
+    @* Summary — Source/Columns/Destinations reflect the real Wizard state that
+       BuilderConfigMapper actually sends to POST /api/reports. Parameters and the row-count
+       estimate stay cosmetic: the dynamic path has no parameter/expression support yet, and the
+       engine can't estimate output size without running the query. *@
     <Card Title="Configuration summary">
         <div>
-            <div class="sum-row"><CatTile Sm="true" Kind="teal" Icon="database" /><span class="lbl">Source</span><span class="val"><b>@(Wizard.SourceId ?? "sales-db")</b> · <span class="mono muted" style="font-size:11px">SQL Server · query.sql</span></span><button class="edit-link" @onclick="@(() => Nav.NavigateTo("builder"))">edit</button></div>
+            <div class="sum-row"><CatTile Sm="true" Kind="teal" Icon="database" /><span class="lbl">Source</span><span class="val"><b>@Wizard.SourceType</b> · <span class="mono muted" style="font-size:11px">@(string.IsNullOrWhiteSpace(Wizard.ConnectionStringVariable) ? "no connection string set" : $"${{{Wizard.ConnectionStringVariable}}}")</span></span><button class="edit-link" @onclick="@(() => Nav.NavigateTo("builder"))">edit</button></div>
             <div class="sum-row"><CatTile Sm="true" Kind="gray" Icon="adjustments-horizontal" /><span class="lbl">Parameters</span><span class="val"><span class="mono" style="font-size:12px">@@since=@@now-1month · @@until=@@now · @@tenant=acme-prod</span></span><button class="edit-link" @onclick="@(() => Nav.NavigateTo("builder/configure"))">edit</button></div>
-            <div class="sum-row"><CatTile Sm="true" Kind="gray" Icon="columns" /><span class="lbl">Columns</span><span class="val">6 selected · <span class="mono muted" style="font-size:11px">id, customer_id, total, created_at, …</span></span><button class="edit-link" @onclick="@(() => Nav.NavigateTo("sources/sales-db/explore"))">edit</button></div>
+            <div class="sum-row"><CatTile Sm="true" Kind="gray" Icon="columns" /><span class="lbl">Columns</span><span class="val">@ColumnNames.Length selected · <span class="mono muted" style="font-size:11px">@string.Join(", ", ColumnNames)</span></span><button class="edit-link" @onclick="@(() => Nav.NavigateTo("builder/configure"))">edit</button></div>
             <div class="sum-row"><CatTile Sm="true" Kind="teal" Icon="file-text" /><span class="lbl">Formats</span><span class="val"><span class="pipeline-chips" style="gap:4px">@foreach (var f in Wizard.Formats){<Chip Kind="format" Ext="@f">@f.ToUpper()</Chip>}</span></span><button class="edit-link" @onclick="@(() => Nav.NavigateTo("builder/format"))">edit</button></div>
-            <div class="sum-row"><CatTile Sm="true" Kind="info" Icon="cloud-upload" /><span class="lbl">Destinations</span><span class="val"><span class="pipeline-chips" style="gap:4px">@foreach (var d in Wizard.Destinations){<span class="chip" style="background:var(--info-bg);color:var(--info-fg)">@d</span>}</span></span><button class="edit-link" @onclick="@(() => Nav.NavigateTo("builder/destination"))">edit</button></div>
+            <div class="sum-row"><CatTile Sm="true" Kind="info" Icon="cloud-upload" /><span class="lbl">Destinations</span><span class="val">@if (string.IsNullOrWhiteSpace(Wizard.DestinationType)){<span class="mono muted" style="font-size:12px">none</span>}else{<span class="pipeline-chips" style="gap:4px"><span class="chip" style="background:var(--info-bg);color:var(--info-fg)">@Wizard.DestinationType</span></span>@if (!string.IsNullOrWhiteSpace(Wizard.DestinationPath)){<span class="mono muted" style="font-size:11px"> · @Wizard.DestinationPath</span>}}</span><button class="edit-link" @onclick="@(() => Nav.NavigateTo("builder/destination"))">edit</button></div>
             <div class="sum-row"><CatTile Sm="true" Kind="gray" Icon="calculator" /><span class="lbl">Estimate</span><span class="val"><span class="mono muted" style="font-size:12px">~42,000 rows · ~2.8 MB · typical run ~3m 30s</span></span><span></span></div>
         </div>
     </Card>
@@ -134,6 +137,9 @@
     private string? _saveError;
 
     private void ToggleDay(int i) { if (!Wizard.Weekdays.Add(i)) Wizard.Weekdays.Remove(i); }
+
+    private string[] ColumnNames => Wizard.ColumnNames
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
     private async Task SaveAsync()
     {
