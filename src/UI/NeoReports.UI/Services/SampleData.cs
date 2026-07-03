@@ -13,11 +13,6 @@ public static class SampleData
     private const string TintCoral = "coral";
     private const string TintPurple = "purple";
     private const string Custom = "custom";
-    private const string GroupSources = "sources";
-    private const string GroupFormats = "formats";
-    private const string GroupDestinations = "destinations";
-    private const string BuiltIn = "built-in";
-    private const string PluginVersion = "v1.2.4";
 
     public static readonly IReadOnlyList<ReportSummary> Reports = Array.AsReadOnly(new ReportSummary[]
     {
@@ -116,24 +111,5 @@ public static class SampleData
         new("email", "Email", "warn", "mail", "Attachment or signed link in an email body."),
         new("webhook", "Webhook", "warn", "webhook", "POST the binary to a custom HTTP endpoint."),
         new(Custom, "Custom", "gray", "puzzle", "External plugin · IDestination interface."),
-    });
-
-    public static readonly IReadOnlyList<PluginInfo> Plugins = Array.AsReadOnly(new PluginInfo[]
-    {
-        new(GroupSources, "NeoReports.Sources.SqlServer", "teal", "database", BuiltIn, "Official SQL Server driver · pooling + retry · keyset support.", PluginVersion, 12, "ok"),
-        new(GroupSources, "NeoReports.Sources.Postgres", "info", "brand-postgresql", BuiltIn, "Official PostgreSQL driver · keyset/offset pagination.", PluginVersion, 7, "ok"),
-        new(GroupSources, "NeoReports.Sources.Mongo", TintPurple, "brand-mongodb", BuiltIn, "Official MongoDB driver · cursor pagination.", "v1.1.0 → v1.3.0", 2, "update"),
-        new(GroupSources, "Acme.Sources.Kafka", "gray", "brand-kafka", Custom, "Custom source · reads topics by timestamp window.", "v0.4.1", 3, "ok"),
-        new(GroupFormats, "NeoReports.Formats.Csv", "teal", IconTable, BuiltIn, "Configurable CSV · delimiters, encoding, quoting.", PluginVersion, 28, "ok"),
-        new(GroupFormats, "NeoReports.Formats.Xlsx", "teal", "file-spreadsheet", BuiltIn, "Excel with native types, auto-filter, freeze header.", PluginVersion, 18, "ok"),
-        new(GroupFormats, "NeoReports.Formats.Pdf", TintCoral, "file-text", BuiltIn, "Paginated PDF · headers, footers, branding.", PluginVersion, 9, "ok"),
-        new(GroupFormats, "Acme.Formats.SignedPdf", TintCoral, "file-certificate", Custom, "Digitally signed PDF with corporate cert.", "v0.9.2", 4, "license-error"),
-        new(GroupDestinations, "NeoReports.Destinations.S3", "info", "brand-aws", BuiltIn, "Upload to Amazon S3 · IAM or STS.", PluginVersion, 14, "ok"),
-        new(GroupDestinations, "NeoReports.Destinations.SharePoint", TintPurple, "brand-office", BuiltIn, "SharePoint Online · Azure AD auth.", PluginVersion, 22, "ok"),
-        new(GroupDestinations, "NeoReports.Destinations.Email", "warn", "mail", BuiltIn, "Email via SMTP · attachment or signed link.", PluginVersion, 18, "ok"),
-        new(GroupDestinations, "NeoReports.Destinations.AzureBlob", "info", "brand-azure", BuiltIn, "Azure Storage · SAS or shared key.", PluginVersion, 6, "ok"),
-        new("jobs", "NeoReports.Workers.Default", "gray", "cpu", BuiltIn, "Default worker · in-process execution with retry.", PluginVersion, 42, "ok"),
-        new("auth", "NeoReports.Auth.HostAuth", "gray", "shield", BuiltIn, "Default filter inheriting HttpContext.User from the host.", PluginVersion, 1, "ok"),
-        new("auth", "Acme.Auth.JwtFilter", TintPurple, "key", Custom, "Custom filter for corporate JWT.", "v1.0.0", 1, "ok"),
     });
 }

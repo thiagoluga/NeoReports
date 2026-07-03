@@ -54,9 +54,6 @@ public record FormatOption(string Id, string Name, string Ext, string Kind, stri
 /// <summary>A destination option (builder step 4).</summary>
 public record DestinationOption(string Id, string Name, string Kind, string Icon, string Description);
 
-/// <summary>A plugin entry (settings/plugins). Health: "ok" | "update" | "license-error".</summary>
-public record PluginInfo(string Group, string Name, string Kind, string Icon, string Origin, string Description, string Version, int UsedIn, string Health);
-
 /// <summary>Static maps from JobStatus/Health to badge variant + icon + label.</summary>
 public static class StatusMaps
 {
