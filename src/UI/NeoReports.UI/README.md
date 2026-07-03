@@ -45,10 +45,10 @@ dotnet run --project samples/08-web-ui -- --NeoReports:UIPath=/reports-admin
 | `/jobs/{id}` | `JobRunning` | live progress (timer), phases, timeline |
 | `/jobs/completed` | `JobCompleted` | files, delivered destinations |
 | `/jobs/failed` | `JobFailed` | error hero, recovery options, stack trace |
-| `/settings/alerts` | `Alerts` | channels + rules |
-| `/settings/authentication` | `Authentication` | filter chain, permission matrix, signed URLs |
-| `/settings/plugins` | `Plugins` | grouped plugins + marketplace |
-| `/settings/retention`, `/settings/audit` | `Retention`, `Audit` | scaffold stubs (keep SubNav from 404ing) |
+
+Settings screens (Alerts/Authentication/Plugins/Retention/Audit) were removed — no
+accounts/RBAC/notification/plugin system exists to back them. See
+`docs/ui-removed-mock-content.md` (D36) for what they showed and what a real version would need.
 
 ## Structure
 
@@ -71,7 +71,7 @@ NeoReports.UI/
 ### Components/UI (22)
 `Button` `Badge` `JobStatusBadge` `Card` `MetricCard` `CatTile` `Switch` `WizardStepper`
 `ProgressBar` `PhaseStepper` `FilterBar` `Pill` `Chip` `ChipGroup` `Dropdown` `Banner`
-`EmptyState` `SubNav` `Timeline` `DataGrid` `SelectableCard` `ReportCard` `SourceCard`
+`EmptyState` `Timeline` `DataGrid` `SelectableCard` `ReportCard` `SourceCard`
 `FormatCard` `DestinationCard`
 
 ## Wiring to the real engine
@@ -82,8 +82,8 @@ responsive breakpoints, and the full Tabler icon inventory. `INeoReportsApiClien
 one exists — reports list, report detail, run/cancel/download, all three job states, plus
 the Epic D dynamic-registration endpoints (`capabilities`, `reports` POST/validate/DELETE,
 `jobs` list, `jobs/{id}/artifacts`) — falling back to `SampleData` when no engine is mounted
-or a call fails. Cells the handoff marks `mock/future` (aggregate metrics, permissions,
-pipeline/variants, sources, settings) are still `SampleData` only.
+or a call fails. Cells the handoff marks `mock/future` with no real backing were removed rather
+than left as `SampleData` (D36) — see `docs/ui-removed-mock-content.md` for what and why.
 
 The **Builder wizard** (`/builder` → `/builder/review`) is the one screen that writes back
 to the engine, not just reads it (ADR D33). `BuilderState` (Scoped) holds the real fields —

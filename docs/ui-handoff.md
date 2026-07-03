@@ -30,13 +30,10 @@ degrade gracefully once a real endpoint exists.
 | Job running | `/jobs/{id}` `JobRunning` | Card, MetricCard, PhaseStepper, Timeline, ProgressBar, CatTile, Badge | `GET /api/jobs/{id}` (poll/stream); cancel: `POST /api/jobs/{id}/cancel`. Configuration card (formats/buffer/retry policy) and Destinations card read `GET /api/reports/{name}` once resolved, fetched once per report name rather than every poll tick; "Worker" row dropped (Epic D / D6, follow-up fix). Rate/s computed from `Stats.RecordsWritten` / elapsed since `StartedAt`, peak tracked across polls (Epic D / D6, follow-up); "Memory" stays a fixed placeholder (no per-job memory tracking in the engine) | live updates, connection lost, cancel-in-progress |
 | Job completed | `/jobs/completed` `JobCompleted` | Card, MetricCard, PhaseStepper, Timeline, CatTile, Badge, Button | `GET /api/jobs/{id}`; files: `GET /api/jobs/{id}/artifacts` (Epic D / D5); download: `GET /api/jobs/{id}/download`. Configuration/Destinations cards read `GET /api/reports/{name}`; "Worker" and "Run by" rows dropped (Epic D / D6, follow-up fix) | download error, expired files |
 | Job failed | `/jobs/failed` `JobFailed` | Card, MetricCard, PhaseStepper, CatTile, Badge, Button | `GET /api/jobs/{id}`; resume/retry: `POST /api/reports/{name}/run` | partial-output present/absent, resume unavailable |
-| Alerts | `/settings/alerts` `Alerts` | SubNav, Card, CatTile, Switch, Badge, Timeline | alert config + activity: **mock/future** | loading, empty (no rules → CTA), channel-disconnected |
-| Authentication | `/settings/authentication` `Authentication` | SubNav, Card, CatTile, Switch, Badge, Dropdown | filter chain + policy matrix: **mock/future** | loading, save error |
-| Plugins | `/settings/plugins` `Plugins` | SubNav, Card, CatTile, Badge, Pill, Button | plugin registry: **mock/future** | loading, update-available, license-error (Resolve) |
-| Retention* | `/settings/retention` `Retention` | SubNav, Card, EmptyState | **future** | scaffold only |
-| Audit* | `/settings/audit` `Audit` | SubNav, Card, EmptyState | **future** | scaffold only |
 
-\* Retention/Audit are scaffold stubs so the settings SubNav never 404s — not in the original prototype spec.
+**Removed (D36):** Alerts, Authentication, Plugins, Retention, Audit (`/settings/*`) — no
+accounts/RBAC/notification/plugin system exists to back them; see
+`docs/ui-removed-mock-content.md` for what they showed and what a real version would need.
 
 ### Real API surface (given)
 ```
