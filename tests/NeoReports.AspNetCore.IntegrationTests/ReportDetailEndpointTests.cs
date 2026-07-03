@@ -88,6 +88,48 @@ public class ReportDetailEndpointTests
     }
 
     [Fact]
+    public async Task Detail_reflects_dynamic_report_resilience_overrides()
+    {
+        var configDir = Path.Join(Path.GetTempPath(), "nr-d4-resilience-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            using var host = await TestApp.StartAsync(services =>
+            {
+                services.AddDynamicReports(o => o.Directory = configDir);
+                services.AddSingleton<IConfigSourceProvider>(new FakeConfigSourceProvider(
+                    new[] { new object?[] { 1L } }));
+                services.AddSingleton<IWriterFactory>(new CsvWriterFactory(new CsvOptions()));
+            });
+            var client = host.GetTestClient();
+
+            const string config = """
+            {
+              "name": "resilient-one",
+              "source": { "type": "inmemory" },
+              "columns": [ { "name": "Id", "type": "Integer" } ],
+              "outputs": [ { "format": "csv" } ],
+              "resilience": { "maxAttempts": 4, "backoff": "Exponential", "baseDelaySeconds": 2, "jitter": true, "onFailure": "skip-and-log" }
+            }
+            """;
+            using var content = new StringContent(config, Encoding.UTF8, "application/json");
+            await client.PostAsync("/api/reports", content);
+
+            var body = await client.GetFromJsonAsync<JsonElement>("/api/reports/resilient-one", Json);
+
+            body.GetProperty("failureStrategy").GetString().ShouldBe("skip-and-log");
+            body.GetProperty("retryMaxAttempts").GetInt32().ShouldBe(4);
+            body.GetProperty("retryBackoff").GetString().ShouldBe("Exponential");
+            body.GetProperty("retryBaseDelaySeconds").GetDouble().ShouldBe(2);
+            body.GetProperty("retryUseJitter").GetBoolean().ShouldBeTrue();
+        }
+        finally
+        {
+            if (Directory.Exists(configDir))
+                Directory.Delete(configDir, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task Detail_of_unknown_report_returns_404()
     {
         using var host = await TestApp.StartAsync();

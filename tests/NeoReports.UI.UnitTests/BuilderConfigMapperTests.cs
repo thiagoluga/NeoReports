@@ -54,6 +54,34 @@ public class BuilderConfigMapperTests
         destinations.ShouldHaveSingleItem();
         destinations[0].GetProperty("type").GetString().ShouldBe("local");
         destinations[0].GetProperty("properties").GetProperty("path").GetString().ShouldBe("./out/{name}.{ext}");
+
+        // Untouched BuilderState mirrors the engine's own defaults (RetryOptions/FailureStrategyBuilder).
+        JsonElement resilience = root.GetProperty("resilience");
+        resilience.GetProperty("maxAttempts").GetInt32().ShouldBe(1);
+        resilience.GetProperty("backoff").GetString().ShouldBe("Constant");
+        resilience.GetProperty("baseDelaySeconds").GetDouble().ShouldBe(1);
+        resilience.GetProperty("jitter").GetBoolean().ShouldBeFalse();
+        resilience.GetProperty("onFailure").GetString().ShouldBe("abort");
+    }
+
+    [Fact]
+    public void Custom_resilience_values_are_serialized()
+    {
+        var state = FullState();
+        state.RetryMaxAttempts = 5;
+        state.RetryBackoff = "Exponential";
+        state.RetryBaseDelaySeconds = 2.5;
+        state.RetryJitter = true;
+        state.FailureStrategy = "skip-and-log";
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        JsonElement resilience = doc.RootElement.GetProperty("resilience");
+        resilience.GetProperty("maxAttempts").GetInt32().ShouldBe(5);
+        resilience.GetProperty("backoff").GetString().ShouldBe("Exponential");
+        resilience.GetProperty("baseDelaySeconds").GetDouble().ShouldBe(2.5);
+        resilience.GetProperty("jitter").GetBoolean().ShouldBeTrue();
+        resilience.GetProperty("onFailure").GetString().ShouldBe("skip-and-log");
     }
 
     [Fact]

@@ -445,5 +445,29 @@ untouched — see `docs/ui-handoff.md` for what's still `mock/future` and why.
 
 `docs/ui-handoff.md` and the sample's README are updated accordingly.
 
+**Follow-up: Dashboard recent files + dynamic-path resilience (D34).** Two items the maintainer
+asked to implement rather than remove:
+- Dashboard's "Destinations" card becomes "Recent files" when live — real filenames/sizes from
+  `GET /api/jobs/{id}/artifacts` for the last 3 completed jobs, instead of fixed SharePoint/S3/
+  email rows. Extracted a shared `FileFormatting` helper (icon/byte-size) also used by
+  `JobCompleted`.
+- **D34**: the Builder's Resilience card was 100% cosmetic because `ReportConfig` never carried
+  retry/failure-strategy fields for the dynamic path — an oversight, since `RetryOptions`/
+  `FailureStrategyBuilder` are already in v1 scope for the typed path. Added an optional
+  `ReportConfig.Resilience` (`ResilienceConfig`: max attempts, backoff shape, base delay, jitter,
+  on-failure strategy) — additive on the frozen `Abstractions` record — applied by
+  `ReportConfigCompiler` through the same `builder.Retry(...)`/`builder.OnFailure(...)` the fluent
+  path uses; omitting it keeps today's defaults. Threshold-based abort escalation
+  (`FailureStrategyBuilder.AbortIf`, a predicate) and per-exception-type retry filtering have no
+  config-document equivalent (same reason dynamic filters are JsonLogic, not code) — the Builder's
+  "Retry on errors" pills and "Abort when" switches stay cosmetic, now clearly labeled as
+  illustrative-only. Full details in `DECISIONS.md` (D34). ✅ solution builds 0 warnings; new
+  tests: `ResilienceConfigTests` (Core, parser + compiler), a `ReportDetailEndpointTests` case
+  (AspNetCore, full round-trip through the API), `BuilderConfigMapperTests` (UI serialization).
+  Browser-verified via `samples/09-web-ui-live`: configured 7 max attempts, exponential backoff,
+  4.5s base delay, jitter on, on-failure skip-and-log through the Builder; saved report's
+  `GET /api/reports/{name}` and the Report detail page's Resilience summary both reflected the
+  exact values entered.
+
 **Out of scope for the epic** (recorded in D33/blueprint): `PUT` (edit), scheduling/recurring,
 real progress percentage, source introspection (schema/preview), settings screens, variants.

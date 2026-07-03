@@ -121,16 +121,21 @@
         </div>
     </Card>
 
-    @* Resilience *@
+    @* Resilience — Max attempts/Backoff/Base delay/Jitter/On failure are real, sent as
+       resilience.* in POST /api/reports (Epic D / D6, follow-up). "Retry on errors" and
+       "Abort when" stay cosmetic: the engine retries any exception uniformly (no per-exception-
+       type filter), and threshold-based abort is a predicate (FailureStrategyBuilder.AbortIf)
+       with no config-document equivalent — same reason dynamic filters are JsonLogic, not
+       arbitrary code. *@
     <Card Title="Resilience" Sub="Retry, backoff and abort policy">
         <div>
-            <div class="cgr"><span class="lbl">Max attempts</span><div class="ctl"><span class="input num"><input class="mono" value="5" /></span><span class="hint">counted per page, not per job</span></div></div>
+            <div class="cgr"><span class="lbl">Max attempts</span><div class="ctl"><span class="input num"><input class="mono" type="number" min="1" @bind="Wizard.RetryMaxAttempts" @bind:event="oninput" /></span><span class="hint">counted per page, not per job</span></div></div>
             <div class="cgr"><span class="lbl">Backoff</span><div class="ctl">
-                <ChipGroup Options="_backoffOpts" Value="_backoff" ValueChanged="v => _backoff = v" />
-                <span class="hint">base</span><span class="input num"><input class="mono" value="2s" /></span>
-                <span class="hint">max</span><span class="input num"><input class="mono" value="30s" /></span>
+                <ChipGroup Options="_backoffOpts" Value="Wizard.RetryBackoff" ValueChanged="v => Wizard.RetryBackoff = v" />
+                <span class="hint">base</span><span class="input num"><input class="mono" type="number" min="0" step="0.5" @bind="Wizard.RetryBaseDelaySeconds" @bind:event="oninput" style="width:60px" /></span>
+                <span class="mono muted" style="font-size:11px">seconds</span>
             </div></div>
-            <div class="cgr"><span class="lbl">Jitter</span><div class="ctl"><Switch @bind-Value="_jitter" /><span class="hint">adds random variation to backoff · avoids thundering herd</span></div></div>
+            <div class="cgr"><span class="lbl">Jitter</span><div class="ctl"><Switch @bind-Value="Wizard.RetryJitter" /><span class="hint">adds random variation to backoff · avoids thundering herd</span></div></div>
             <div class="cgr"><span class="lbl">Retry on errors</span><div class="ctl">
                 <div class="row" style="flex-wrap:wrap;gap:4px">
                     @foreach (var e in _errorTypes)
@@ -141,14 +146,21 @@
                         </Pill>
                     }
                 </div>
+                <span class="hint">illustrative only — the engine retries any exception uniformly</span>
             </div></div>
-            <div class="cgr"><span class="lbl">On failure</span><div class="ctl"><Dropdown Value="save partial + alert" /></div></div>
+            <div class="cgr"><span class="lbl">On failure</span><div class="ctl">
+                <select class="input mono" style="min-width:180px" @bind="Wizard.FailureStrategy">
+                    <option value="abort">abort</option>
+                    <option value="skip-and-log">skip-and-log</option>
+                </select>
+            </div></div>
             <div class="cgr"><span class="lbl">Abort when</span><div class="ctl">
                 <div class="col" style="gap:8px;width:100%">
                     <div class="row" style="gap:10px"><Switch @bind-Value="_abortConsec" /><span style="font-size:13px;min-width:160px">Consecutive failures</span><span class="input num"><input class="mono" value="3" /></span></div>
                     <div class="row" style="gap:10px"><Switch @bind-Value="_abortTotal" /><span style="font-size:13px;min-width:160px">Total failures</span><span class="input num"><input class="mono" value="10" /></span></div>
                     <div class="row" style="gap:10px"><Switch @bind-Value="_abortRate" /><span style="font-size:13px;min-width:160px">Error rate</span><span class="input num"><input class="mono" value="10%" /></span></div>
                 </div>
+                <span class="hint">illustrative only — needs an expression evaluator (post-MVP)</span>
             </div></div>
         </div>
     </Card>
@@ -170,11 +182,11 @@
         new("@@tenant", "acme-prod", "string", "literal"),
     };
 
-    private string _pag = "keyset", _sort = "ASC", _backoff = "exponential";
-    private bool _jitter = true, _abortConsec = true, _abortTotal = false, _abortRate = true;
+    private string _pag = "keyset", _sort = "ASC";
+    private bool _abortConsec = true, _abortTotal = false, _abortRate = true;
     private readonly (string, string)[] _pagOpts = { ("offset","offset"), ("keyset","keyset"), ("cursor","cursor"), ("token","token") };
     private readonly (string, string)[] _sortOpts = { ("ASC","ASC"), ("DESC","DESC") };
-    private readonly (string, string)[] _backoffOpts = { ("linear","linear"), ("exponential","exponential"), ("fixed","fixed") };
+    private readonly (string, string)[] _backoffOpts = { ("Constant","constant"), ("Exponential","exponential") };
     private readonly string[] _errorTypes = { "deadlock", "lock-timeout", "network", "5xx", "429", "custom" };
     private readonly HashSet<string> _retryErrors = new() { "deadlock", "lock-timeout", "network", "5xx", "429" };
     private void ToggleErr(string e) { if (!_retryErrors.Add(e)) _retryErrors.Remove(e); }

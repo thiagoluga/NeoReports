@@ -16,6 +16,7 @@ namespace NeoReports.Abstractions;
 /// <param name="Destinations">Upload destinations; <c>null</c> or empty means none.</param>
 /// <param name="PageSize">Optional page size; the engine default is used when null.</param>
 /// <param name="Filter">Optional dynamic filter expression (JsonLogic); evaluated by a later epic.</param>
+/// <param name="Resilience">Optional retry/failure-strategy overrides; the engine default policy is used when null.</param>
 public sealed record ReportConfig(
     string Name,
     SourceConfig Source,
@@ -23,7 +24,8 @@ public sealed record ReportConfig(
     IReadOnlyList<OutputConfig> Outputs,
     IReadOnlyList<DestinationConfig>? Destinations = null,
     int? PageSize = null,
-    string? Filter = null);
+    string? Filter = null,
+    ResilienceConfig? Resilience = null);
 
 /// <summary>A source section: a stable type id plus a free-form property bag the provider reads.</summary>
 /// <param name="Type">Stable source type id (e.g. "sql"); resolved to an <see cref="IConfigSourceProvider"/>.</param>
@@ -76,6 +78,25 @@ public sealed record SectionConfig(
 public sealed record DestinationConfig(
     string Type,
     IReadOnlyDictionary<string, object?>? Properties = null);
+
+/// <summary>
+/// Optional resilience overrides for the dynamic path. Any omitted field keeps the engine's
+/// default retry/failure policy — the same one <c>ReportBuilder&lt;T&gt;</c> uses when
+/// <c>Retry</c>/<c>OnFailure</c> are never called. Threshold-based abort escalation
+/// (<c>FailureStrategyBuilder.AbortIf</c>) is a predicate and has no config-document
+/// equivalent — same reason dynamic filters are JsonLogic, not arbitrary code.
+/// </summary>
+/// <param name="MaxAttempts">Total attempts including the first (&gt;= 1).</param>
+/// <param name="Backoff">Backoff shape: "Constant" or "Exponential" (matched case-insensitively).</param>
+/// <param name="BaseDelaySeconds">Base delay, in seconds, used for the first retry.</param>
+/// <param name="Jitter">Whether to add randomized jitter to retry delays.</param>
+/// <param name="OnFailure">What happens after a batch exhausts its retries: "abort" or "skip-and-log" (matched case-insensitively).</param>
+public sealed record ResilienceConfig(
+    int? MaxAttempts = null,
+    string? Backoff = null,
+    double? BaseDelaySeconds = null,
+    bool? Jitter = null,
+    string? OnFailure = null);
 
 /// <summary>Parses a serialized report definition (e.g. JSON) into a <see cref="ReportConfig"/>.</summary>
 public interface IReportConfigParser
