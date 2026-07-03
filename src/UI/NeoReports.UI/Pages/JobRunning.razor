@@ -40,70 +40,43 @@
         <PhaseStepper Phases="_phases" />
     </Card>
 
-    <div class="grid-4">
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
         <MetricCard Icon="download" Label="Read" Value="@ReadValue" Sub="@ReadSub" />
         <MetricCard Icon="upload" Label="Written" Value="@WrittenValue" Sub="@WrittenSub" />
         <MetricCard Icon="activity" Label="Rate/s" Value="@RateValue" Sub="@RateSub" />
-        <MetricCard Icon="cpu" Label="Memory" Value="412 MB" Sub="limit 1.2 GB" />
     </div>
 
-    <div class="grid-1-5">
-        <div class="col" style="gap:12px">
-            <Card Title="Processing rate" Sub="Rows/s · last 2 min">
-                <Action><span class="live-indicator"><span class="dot"></span>live</span></Action>
-                <ChildContent>
-                <svg viewBox="0 0 600 90" width="100%" height="90" preserveAspectRatio="none">
-                    <defs><linearGradient id="spk" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#1E6DC3" stop-opacity="0.18" /><stop offset="100%" stop-color="#1E6DC3" stop-opacity="0" /></linearGradient></defs>
-                    <path d="@_areaPath" fill="url(#spk)" />
-                    <path d="@_linePath" stroke="#1E6DC3" stroke-width="1.5" fill="none" />
-                </svg>
-                </ChildContent>
-            </Card>
+    <div class="grid-2">
+        <Card Title="Configuration">
+            <div class="kv">
+                <span class="k">Report</span><span class="v mono">@(_job?.ReportName ?? "sales-db · SQL Server")</span>
+                <span class="k">Formats</span><span class="v">@FormatsText</span>
+                <span class="k">Buffer</span><span class="v mono">@BufferText</span>
+                <span class="k">Retry policy</span><span class="v mono">@RetryPolicyText</span>
+            </div>
+        </Card>
 
-            <Card Title="Timeline" Sub="Job events">
-                <Action><button class="btn link">View full logs</button></Action>
-                <ChildContent>
-                    <Timeline Events="_events" />
-                </ChildContent>
-            </Card>
-        </div>
-
-        <div class="col" style="gap:12px">
-            <Card Title="Configuration">
-                <div class="kv">
-                    <span class="k">Report</span><span class="v mono">@(_job?.ReportName ?? "sales-db · SQL Server")</span>
-                    <span class="k">Formats</span><span class="v">@FormatsText</span>
-                    <span class="k">Buffer</span><span class="v mono">@BufferText</span>
-                    <span class="k">Retry policy</span><span class="v mono">@RetryPolicyText</span>
-                </div>
-            </Card>
-
-            <Card Title="Destinations" Sub="@(_reportDetail is not null ? $"{_reportDetail.Destinations.Count} configured" : "2 pending confirmation")">
-            @if (_reportDetail is not null)
+        <Card Title="Destinations" Sub="@(_reportDetail is not null ? $"{_reportDetail.Destinations.Count} configured" : "2 pending confirmation")">
+        @if (_reportDetail is not null)
+        {
+            @if (_reportDetail.Destinations.Count == 0)
             {
-                @if (_reportDetail.Destinations.Count == 0)
-                {
-                    <span class="muted" style="font-size:12px">No destinations configured</span>
-                }
-                else
-                {
-                    @foreach (var d in _reportDetail.Destinations)
-                    {
-                        <div class="list-row" style="padding:6px 0"><CatTile Sm="true" Kind="info" Icon="cloud-upload" /><div class="col" style="gap:0"><span class="name">@d</span></div></div>
-                    }
-                }
+                <span class="muted" style="font-size:12px">No destinations configured</span>
             }
             else
             {
-                <div class="list-row" style="padding:6px 0"><CatTile Sm="true" Kind="info" Icon="cloud-upload" /><div class="col" style="gap:0"><span class="name">SharePoint · /Sales/2026/05</span><span class="sub">awaiting upload</span></div></div>
-                <div class="list-row" style="padding:6px 0"><CatTile Sm="true" Kind="info" Icon="brand-aws" /><div class="col" style="gap:0"><span class="name">s3://acme-reports/retail</span><span class="sub">awaiting upload</span></div></div>
+                @foreach (var d in _reportDetail.Destinations)
+                {
+                    <div class="list-row" style="padding:6px 0"><CatTile Sm="true" Kind="info" Icon="cloud-upload" /><div class="col" style="gap:0"><span class="name">@d</span></div></div>
+                }
             }
-            </Card>
-
-            <Card Title="Retries this job" Sub="@RetriesSub">
-                <div class="list-row" style="border-bottom:0"><span class="cat-tile sm warn"><i class="ti ti-refresh" style="font-size:14px"></i></span><div class="col" style="gap:0"><span class="name">Attempt 2 · page 12</span><span class="sub">4s delay · SqlException 1205 (deadlock)</span></div></div>
-            </Card>
-        </div>
+        }
+        else
+        {
+            <div class="list-row" style="padding:6px 0"><CatTile Sm="true" Kind="info" Icon="cloud-upload" /><div class="col" style="gap:0"><span class="name">SharePoint · /Sales/2026/05</span><span class="sub">awaiting upload</span></div></div>
+            <div class="list-row" style="padding:6px 0"><CatTile Sm="true" Kind="info" Icon="brand-aws" /><div class="col" style="gap:0"><span class="name">s3://acme-reports/retail</span><span class="sub">awaiting upload</span></div></div>
+        }
+        </Card>
     </div>
 </div>
 
@@ -129,7 +102,6 @@
     private string ReadSub => _job is not null ? "records processed so far" : "of ~42,000";
     private string WrittenValue => _job is not null ? _job.Stats.RecordsWritten.ToString("N0") : "26,624";
     private string WrittenSub => _job is not null ? "records written so far" : "247 buffered";
-    private string RetriesSub => _job is not null ? $"{_job.Stats.Retries} recorded" : "1 recovered";
     private bool IsCancellable => _job is null || string.Equals(_job.Status, "Running", StringComparison.Ordinal)
         || string.Equals(_job.Status, "Retrying", StringComparison.Ordinal);
 
@@ -160,29 +132,8 @@
         new("Read+write", "active"), new("Upload", ""),
     };
 
-    private readonly Timeline.EventRow[] _events =
-    {
-        new("14:32:06", "info", "info-circle", "Started by marina.s", "trigger: manual · job_7c4a01f3"),
-        new("14:32:07", "ok", "check", "Connection established", "sales-db · 142ms"),
-        new("14:32:08", "ok", "check", "Schema validated", "12 columns · checksum OK"),
-        new("14:33:11", "warn", "alert-triangle", "Retry after lock-timeout", "attempt 2 of 5 · backoff exp 4s"),
-        new("14:33:15", "ok", "check", "Retry recovered", "resumed at page 12"),
-        new("14:34:02", "ok", "check", "Page 26 written", "26,000 / 42,000 rows · 64% complete"),
-    };
-
-    // static sparkline geometry
-    private string _linePath = "";
-    private string _areaPath = "";
-
     protected override async Task OnInitializedAsync()
     {
-        var data = new[] { 120,140,130,150,200,240,220,260,280,312,300,290,280,200,180,220,240,230,210,194 };
-        double W = 600, H = 90, P = 6; int max = data.Max(), min = data.Min();
-        double stepX = (W - P * 2) / (data.Length - 1);
-        var pts = data.Select((d, i) => (x: P + i * stepX, y: H - P - ((d - min) / (double)(max - min)) * (H - P * 2 - 6))).ToArray();
-        _linePath = string.Join(" ", pts.Select((p, i) => $"{(i == 0 ? "M" : "L")}{p.x:0.#},{p.y:0.#}"));
-        _areaPath = $"{_linePath} L{pts[^1].x:0.#},{H - P} L{P},{H - P} Z";
-
         // Cosmetic progress-bar animation — there is no server-side total to divide a real
         // percentage by, so this stays a decorative "in progress" indicator.
         _pctTimer = new System.Threading.Timer(_ =>
