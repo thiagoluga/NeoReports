@@ -469,5 +469,19 @@ asked to implement rather than remove:
   `GET /api/reports/{name}` and the Report detail page's Resilience summary both reflected the
   exact values entered.
 
-**Out of scope for the epic** (recorded in D33/blueprint): `PUT` (edit), scheduling/recurring,
+**Follow-up: real Rate/s on the job running page.** `JobRunning`'s "Rate/s" metric card was a
+fixed "194 rows/s · peak 312" regardless of the actual job. Both inputs needed to compute it were
+already available (`Stats.RecordsWritten`, `StartedAt`) — now recomputed on every poll tick, with
+peak tracked as the highest rate seen across polls. "Memory" stays a fixed placeholder (no
+per-job memory tracking in the engine, nothing real to show).
+
+**Follow-up: scheduling deferred (D35).** The audit also flagged the Schedule cards
+(`ReportDetail`, Builder step 5) as cosmetic. Unlike D34, this one is a genuinely new capability —
+neither path has any recurring-execution concept today. Maintainer decision: **defer**, record the
+sketch (cron field + `IRecurringJobManager.AddOrUpdate` on `HangfireJobScheduler`, which already
+has the `IBackgroundJobClient` one-shot pattern to extend) in `DECISIONS.md` (D35), and leave the
+UI illustrative rather than remove it — the code comments now point at D35 instead of describing
+invented behavior as if real.
+
+**Out of scope for the epic** (recorded in D33/blueprint, D35): `PUT` (edit), scheduling/recurring,
 real progress percentage, source introspection (schema/preview), settings screens, variants.
