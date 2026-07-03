@@ -8,6 +8,8 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-03
+
 Two additive feature sets, both SemVer-minor — v1/v1.1 code is unchanged:
 
 - **Web UI** (`NeoReports.UI`): a Blazor Server admin UI — dashboard, reports, a 5-step report
@@ -139,6 +141,7 @@ First public release.
   source-link, and a per-package README. Tests, samples and benchmarks are not
   packable.
 
-[Unreleased]: https://github.com/thiagoluga/NeoReports/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/thiagoluga/NeoReports/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/thiagoluga/NeoReports/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/thiagoluga/NeoReports/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/thiagoluga/NeoReports/releases/tag/v1.0.0
