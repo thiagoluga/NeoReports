@@ -43,7 +43,7 @@
     <div class="grid-4">
         <MetricCard Icon="download" Label="Read" Value="@ReadValue" Sub="@ReadSub" />
         <MetricCard Icon="upload" Label="Written" Value="@WrittenValue" Sub="@WrittenSub" />
-        <MetricCard Icon="activity" Label="Rate/s" Value="194" Sub="rows/s · peak 312" />
+        <MetricCard Icon="activity" Label="Rate/s" Value="@RateValue" Sub="@RateSub" />
         <MetricCard Icon="cpu" Label="Memory" Value="412 MB" Sub="limit 1.2 GB" />
     </div>
 
@@ -133,6 +133,14 @@
     private bool IsCancellable => _job is null || string.Equals(_job.Status, "Running", StringComparison.Ordinal)
         || string.Equals(_job.Status, "Retrying", StringComparison.Ordinal);
 
+    // Rate/s — RecordsWritten / elapsed since StartedAt, recomputed on every poll tick; peak is
+    // the highest rate seen across polls so far. "Memory" stays a fixed placeholder: the engine
+    // tracks no per-job memory usage, so there's nothing real to show.
+    private double _currentRatePerSecond;
+    private double _peakRatePerSecond;
+    private string RateValue => _job is not null ? _currentRatePerSecond.ToString("0") : "194";
+    private string RateSub => _job is not null ? $"rows/s · peak {_peakRatePerSecond:0}" : "rows/s · peak 312";
+
     // Configuration/Destinations cards — real once GET /api/reports/{name} resolves for the
     // job's report; "Worker" (a multi-worker-pool concept) is dropped rather than replaced, since
     // v1 is single-worker (D6/D19) and has no equivalent to show.
@@ -195,6 +203,13 @@
 
         _job = job;
         _badge = StatusBadge(job.Status);
+
+        if (job.StartedAt is { } started)
+        {
+            var elapsedSeconds = (DateTimeOffset.UtcNow - started).TotalSeconds;
+            _currentRatePerSecond = elapsedSeconds > 0 ? job.Stats.RecordsWritten / elapsedSeconds : 0;
+            _peakRatePerSecond = Math.Max(_peakRatePerSecond, _currentRatePerSecond);
+        }
 
         // Fetched once per report name, not on every poll tick.
         if (_reportDetail is null || !string.Equals(_reportDetail.Name, job.ReportName, StringComparison.Ordinal))
