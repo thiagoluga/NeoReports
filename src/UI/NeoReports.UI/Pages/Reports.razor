@@ -58,7 +58,7 @@
             @foreach (var r in Filtered)
             {
                 <ReportCard Report="r"
-                            OnOpen="@(() => Nav.NavigateTo(r.IsPipeline ? "pipeline" : $"reports/{r.Slug}"))"
+                            OnOpen="@(() => Nav.NavigateTo($"reports/{r.Slug}"))"
                             OnPrimary="@(() => RunOrNavigateAsync(r))" />
             }
         </div>

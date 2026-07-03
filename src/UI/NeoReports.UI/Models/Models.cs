@@ -1,8 +1,5 @@
 namespace NeoReports.UI.Models;
 
-/// <summary>Health of a source or connection.</summary>
-public enum Health { Ok, Warn, Error }
-
 /// <summary>Status of a report/job.</summary>
 public enum JobStatus { Ok, Running, Failed, Paused, Queued, Never }
 
@@ -26,35 +23,13 @@ public record ReportSummary(
     string CatKind,
     string CatIcon,
     string PrimaryAction = "Run",
-    string PrimaryIcon = "player-play",
-    bool IsPipeline = false
+    string PrimaryIcon = "player-play"
 );
-
-/// <summary>A registered data source.</summary>
-public record SourceSummary(
-    string Id,
-    string Name,
-    string Type,
-    string Connection,
-    Health Health,
-    string Pagination,
-    string P95,
-    int UsedIn,
-    string LastQuery,
-    string CatKind,
-    string CatIcon
-);
-
-/// <summary>A single column exposed by a source (source explorer).</summary>
-public record ColumnDef(string Name, string Type, bool Selected, string? MetaLabel = null, string? MetaValue = null);
 
 /// <summary>An output format option (builder step 3).</summary>
 public record FormatOption(string Id, string Name, string Ext, string Kind, string Icon, string Description);
 
-/// <summary>A destination option (builder step 4).</summary>
-public record DestinationOption(string Id, string Name, string Kind, string Icon, string Description);
-
-/// <summary>Static maps from JobStatus/Health to badge variant + icon + label.</summary>
+/// <summary>Static map from JobStatus to badge variant + icon + label.</summary>
 public static class StatusMaps
 {
     public static (string Variant, string Icon, string Label, bool Live) Badge(JobStatus s) => s switch
@@ -65,19 +40,5 @@ public static class StatusMaps
         JobStatus.Paused => ("warn", "player-pause", "Paused", false),
         JobStatus.Queued => ("gray", "clock", "Queued", false),
         _ => ("gray", "minus", "Never ran", false),
-    };
-
-    public static string Dot(Health h) => h switch
-    {
-        Health.Ok => "success",
-        Health.Warn => "warn",
-        _ => "danger",
-    };
-
-    public static (string Variant, string Icon, string Label) HealthBadge(Health h) => h switch
-    {
-        Health.Ok => ("success", "check", "healthy"),
-        Health.Warn => ("warn", "clock", "high latency"),
-        _ => ("danger", "alert-triangle", "timeout"),
     };
 }

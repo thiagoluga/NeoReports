@@ -1,5 +1,4 @@
 @page "/builder"
-@using NeoReports.UI.Models
 @using NeoReports.UI.Services
 @inject NavigationManager Nav
 @inject BuilderState Wizard
@@ -11,7 +10,7 @@
     <div class="page-head">
         <div class="title">
             <h1>Choose the data source</h1>
-            <div class="sub">Pick a registered source or create an ad-hoc one · step 1 of 5</div>
+            <div class="sub">Pick the engine source type · step 1 of 5</div>
         </div>
     </div>
 
@@ -24,7 +23,7 @@
     }
     else
     {
-        <Card Title="Engine source type" Sub="What POST /api/reports actually reads from — the cards below are illustrative only">
+        <Card Title="Engine source type" Sub="What POST /api/reports actually reads from">
             <ChildContent>
             <div class="field">
                 <span class="label-sm">Type</span>
@@ -39,53 +38,9 @@
         </Card>
     }
 
-    @* Quick source *@
-    <div class="quick-card">
-        <CatTile Kind="warn" Icon="bolt" />
-        <div class="info">
-            <div class="title"><i class="ti ti-bolt" style="color:var(--warn-fg);font-size:14px"></i> Quick source · ad-hoc SQL</div>
-            <div class="desc">Paste a connection string and a query. Not registered — handy for a one-off run.</div>
-        </div>
-        <Button Variant="outline" Icon="plus">Create</Button>
-    </div>
-
-    <div class="row-between" style="margin-top:4px">
-        <span class="label-sm">Registered sources</span>
-        <span class="mono muted" style="font-size:11px">@Filtered.Count() of @SampleData.Sources.Count</span>
-    </div>
-
-    <FilterBar @bind-Search="_search" Placeholder="Search source by name or type">
-        <Pill Icon="filter">Type</Pill>
-        <Pill Icon="clock">Recent</Pill>
-    </FilterBar>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        @foreach (var s in Filtered)
-        {
-            <div class="sel-card @(_selected == s.Id ? "selected" : "")" @onclick="@(() => _selected = s.Id)">
-                <div class="check"><i class="ti ti-check"></i></div>
-                <CatTile Kind="@s.CatKind" Icon="@s.CatIcon" />
-                <div class="name">@s.Name <span class="type-pill">@s.Type</span></div>
-                <div class="conn">@s.Connection</div>
-                <div class="meta">
-                    <span style="display:inline-flex;align-items:center;gap:5px">
-                        <span style="width:6px;height:6px;border-radius:50%;background:var(--@(StatusMaps.Dot(s.Health))-dot)"></span>
-                        @s.P95
-                    </span>
-                    <span style="display:inline-flex;align-items:center;gap:5px"><i class="ti ti-files" style="font-size:12px"></i>used in @s.UsedIn reports</span>
-                </div>
-            </div>
-        }
-    </div>
-
-    <div style="font-size:12px;color:var(--fg-muted)">
-        Didn't find it? <a href="#" style="color:var(--info-fg)">Register a new source</a> · <a href="#" style="color:var(--info-fg)">create a custom plugin</a>
-    </div>
-
     <div class="wizard-footer">
         <Button Variant="outline" Icon="arrow-left" OnClick="@(() => Nav.NavigateTo("reports"))">Cancel</Button>
         <div style="display:flex;align-items:center;gap:12px">
-            <span class="muted" style="font-size:12px">selected: <b class="mono" style="color:var(--fg)">@(_selected ?? "—")</b></span>
             <Button Variant="primary" IconRight="arrow-right" OnClick="Continue">Continue</Button>
         </div>
     </div>
@@ -93,11 +48,7 @@
 
 @code {
     private readonly string[] Steps = { "Source", "Columns", "Format", "Destination", "Review" };
-    private string _search = "";
-    private string? _selected;
     private IReadOnlyList<string> _engineSources = Array.Empty<string>();
-
-    protected override void OnInitialized() => _selected = Wizard.SourceId ?? "sales-db";
 
     protected override async Task OnInitializedAsync()
     {
@@ -111,14 +62,5 @@
             Wizard.SourceType = _engineSources.Contains("sql") ? "sql" : _engineSources[0];
     }
 
-    private IEnumerable<SourceSummary> Filtered =>
-        SampleData.Sources.Where(s => string.IsNullOrWhiteSpace(_search)
-            || s.Name.Contains(_search, StringComparison.OrdinalIgnoreCase)
-            || s.Type.Contains(_search, StringComparison.OrdinalIgnoreCase));
-
-    private void Continue()
-    {
-        Wizard.SourceId = _selected;
-        Nav.NavigateTo("builder/configure");
-    }
+    private void Continue() => Nav.NavigateTo("builder/configure");
 }

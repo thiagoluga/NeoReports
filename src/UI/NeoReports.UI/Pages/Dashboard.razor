@@ -71,26 +71,11 @@
         </ChildContent>
     </Card>
 
-    @* Sources — mock/future: usage-frequency ranking isn't exposed by the engine.
-       Destinations → Recent files when live: real filenames/sizes from the completed jobs above,
-       via GET /api/jobs/{id}/artifacts (Epic D / D6, follow-up). *@
-    <div class="grid-2">
-        <Card Title="Sources" Sub="Most used">
-            <Action><Button Variant="link" OnClick="@(() => Nav.NavigateTo("sources"))">Manage →</Button></Action>
-            <ChildContent>
-            @foreach (var s in SampleData.Sources.Take(5))
-            {
-                <div class="list-row">
-                    <span class="dot" style="@($"width:7px;height:7px;border-radius:50%;background:var(--{StatusMaps.Dot(s.Health)}-dot)")"></span>
-                    <div class="col" style="gap:0">
-                        <span class="name">@s.Name</span>
-                        <span class="sub">@s.Type</span>
-                    </div>
-                    <span class="right">@s.P95</span>
-                </div>
-            }
-            </ChildContent>
-        </Card>
+    @* Destinations → Recent files when live: real filenames/sizes from the completed jobs
+       above, via GET /api/jobs/{id}/artifacts (Epic D / D6, follow-up). The "Sources" card
+       (usage-frequency ranking) was removed — no source registry or usage tracking exists in
+       the engine (D36); see docs/ui-removed-mock-content.md. *@
+    <div>
         <Card Title="@(_isLive ? "Recent files" : "Destinations")" Sub="@(_isLive ? "From completed jobs" : "Latest uploads")">
             <Action><Button Variant="link" OnClick="@(() => Nav.NavigateTo("reports"))">@(_isLive ? "View reports →" : "Manage →")</Button></Action>
             <ChildContent>
@@ -149,7 +134,6 @@
 
     private bool _isLive;
     private IReadOnlyList<DashboardJobRow> _recentJobs = SampleData.Reports
-        .Where(r => !r.IsPipeline)
         .Select(ToRow)
         .ToArray();
     private DashboardMetrics _metrics = DashboardMetrics.Demo;

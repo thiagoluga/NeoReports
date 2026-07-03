@@ -58,8 +58,6 @@
         var rel = Nav.ToBaseRelativePath(Nav.Uri).TrimStart('/');
         var q = rel.IndexOf('?');
         if (q >= 0) rel = rel[..q];
-        // "pipeline" belongs under Reports
-        if (match == "reports" && rel.StartsWith("pipeline", StringComparison.OrdinalIgnoreCase)) return true;
         if (match == "__root") return string.IsNullOrEmpty(rel);
         return rel.StartsWith(match, StringComparison.OrdinalIgnoreCase);
     }
