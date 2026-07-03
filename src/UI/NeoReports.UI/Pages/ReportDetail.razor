@@ -4,12 +4,12 @@
 @inject NavigationManager Nav
 @inject INeoReportsApiClient Api
 
-@if (_report is null)
+@if (_detail is null)
 {
     <div class="page">
         <EmptyState Icon="report-off" Title="Report not found">
             <ChildContent>
-                No report matches "@Slug".
+                No report matches "@Slug", or the engine API is unreachable.
             </ChildContent>
             <Action><Button Variant="outline" Icon="arrow-left" OnClick="@(() => Nav.NavigateTo("reports"))">Back to reports</Button></Action>
         </EmptyState>
@@ -22,21 +22,15 @@
     <div class="page-head">
         <div class="title" style="max-width:720px">
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-                <h1 style="font-size:24px">@_report.Name</h1>
-                <div style="display:flex;gap:4px">
-                    @foreach (var t in _report.Tags) { <Chip>@t</Chip> }
-                    @if (_detail is not null)
-                    {
-                        <Chip Kind="token">origin: @_detail.Origin</Chip>
-                    }
-                </div>
+                <h1 style="font-size:24px">@_detail.Name</h1>
+                <Chip Kind="token">origin: @_detail.Origin</Chip>
             </div>
-            <p class="sub" style="max-width:480px;margin-top:8px;line-height:1.5">@_report.Description</p>
+            <p class="sub" style="max-width:480px;margin-top:8px;line-height:1.5">@Description</p>
         </div>
         <div style="display:flex;gap:8px;align-self:flex-start;margin-top:6px">
             <Button Variant="outline" Icon="pencil" OnClick="@(() => Nav.NavigateTo("builder"))">Edit</Button>
             <Button Variant="primary" Icon="player-play" OnClick="RunNowAsync">Run now</Button>
-            @if (_detail is { Deletable: true })
+            @if (_detail.Deletable)
             {
                 <Button Variant="danger" Icon="trash" Loading="_deleting" OnClick="DeleteAsync">
                     @(_confirmingDelete ? "Confirm delete" : "Delete report")
@@ -53,13 +47,13 @@
         </Banner>
     }
 
-    @* Metric strip — Total runs/Success rate/Avg duration computed from GET /api/jobs when live
-       (Epic D / D7 pattern); Next run stays honest ("Not scheduled") since v1 has no scheduler. *@
+    @* Metric strip — Total runs/Success rate/Avg duration computed from GET /api/jobs.
+       "Next run" stays honest ("Not scheduled") since v1 has no scheduler. *@
     <div class="grid-4">
-        <MetricCard Icon="player-play" Label="Total runs" Value="@_metrics.TotalRuns" Sub="@(_isLive ? "known jobs" : "since Jan 12, 2025")" />
-        <MetricCard Icon="circle-check" Label="Success rate" Value="@_metrics.SuccessRate" Sub="@(_isLive ? "known jobs · terminal" : "vs last month")" DeltaDir="@(_isLive ? null : "up")" DeltaText="@(_isLive ? null : "+0.4pp")" />
-        <MetricCard Icon="clock" Label="Avg duration" Value="@_metrics.AvgDuration" Sub="@(_isLive ? "completed jobs" : "last 30 days")" />
-        <MetricCard Icon="calendar" Label="Next run" Value="@(_isLive ? "Not scheduled" : "Mon Jun 3")" Sub="@(_isLive ? "trigger via API or the run button" : "06:00 BRT · in 6 days")" />
+        <MetricCard Icon="player-play" Label="Total runs" Value="@_metrics.TotalRuns" Sub="known jobs" />
+        <MetricCard Icon="circle-check" Label="Success rate" Value="@_metrics.SuccessRate" Sub="known jobs · terminal" />
+        <MetricCard Icon="clock" Label="Avg duration" Value="@_metrics.AvgDuration" Sub="completed jobs" />
+        <MetricCard Icon="calendar" Label="Next run" Value="Not scheduled" Sub="trigger via API or the run button" />
     </div>
 
     <div>
@@ -69,32 +63,10 @@
             <ChildContent>
             <div>
                 <div class="cfg-row">
-                    <span class="lbl"><i class="ti ti-database"></i>Source</span>
-                    <div class="val">
-                        <span class="row" style="gap:8px">
-                            <CatTile Sm="true" Kind="teal" Icon="database" />
-                            <span style="font-weight:500">@_report.Source</span>
-                            @if (!_isLive)
-                            {
-                                <span class="mono muted" style="font-size:11px">SQL Server</span>
-                            }
-                        </span>
-                    </div>
-                    <button class="edit-link">edit</button>
-                </div>
-                <div class="cfg-row">
                     <span class="lbl"><i class="ti ti-columns"></i>Columns</span>
                     <div class="val">
-                        @if (_detail is not null)
-                        {
-                            <span>@_detail.Columns.Count selected</span>
-                            <span class="mono muted" style="font-size:11px">@string.Join(", ", _detail.Columns.Select(c => c.Name))</span>
-                        }
-                        else
-                        {
-                            <span>6 selected</span>
-                            <span class="mono muted" style="font-size:11px">id, customer_id, total, created_at, status_id, region</span>
-                        }
+                        <span>@_detail.Columns.Count selected</span>
+                        <span class="mono muted" style="font-size:11px">@string.Join(", ", _detail.Columns.Select(c => c.Name))</span>
                     </div>
                     <button class="edit-link">edit</button>
                 </div>
@@ -102,7 +74,7 @@
                     <span class="lbl"><i class="ti ti-file-text"></i>Formats</span>
                     <div class="val">
                         <div class="pipeline-chips" style="gap:4px">
-                            @foreach (var f in _report.Formats)
+                            @foreach (var f in _detail.Formats)
                             {
                                 <Chip Kind="format" Ext="@f.ToLower()">@f</Chip>
                             }
@@ -112,12 +84,12 @@
                 </div>
                 <div class="cfg-row">
                     <span class="lbl"><i class="ti ti-cloud-upload"></i>Destinations</span>
-                    <div class="val"><span>@_report.Destination</span></div>
+                    <div class="val"><span>@Destinations</span></div>
                     <button class="edit-link">edit</button>
                 </div>
                 <div class="cfg-row">
                     <span class="lbl"><i class="ti ti-shield-check"></i>Resilience</span>
-                    <div class="val"><span class="mono" style="font-size:12px">@ResilienceSummary</span></div>
+                    <div class="val"><span class="mono" style="font-size:12px">@ResilienceFormatter.Format(_detail)</span></div>
                     <span></span>
                 </div>
             </div>
@@ -125,8 +97,8 @@
         </Card>
     </div>
 
-    @* History — GET /api/jobs?report={name} when live, sample rows otherwise *@
-    <Card Title="Run history" Sub="@(_isLive ? "Last 10" : "Last 5")">
+    @* History — GET /api/jobs?report={name} *@
+    <Card Title="Run history" Sub="Last 10">
         <Action><Button Variant="link">View all →</Button></Action>
         <ChildContent>
         @if (_history.Count == 0)
@@ -162,19 +134,20 @@
 
 @code {
     [Parameter] public string Slug { get; set; } = "";
-    private ReportSummary? _report;
     private ApiReportDetail? _detail;
-    private bool _isLive;
     private bool _deleting;
     private bool _confirmingDelete;
     private string? _deleteError;
 
+    private string Description => $"{_detail!.Columns.Count} column(s) · {_detail.Formats.Count} format(s).";
+    private string Destinations => _detail!.Destinations.Count > 0 ? string.Join(" + ", _detail.Destinations) : "—";
+
     private sealed record ReportMetrics(string TotalRuns, string SuccessRate, string AvgDuration)
     {
-        public static readonly ReportMetrics Demo = new("386", "98.7%", "3m 24s");
+        public static readonly ReportMetrics Unavailable = new("—", "—", "—");
     }
 
-    private ReportMetrics _metrics = ReportMetrics.Demo;
+    private ReportMetrics _metrics = ReportMetrics.Unavailable;
 
     private static ReportMetrics ComputeMetrics(IReadOnlyList<ApiJobView> jobs)
     {
@@ -196,19 +169,12 @@
         return new ReportMetrics(jobs.Count.ToString(), successRate, avgDuration);
     }
 
-    private string ResilienceSummary => _detail is null
-        ? "5× retries · exp 2s..30s · jitter · abort if >10% errors"
-        : ResilienceFormatter.Format(_detail);
-
     private async Task RunNowAsync()
     {
-        if (!_isLive || _report is null)
-        {
-            Nav.NavigateTo("jobs/7c4a01f3");
+        if (_detail is null)
             return;
-        }
 
-        var jobId = await Api.TryRunReportAsync(_report.Name);
+        var jobId = await Api.TryRunReportAsync(_detail.Name);
         Nav.NavigateTo(jobId is not null ? $"jobs/{jobId}" : "jobs/failed");
     }
 
@@ -242,16 +208,7 @@
 
     private sealed record HistoryRow(string When, JobStatus Status, string Duration, string Rows, string By, string Route);
 
-    private static readonly HistoryRow[] DemoHistory =
-    {
-        new("May 27 · 14:32", JobStatus.Running, "2m 18s", "26,624", "marina.s · manual", "jobs/7c4a01f3"),
-        new("May 3 · 06:00",  JobStatus.Ok,      "3m 36s", "42,184", "schedule", "jobs/completed/7c4a01f3"),
-        new("Apr 1 · 06:00",  JobStatus.Ok,      "3m 41s", "39,812", "schedule", "jobs/completed/7c4a01f3"),
-        new("Mar 1 · 06:00",  JobStatus.Failed,  "1m 22s", "—",      "schedule", "jobs/failed/8b2f01a9"),
-        new("Feb 1 · 06:00",  JobStatus.Ok,      "4m 02s", "38,118", "schedule", "jobs/completed/7c4a01f3"),
-    };
-
-    private IReadOnlyList<HistoryRow> _history = DemoHistory;
+    private IReadOnlyList<HistoryRow> _history = Array.Empty<HistoryRow>();
 
     private static HistoryRow ToHistoryRow(ApiJobView j) => new(
         When: j.CreatedAt.ToLocalTime().ToString("MMM d · HH:mm"),
@@ -284,47 +241,20 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        // Demo slugs resolve from sample data first (unaffected by whether an engine is
-        // mounted); an unknown slug falls back to GET /api/reports/{name} (Epic D / D4) so a
-        // real registered report shows its actual columns/formats/destinations/retry/origin
-        // instead of "not found".
-        _report = SampleData.Reports.FirstOrDefault(r => r.Slug == Slug);
-        if (_report is null)
-        {
-            _detail = await Api.TryGetReportDetailAsync(Slug);
-            if (_detail is not null)
-            {
-                _isLive = true;
-                _report = new ReportSummary(
-                    Slug: Slug,
-                    Name: _detail.Name,
-                    Description: $"{_detail.Columns.Count} column(s) · {_detail.Formats.Count} format(s).",
-                    Tags: Array.Empty<string>(),
-                    Status: JobStatus.Never,
-                    Source: "—",
-                    Formats: _detail.Formats.ToArray(),
-                    Destination: _detail.Destinations.Count > 0 ? string.Join(" + ", _detail.Destinations) : "—",
-                    ScheduleTitle: "Not scheduled",
-                    ScheduleSub: "trigger via API or the run button",
-                    LastTitle: "—",
-                    LastSub: "never run",
-                    CatKind: "gray",
-                    CatIcon: "report");
-            }
-        }
-        if (_report is null)
+        _detail = await Api.TryGetReportDetailAsync(Slug);
+        _metrics = ReportMetrics.Unavailable;
+        _history = Array.Empty<HistoryRow>();
+
+        if (_detail is null)
             return;
 
-        if (_isLive)
+        // limit: 200 so the metric strip reflects the report's full known history, not just
+        // the 10 rows shown in the table below (same pattern as Dashboard's ComputeMetrics).
+        var jobs = await Api.TryListJobsAsync(report: _detail.Name, limit: 200);
+        if (jobs is not null)
         {
-            // limit: 200 so the metric strip reflects the report's full known history, not just
-            // the 10 rows shown in the table below (same pattern as Dashboard's ComputeMetrics).
-            var jobs = await Api.TryListJobsAsync(report: _report.Name, limit: 200);
-            if (jobs is not null)
-            {
-                _history = jobs.Count > 0 ? jobs.Take(10).Select(ToHistoryRow).ToArray() : Array.Empty<HistoryRow>();
-                _metrics = ComputeMetrics(jobs);
-            }
+            _history = jobs.Count > 0 ? jobs.Take(10).Select(ToHistoryRow).ToArray() : Array.Empty<HistoryRow>();
+            _metrics = ComputeMetrics(jobs);
         }
     }
 }

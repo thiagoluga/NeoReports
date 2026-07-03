@@ -14,34 +14,33 @@
     </div>
 
     @* Count strip — running/failed computed from GET /api/jobs when live. "Active schedules" and
-       "paused" are dropped when live: v1 has no scheduler, and jobs never reach Paused. *@
-    <div class="count-strip">
+       "paused" aren't shown: v1 has no scheduler, and jobs never reach Paused. *@
     @if (_isLive)
     {
-        <span class="c"><span class="dot" style="background:var(--info-dot)"></span><b>@_runningNow</b> running now</span>
-        <span class="c"><span class="dot" style="background:var(--danger-dot)"></span><b>@_failedCount</b> failed</span>
+        <div class="count-strip">
+            <span class="c"><span class="dot" style="background:var(--info-dot)"></span><b>@_runningNow</b> running now</span>
+            <span class="c"><span class="dot" style="background:var(--danger-dot)"></span><b>@_failedCount</b> failed</span>
+        </div>
     }
-    else
-    {
-        <span class="c"><span class="dot" style="background:var(--success-dot)"></span><b>32</b> active schedules</span>
-        <span class="c"><span class="dot" style="background:var(--info-dot)"></span><b>9</b> running now</span>
-        <span class="c"><span class="dot" style="background:var(--warn-dot)"></span><b>3</b> paused</span>
-        <span class="c"><span class="dot" style="background:var(--danger-dot)"></span><b>1</b> failed</span>
-    }
-    </div>
 
     @* Filter bar — GET /api/reports (client-side filter here) *@
     <FilterBar @bind-Search="_search" Placeholder="Search by name, tag or source">
-        @if (_statusFilter is not null)
-        {
-            <Pill Active="true" OnClick="@(() => _statusFilter = null)">status: @_statusFilter <i class="ti ti-x"></i></Pill>
-        }
         <Pill Icon="tag">Tag</Pill>
         <Pill Icon="arrows-sort">Sort by</Pill>
     </FilterBar>
 
     @* Report cards *@
-    @if (!Filtered.Any())
+    @if (!_isLive)
+    {
+        <Card>
+            <EmptyState Icon="report-off" Title="Engine unreachable">
+                <ChildContent>
+                    Reports will show up here once the engine API is reachable.
+                </ChildContent>
+            </EmptyState>
+        </Card>
+    }
+    else if (!Filtered.Any())
     {
         <Card>
             <EmptyState Icon="report-off" Title="No reports match your filters">
@@ -67,8 +66,7 @@
 
 @code {
     private string _search = "";
-    private string? _statusFilter = "running";
-    private IReadOnlyList<ReportSummary> _reports = SampleData.Reports;
+    private IReadOnlyList<ReportSummary> _reports = Array.Empty<ReportSummary>();
     private bool _isLive;
     private int _runningNow;
     private int _failedCount;
@@ -82,31 +80,26 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // GET /api/reports — falls back to sample data if the engine API isn't reachable
-        // (e.g. this UI mounted without a NeoReports.AspNetCore host alongside it).
+        // GET /api/reports — null means the engine API isn't reachable (e.g. this UI mounted
+        // without a NeoReports.AspNetCore host alongside it); an empty list is a real, live,
+        // empty result and is treated as such, not as "unreachable".
         var live = await Api.TryGetReportsAsync();
-        if (live is { Count: > 0 })
-        {
-            _reports = live.Select(ToReportSummary).ToArray();
-            _statusFilter = null;
-            _isLive = true;
+        if (live is null)
+            return;
 
-            var jobs = await Api.TryListJobsAsync(limit: 200);
-            if (jobs is not null)
-            {
-                _runningNow = jobs.Count(j => j.Status is "Running" or "Retrying");
-                _failedCount = jobs.Count(j => j.Status == "Failed");
-            }
+        _reports = live.Select(ToReportSummary).ToArray();
+        _isLive = true;
+
+        var jobs = await Api.TryListJobsAsync(limit: 200);
+        if (jobs is not null)
+        {
+            _runningNow = jobs.Count(j => j.Status is "Running" or "Retrying");
+            _failedCount = jobs.Count(j => j.Status == "Failed");
         }
     }
 
     private async Task RunOrNavigateAsync(ReportSummary r)
     {
-        if (!_isLive)
-        {
-            Nav.NavigateTo(r.Status == JobStatus.Failed ? "jobs/failed" : "jobs/7c4a01f3");
-            return;
-        }
 
         // POST /api/reports/{name}/run — async trigger; land on the new job's live page.
         var jobId = await Api.TryRunReportAsync(r.Name);
