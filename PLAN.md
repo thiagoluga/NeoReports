@@ -421,8 +421,29 @@ flow (Builder → validate → save/run → real CSV/XLSX on disk → report det
 delete) can be clicked through end to end without a database or cloud account. Hands-on testing
 of that sample found step 1 of the Builder set `Wizard.SourceType` from `GET /api/capabilities`
 with no visible control to change it — the "Engine source type" selector (mirroring D6's "Engine
-destination" pattern) was added to close the gap. `docs/ui-handoff.md` and the sample's README
-are updated accordingly.
+destination" pattern) was added to close the gap.
+
+**Follow-up: hardcoded-UI audit.** A full pass over every screen found several spots still
+showing fixed/stale data despite an already-wired real endpoint or already-bound `BuilderState`
+field being available — fixed across 3 small PRs:
+- Builder step 2's recap card and step 5's summary (Source/Columns/Destinations rows) read real
+  `Wizard` fields now, instead of a fixed "SQL Server" string and a stale `Wizard.Destinations`
+  set that step 4 never touches (was silently stuck on "sharepoint").
+- `ReportDetail`'s metric strip (total runs/success rate/avg duration) and `Reports`' count strip
+  (running now/failed) are computed from `GET /api/jobs` when live, same pattern as Dashboard's
+  `ComputeMetrics` (D7); "Next run"/"active schedules"/"paused" are dropped or shown as "Not
+  scheduled" rather than a fake future date, since v1 has no scheduler.
+- `JobRunning`/`JobCompleted`'s Configuration and Destinations cards now read `GET
+  /api/reports/{name}` instead of always showing SQL-Server-era demo data (CSV/XLSX, 1,000
+  rows/page, SharePoint/S3); "Worker" and "Run by" rows are dropped — v1 is single-worker with no
+  triggered-by identity on a job, so there's nothing real to show. Extracted the shared
+  `ResilienceFormatter` helper to avoid duplicating the retry-summary logic a third time.
+
+A larger list of screens/cards with **no** real backing at all (scheduling/cron, permissions,
+dynamic parameters, SharePoint/email destinations, settings screens) was intentionally left
+untouched — see `docs/ui-handoff.md` for what's still `mock/future` and why.
+
+`docs/ui-handoff.md` and the sample's README are updated accordingly.
 
 **Out of scope for the epic** (recorded in D33/blueprint): `PUT` (edit), scheduling/recurring,
 real progress percentage, source introspection (schema/preview), settings screens, variants.
