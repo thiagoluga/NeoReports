@@ -71,7 +71,9 @@
         </ChildContent>
     </Card>
 
-    @* Sources + destinations — mock/future: health & upload history not exposed yet *@
+    @* Sources — mock/future: usage-frequency ranking isn't exposed by the engine.
+       Destinations → Recent files when live: real filenames/sizes from the completed jobs above,
+       via GET /api/jobs/{id}/artifacts (Epic D / D6, follow-up). *@
     <div class="grid-2">
         <Card Title="Sources" Sub="Most used">
             <Action><Button Variant="link" OnClick="@(() => Nav.NavigateTo("sources"))">Manage →</Button></Action>
@@ -89,24 +91,45 @@
             }
             </ChildContent>
         </Card>
-        <Card Title="Destinations" Sub="Latest uploads">
-            <Action><Button Variant="link">Manage →</Button></Action>
+        <Card Title="@(_isLive ? "Recent files" : "Destinations")" Sub="@(_isLive ? "From completed jobs" : "Latest uploads")">
+            <Action><Button Variant="link" OnClick="@(() => Nav.NavigateTo("reports"))">@(_isLive ? "View reports →" : "Manage →")</Button></Action>
             <ChildContent>
-            <div class="list-row">
-                <CatTile Kind="info" Icon="cloud-upload" Sm="true" />
-                <div class="col" style="gap:0"><span class="name">SharePoint · /Sales/2026</span><span class="sub">last upload</span></div>
-                <span class="right">14:35:54</span>
-            </div>
-            <div class="list-row">
-                <CatTile Kind="info" Icon="brand-aws" Sm="true" />
-                <div class="col" style="gap:0"><span class="name">s3://acme-reports/billing</span><span class="sub">last upload</span></div>
-                <span class="right">14:18:02</span>
-            </div>
-            <div class="list-row">
-                <CatTile Kind="warn" Icon="mail" Sm="true" />
-                <div class="col" style="gap:0"><span class="name">email · ana@@acme.com</span><span class="sub">last upload</span></div>
-                <span class="right">12:02:11</span>
-            </div>
+            @if (_isLive)
+            {
+                @if (_recentFiles.Count == 0)
+                {
+                    <span class="muted" style="font-size:12px">No files generated yet</span>
+                }
+                else
+                {
+                    @foreach (var f in _recentFiles)
+                    {
+                        <div class="list-row">
+                            <CatTile Kind="teal" Icon="@FileFormatting.Icon(f.FileName)" Sm="true" />
+                            <div class="col" style="gap:0"><span class="name">@f.FileName</span><span class="sub">@f.ReportName · @FileFormatting.Bytes(f.SizeBytes)</span></div>
+                            <span class="right">@(f.CompletedAt?.ToLocalTime().ToString("HH:mm:ss") ?? "—")</span>
+                        </div>
+                    }
+                }
+            }
+            else
+            {
+                <div class="list-row">
+                    <CatTile Kind="info" Icon="cloud-upload" Sm="true" />
+                    <div class="col" style="gap:0"><span class="name">SharePoint · /Sales/2026</span><span class="sub">last upload</span></div>
+                    <span class="right">14:35:54</span>
+                </div>
+                <div class="list-row">
+                    <CatTile Kind="info" Icon="brand-aws" Sm="true" />
+                    <div class="col" style="gap:0"><span class="name">s3://acme-reports/billing</span><span class="sub">last upload</span></div>
+                    <span class="right">14:18:02</span>
+                </div>
+                <div class="list-row">
+                    <CatTile Kind="warn" Icon="mail" Sm="true" />
+                    <div class="col" style="gap:0"><span class="name">email · ana@@acme.com</span><span class="sub">last upload</span></div>
+                    <span class="right">12:02:11</span>
+                </div>
+            }
             </ChildContent>
         </Card>
     </div>
@@ -122,12 +145,15 @@
         public static readonly DashboardMetrics Demo = new("486", "98.4%", "—", "3m 12s");
     }
 
+    private sealed record DashboardFileRow(string ReportName, string FileName, long SizeBytes, DateTimeOffset? CompletedAt);
+
     private bool _isLive;
     private IReadOnlyList<DashboardJobRow> _recentJobs = SampleData.Reports
         .Where(r => !r.IsPipeline)
         .Select(ToRow)
         .ToArray();
     private DashboardMetrics _metrics = DashboardMetrics.Demo;
+    private IReadOnlyList<DashboardFileRow> _recentFiles = Array.Empty<DashboardFileRow>();
 
     private static string JobRoute(DashboardJobRow r) => r.Status switch
     {
@@ -201,6 +227,25 @@
         DateTimeOffset todayUtc = DateTimeOffset.UtcNow.Date;
         IReadOnlyList<ApiJobView>? todaysJobs = await Api.TryListJobsAsync(since: todayUtc, limit: 200);
         _metrics = ComputeMetrics(todaysJobs ?? recent);
+
+        _recentFiles = await LoadRecentFilesAsync(recent);
+    }
+
+    // GET /api/jobs/{id}/artifacts for a handful of the most recently completed jobs — the job
+    // list itself carries no file info, so this is the only way to show real generated files.
+    private async Task<IReadOnlyList<DashboardFileRow>> LoadRecentFilesAsync(IReadOnlyList<ApiJobView> recent)
+    {
+        var files = new List<DashboardFileRow>();
+        foreach (var job in recent.Where(j => j.Status == "Completed").Take(3))
+        {
+            var artifacts = await Api.TryGetJobArtifactsAsync(job.Id);
+            if (artifacts is null)
+                continue;
+
+            files.AddRange(artifacts.Select(a => new DashboardFileRow(job.ReportName, a.FileName, a.SizeBytes, job.CompletedAt)));
+        }
+
+        return files.OrderByDescending(f => f.CompletedAt).Take(5).ToArray();
     }
 
     private static DashboardMetrics ComputeMetrics(IReadOnlyList<ApiJobView> jobs)
