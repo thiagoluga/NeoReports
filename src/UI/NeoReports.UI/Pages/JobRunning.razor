@@ -72,17 +72,32 @@
             <Card Title="Configuration">
                 <div class="kv">
                     <span class="k">Report</span><span class="v mono">@(_job?.ReportName ?? "sales-db · SQL Server")</span>
-                    <span class="k">Formats</span><span class="v">CSV, XLSX</span>
-                    <span class="k">Buffer</span><span class="v mono">1,000 rows/page</span>
-                    <span class="k">Retry policy</span><span class="v mono">5× · exp 2s..30s · jitter</span>
-                    <span class="k">On failure</span><span class="v">save partial + alert</span>
-                    <span class="k">Worker</span><span class="v mono">worker-04 · default pool</span>
+                    <span class="k">Formats</span><span class="v">@FormatsText</span>
+                    <span class="k">Buffer</span><span class="v mono">@BufferText</span>
+                    <span class="k">Retry policy</span><span class="v mono">@RetryPolicyText</span>
                 </div>
             </Card>
 
-            <Card Title="Destinations" Sub="2 pending confirmation">
+            <Card Title="Destinations" Sub="@(_reportDetail is not null ? $"{_reportDetail.Destinations.Count} configured" : "2 pending confirmation")">
+            @if (_reportDetail is not null)
+            {
+                @if (_reportDetail.Destinations.Count == 0)
+                {
+                    <span class="muted" style="font-size:12px">No destinations configured</span>
+                }
+                else
+                {
+                    @foreach (var d in _reportDetail.Destinations)
+                    {
+                        <div class="list-row" style="padding:6px 0"><CatTile Sm="true" Kind="info" Icon="cloud-upload" /><div class="col" style="gap:0"><span class="name">@d</span></div></div>
+                    }
+                }
+            }
+            else
+            {
                 <div class="list-row" style="padding:6px 0"><CatTile Sm="true" Kind="info" Icon="cloud-upload" /><div class="col" style="gap:0"><span class="name">SharePoint · /Sales/2026/05</span><span class="sub">awaiting upload</span></div></div>
                 <div class="list-row" style="padding:6px 0"><CatTile Sm="true" Kind="info" Icon="brand-aws" /><div class="col" style="gap:0"><span class="name">s3://acme-reports/retail</span><span class="sub">awaiting upload</span></div></div>
+            }
             </Card>
 
             <Card Title="Retries this job" Sub="@RetriesSub">
@@ -96,6 +111,7 @@
     [Parameter] public string Id { get; set; } = "7c4a01f3";
 
     private ApiJobView? _job;
+    private ApiReportDetail? _reportDetail;
     private (string Variant, string Icon, string Label, bool Live) _badge = ("info", "player-play", "Running", true);
     private int _pct = 64;
     private System.Threading.Timer? _pctTimer;
@@ -116,6 +132,19 @@
     private string RetriesSub => _job is not null ? $"{_job.Stats.Retries} recorded" : "1 recovered";
     private bool IsCancellable => _job is null || string.Equals(_job.Status, "Running", StringComparison.Ordinal)
         || string.Equals(_job.Status, "Retrying", StringComparison.Ordinal);
+
+    // Configuration/Destinations cards — real once GET /api/reports/{name} resolves for the
+    // job's report; "Worker" (a multi-worker-pool concept) is dropped rather than replaced, since
+    // v1 is single-worker (D6/D19) and has no equivalent to show.
+    private string FormatsText => _reportDetail is not null
+        ? string.Join(", ", _reportDetail.Formats.Select(f => f.ToUpperInvariant()))
+        : "CSV, XLSX";
+    private string BufferText => _reportDetail is not null
+        ? $"{_reportDetail.PageSize:N0} rows/page"
+        : "1,000 rows/page";
+    private string RetryPolicyText => _reportDetail is not null
+        ? ResilienceFormatter.Format(_reportDetail)
+        : "5× · exp 2s..30s · jitter · on failure: save partial + alert";
 
     private readonly PhaseStepper.Phase[] _phases =
     {
@@ -166,6 +195,10 @@
 
         _job = job;
         _badge = StatusBadge(job.Status);
+
+        // Fetched once per report name, not on every poll tick.
+        if (_reportDetail is null || !string.Equals(_reportDetail.Name, job.ReportName, StringComparison.Ordinal))
+            _reportDetail = await Api.TryGetReportDetailAsync(job.ReportName);
 
         if (string.Equals(job.Status, "Completed", StringComparison.Ordinal))
         {
