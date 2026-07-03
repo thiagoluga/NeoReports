@@ -128,33 +128,17 @@
         </ChildContent>
     </Card>
 
-    <div class="grid-1-5">
-        <Card Title="Timeline" Sub="Full sequence">
-            <Action><button class="btn link">View full logs</button></Action>
-            <ChildContent>
-                <Timeline Events="_events" Expanded="true" />
-            </ChildContent>
-        </Card>
-        @* Configuration — Report/Formats/Buffer/Retry policy real once GET /api/reports/{name}
-           resolves. "Worker" and "Run by" are dropped rather than replaced: v1 is single-worker
-           (no worker-pool concept) and jobs carry no "triggered by" identity. *@
-        <Card Title="Configuration" Sub="Snapshot of what ran">
-            <div class="kv">
-                <span class="k">Report</span><span class="v mono">@(_job?.ReportName ?? "sales-db · SQL Server")</span>
-                <span class="k">Formats</span><span class="v">@FormatsText</span>
-                <span class="k">Buffer</span><span class="v mono">@BufferText</span>
-                <span class="k">Retry policy</span><span class="v mono">@RetryPolicyText</span>
-            </div>
-            @if (_job is null)
-            {
-                <div class="row" style="padding-top:12px;border-top:0.5px solid var(--border);margin-top:4px">
-                    <span class="muted" style="font-size:12px">Run by</span>
-                    <span style="font-weight:500;font-size:13px">marina.s</span>
-                    <span class="mono muted" style="font-size:11px;margin-left:auto">manual · 14:32:06</span>
-                </div>
-            }
-        </Card>
-    </div>
+    @* Configuration — Report/Formats/Buffer/Retry policy real once GET /api/reports/{name}
+       resolves. "Worker" and "Run by" are dropped rather than replaced: v1 is single-worker
+       (no worker-pool concept) and jobs carry no "triggered by" identity. *@
+    <Card Title="Configuration" Sub="Snapshot of what ran">
+        <div class="kv">
+            <span class="k">Report</span><span class="v mono">@(_job?.ReportName ?? "sales-db · SQL Server")</span>
+            <span class="k">Formats</span><span class="v">@FormatsText</span>
+            <span class="k">Buffer</span><span class="v mono">@BufferText</span>
+            <span class="k">Retry policy</span><span class="v mono">@RetryPolicyText</span>
+        </div>
+    </Card>
 </div>
 
 @code {
@@ -198,18 +182,6 @@
     {
         new("Connect", "done"), new("Authenticate", "done"), new("Schema", "done"),
         new("Read+write", "done"), new("Upload", "done"),
-    };
-
-    private readonly Timeline.EventRow[] _events =
-    {
-        new("14:32:06", "info", "info-circle", "Started by marina.s", "trigger: manual · job_7c4a01f3"),
-        new("14:32:07", "ok", "check", "Connection established", "sales-db · 142ms"),
-        new("14:33:11", "warn", "alert-triangle", "Retry after lock-timeout", "attempt 2 of 5 · backoff exp 4s"),
-        new("14:33:15", "ok", "check", "Retry recovered", "resumed at page 12"),
-        new("14:35:18", "ok", "check", "Pages 1-42 written", "42,184 / 42,184 rows"),
-        new("14:35:38", "ok", "cloud-upload", "SharePoint upload OK", "3.82 MB · 1.2s"),
-        new("14:35:54", "ok", "cloud-upload", "S3 upload OK", "2.41 MB · 0.8s"),
-        new("14:35:54", "ok", "flag-check", "Job completed", "duration 3m 36s · 0 final failures"),
     };
 
     protected override async Task OnInitializedAsync()
