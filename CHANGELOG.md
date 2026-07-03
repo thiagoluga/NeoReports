@@ -8,6 +8,53 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 
 ## [Unreleased]
 
+Two additive feature sets, both SemVer-minor — v1/v1.1 code is unchanged:
+
+- **Web UI** (`NeoReports.UI`): a Blazor Server admin UI — dashboard, reports, a 5-step report
+  builder, job monitoring, sources — mountable in any ASP.NET Core host.
+- **Dynamic report registration** (Epic D, ADR D33): register, validate, and delete reports at
+  runtime over HTTP, backing the UI's Builder; plus the read endpoints (job list, report detail,
+  job artifacts) the UI needs.
+
+### Added
+- `NeoReports.UI` — new Razor Class Library (not yet packed to NuGet, `IsPackable=false`).
+  `AddNeoReportsUI()` + `UseNeoReportsUI("<base path>")` mount it under a configurable base path
+  (default `/neoreports`) without touching the host's own routes (D32). Pure design-system CSS
+  (Geist/Geist Mono, Tabler icons, no MudBlazor), self-hosted fonts/icons. `INeoReportsApiClient`
+  talks to the engine over HTTP only — the UI has no compile-time dependency on the engine
+  assemblies.
+- `NeoReports.Core` — `IMutableReportRegistry` (`Register`/`Unregister`), `IReportConfigStore` +
+  `FileReportConfigStore` (one JSON per dynamic report, rehydrated at startup),
+  `ReportConfigEnvironment` (`${VAR}` connection-string placeholders resolved at compile time),
+  `AddDynamicReports()`.
+- `NeoReports.AspNetCore` — `POST /reports` (register a `ReportConfig` document), `POST
+  /reports/validate` (dry-run compile), `DELETE /reports/{name}` (config-origin only), `GET
+  /capabilities` (registered source/format/destination type ids), `GET /jobs` (filterable job
+  list), `GET /reports/{name}` (full safe report definition — columns, formats, destinations,
+  retry/failure policy, origin), `GET /jobs/{id}/artifacts`.
+- `NeoReports.Abstractions` — `ReportConfig.Resilience` (`ResilienceConfig`: max attempts,
+  backoff shape, base delay, jitter, on-failure strategy), additive, so the dynamic path can
+  override the engine's default retry/failure policy per report (D34); omitting it keeps
+  today's defaults.
+- Samples `08-web-ui` (UI mounted alone, every screen shows its honest empty/"engine
+  unreachable" state) and `09-web-ui-live` (UI + engine in one host, a self-contained in-memory
+  source — click through Builder → validate → save/run → download a real file → delete, no
+  external database or cloud account needed).
+
+### Removed
+- The UI no longer ships mock/hardcoded content presented as if it were real (D36). Removed
+  outright rather than left as decoration: the Settings screens (Alerts/Authentication/Plugins/
+  Retention/Audit — no accounts/RBAC/notification system exists), Pipeline+variants and Source
+  explorer (both already flagged fully speculative), the decorative source/destination/format
+  catalogs (replaced by pickers driven by `GET /capabilities` where a real one exists), and
+  several cards embedded in otherwise-real screens (Permissions, Recent changes, Schedule,
+  fabricated job telemetry). Every screen's demo-mode fallback (engine unreachable) now shows an
+  honest empty/not-found state instead of a fabricated report or job. See
+  `docs/ui-removed-mock-content.md` for the full list and what a real version of each would need.
+- Scheduling (recurring runs) was found to be UI-only decoration with no backing anywhere in the
+  engine; deferred rather than shipped half-built (D35) — the design sketch is recorded for
+  later.
+
 ## [1.1.0] - 2026-07-01
 
 Two additive feature sets, both SemVer-minor — v1 code is unchanged:
