@@ -72,7 +72,8 @@
         </ChildContent>
     </Card>
 
-    @* Scheduling *@
+    @* Scheduling — illustrative only; the engine has no recurring-execution concept yet
+       (deferred, DECISIONS.md D35). Never sent to POST /api/reports. *@
     <Card Title="Schedule" Sub="When this report should run">
         <div class="radio-row @(Wizard.ScheduleMode == "none" ? "selected" : "")" @onclick="@(() => Wizard.ScheduleMode = "none")">
             <span class="radio"></span>
