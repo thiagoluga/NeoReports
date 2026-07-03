@@ -34,9 +34,7 @@ dotnet run --project samples/08-web-ui -- --NeoReports:UIPath=/reports-admin
 | `/` | `Dashboard` | metric strip, recent jobs, sources/destinations |
 | `/reports` | `Reports` | count strip, filter bar, report cards |
 | `/reports/{slug}` | `ReportDetail` | config, schedule + mini calendar, history, permissions |
-| `/pipeline` | `PipelineView` | shared source/columns + variant rows |
-| `/sources` | `SourcesList` | health-badged source cards |
-| `/sources/{name}/explore` | `SourceExplorer` | column picker + data preview |
+| `/sources` | `SourcesList` | engine source types from `GET /api/capabilities` |
 | `/builder` | `Builder` | step 1 · source picker |
 | `/builder/configure` | `BuilderConfigure` | step 2 · query, params, pagination, resilience |
 | `/builder/format` | `BuilderFormat` | step 3 · formats + live config |
