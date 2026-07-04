@@ -64,10 +64,7 @@ public sealed class FailureStrategyBuilder
             throw new ConfigurationException("AbortThresholdConfig.FailureRate must be in the range (0, 1].");
 
         _abortThresholds = thresholds;
-        _abortIf = t =>
-            (thresholds.ConsecutiveFailures is int consecutive && t.ConsecutiveFailures(consecutive)) ||
-            (thresholds.TotalFailures is int total && t.TotalFailures(total)) ||
-            (thresholds.FailureRate is double rate && t.FailureRatio(rate));
+        _abortIf = t => ExceedsAnyThreshold(thresholds, t);
         return this;
     }
 
@@ -78,4 +75,16 @@ public sealed class FailureStrategyBuilder
     /// <summary>Builds the configured failure strategy. Defaults to aborting when unconfigured.</summary>
     public IFailureStrategy Build() =>
         _skip ? new SkipAndLogStrategy(_abortIf) : new AbortStrategy();
+
+    private static bool ExceedsAnyThreshold(AbortThresholdConfig thresholds, ThresholdContext context)
+    {
+        if (thresholds.ConsecutiveFailures is int consecutive && context.ConsecutiveFailures(consecutive))
+            return true;
+        if (thresholds.TotalFailures is int total && context.TotalFailures(total))
+            return true;
+        if (thresholds.FailureRate is double rate && context.FailureRatio(rate))
+            return true;
+
+        return false;
+    }
 }
