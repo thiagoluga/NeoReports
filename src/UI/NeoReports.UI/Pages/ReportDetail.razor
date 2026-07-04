@@ -92,6 +92,14 @@
                     <div class="val"><span class="mono" style="font-size:12px">@ResilienceFormatter.Format(_detail)</span></div>
                     <span></span>
                 </div>
+                @if (AbortThresholds is not null)
+                {
+                    <div class="cfg-row">
+                        <span class="lbl"><i class="ti ti-alert-triangle"></i>Abort escalation</span>
+                        <div class="val"><span class="mono" style="font-size:12px">@AbortThresholds</span></div>
+                        <span></span>
+                    </div>
+                }
             </div>
             </ChildContent>
         </Card>
@@ -141,6 +149,7 @@
 
     private string Description => $"{_detail!.Columns.Count} column(s) · {_detail.Formats.Count} format(s).";
     private string Destinations => _detail!.Destinations.Count > 0 ? string.Join(" + ", _detail.Destinations) : "—";
+    private string? AbortThresholds => _detail is null ? null : ResilienceFormatter.FormatAbortThresholds(_detail);
 
     private sealed record ReportMetrics(string TotalRuns, string SuccessRate, string AvgDuration)
     {

@@ -170,7 +170,10 @@ public static class NeoReportsEndpointRouteBuilderExtensions
             RetryBaseDelaySeconds: report.Retry.BaseDelay.TotalSeconds,
             RetryUseJitter: report.Retry.UseJitter,
             Origin: isConfigOrigin ? "config" : "code",
-            Deletable: isConfigOrigin);
+            Deletable: isConfigOrigin,
+            AbortAfterConsecutiveFailures: report.AbortThresholds?.ConsecutiveFailures,
+            AbortAfterTotalFailures: report.AbortThresholds?.TotalFailures,
+            AbortAtFailureRate: report.AbortThresholds?.FailureRate);
 
         return Results.Ok(detail);
     }

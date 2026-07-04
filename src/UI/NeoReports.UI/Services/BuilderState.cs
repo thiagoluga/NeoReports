@@ -56,6 +56,21 @@ public sealed class BuilderState
     /// <summary>What happens after a batch exhausts its retries: "abort" or "skip-and-log".</summary>
     public string FailureStrategy { get; set; } = "abort";
 
+    // Abort-when thresholds (ADR D37) — only meaningful, and only sent, when FailureStrategy is
+    // "skip-and-log"; each pair is an independent on/off switch, sent as an OR of whichever are on.
+
+    /// <summary>Escalate to abort after this many consecutive batch failures, when enabled.</summary>
+    public bool AbortOnConsecutiveFailures { get; set; }
+    public int AbortConsecutiveFailures { get; set; } = 3;
+
+    /// <summary>Escalate to abort after this many total batch failures, when enabled.</summary>
+    public bool AbortOnTotalFailures { get; set; }
+    public int AbortTotalFailures { get; set; } = 10;
+
+    /// <summary>Escalate to abort once the failure rate (percent) reaches this value, when enabled.</summary>
+    public bool AbortOnFailureRate { get; set; }
+    public double AbortFailureRatePercent { get; set; } = 50;
+
     /// <summary>
     /// True once step 1 has confirmed the engine API is reachable and reports at least one
     /// registered capability. While false, the wizard stays browsable (SampleData) but Save is
@@ -82,6 +97,12 @@ public sealed class BuilderState
         RetryBaseDelaySeconds = 1;
         RetryJitter = false;
         FailureStrategy = "abort";
+        AbortOnConsecutiveFailures = false;
+        AbortConsecutiveFailures = 3;
+        AbortOnTotalFailures = false;
+        AbortTotalFailures = 10;
+        AbortOnFailureRate = false;
+        AbortFailureRatePercent = 50;
         EngineAvailable = false;
     }
 }

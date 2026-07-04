@@ -8,6 +8,15 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 
 ## [Unreleased]
 
+### Added
+- `NeoReports.Abstractions` — `AbortThresholdConfig` (`ConsecutiveFailures`/`TotalFailures`/`FailureRate`)
+  and a trailing optional `ResilienceConfig.AbortWhen`, letting the dynamic path express
+  threshold-based abort escalation as data (ADR D37). `FailureStrategyBuilder` gains a data-based
+  `AbortIf(AbortThresholdConfig)` overload (introspectable via the new public `AbortThresholds`,
+  alongside the existing predicate overload which stays non-introspectable); `CompiledReport`
+  exposes it, `GET /reports/{name}` returns it, and the Builder's "Abort when" switches and the
+  Report detail resilience summary are wired to it. Legal only alongside `onFailure: skip-and-log`.
+
 ## [1.2.0] - 2026-07-03
 
 Two additive feature sets, both SemVer-minor — v1/v1.1 code is unchanged:
