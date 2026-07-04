@@ -485,3 +485,82 @@ invented behavior as if real.
 
 **Out of scope for the epic** (recorded in D33/blueprint, D35): `PUT` (edit), scheduling/recurring,
 real progress percentage, source introspection (schema/preview), settings screens, variants.
+(Scheduling and several of the audit-removed cards later entered scope as Epics E/F — D37–D42.)
+
+## Epic E — Real backing for the removed UI content (post-D36)
+
+Scope authorized in **D37–D41** (2026-07). Full task specifications — files, types, endpoint
+contracts, edge cases, test plans, acceptance criteria — live in the blueprint
+**`docs/epic-e-real-backing.md`**; read it before starting any item. One PR per item; E2 → E3 are
+sequential, everything else is independent. Ground rules for every item: `Abstractions` changes
+only as additive trailing optional record parameters (two in this epic); no `Abstractions`
+interface gains a member — new contracts live in Core (D20 pattern); GET responses never echo
+property bags; telemetry/capture is fire-and-forget and never changes a run's outcome; every
+returning UI card has an honest empty/unavailable state (D36) — no fabricated fallback content.
+
+- [ ] **E1 — Abort thresholds as config (D37).** `AbortThresholdConfig` +
+  `ResilienceConfig.AbortWhen` (Abstractions, additive; skip-and-log only, OR semantics);
+  compiler → the same `AbortIf` the fluent path uses; data-based `AbortIf` overload on
+  `FailureStrategyBuilder` + `CompiledReport.AbortThresholds` for introspection;
+  `ReportDetailView` threshold fields; Builder "Abort when" switches return. The "Retry on
+  errors" pills stay removed — per-exception retry filtering **rejected** (D37, reopens D6).
+- [ ] **E2 — Job event log: Core store + engine emission (D38).** `JobEvent` + `IJobEventStore`
+  (+ InMemory/JSONL file stores; configurable per-job cap with `events-truncated` marker +
+  optional TTL retention); **opt-in** `AddJobEvents()`; `ReportRunner` emits the closed lifecycle
+  vocabulary; `ResiliencePipelineFactory` gains the optional `OnRetry` hook. No HTTP yet.
+  Unregistered store ⇒ byte-identical behavior (regression-guarded).
+- [ ] **E3 — `GET /jobs/{id}/events` + UI telemetry (D38).** Endpoint (type filter, paging,
+  404/`[]` semantics, `JobView` untouched per D5); Timeline card (Running/Completed/Failed),
+  Retries card (`?type=retry`), processing-rate sparkline derived from `page-completed` events —
+  no second sampling mechanism. Honest states for store-absent/truncated/no-retries.
+  **Depends on:** E2.
+- [ ] **E4 — Memory screen (D39).** `GET /api/system/memory` (working set, GC heap/committed,
+  measured-at, running-jobs count); UI Memory page with auto-refresh + running-jobs table composed
+  client-side from `GET /jobs?status=Running`; process-wide copy per D39. No per-job memory,
+  no time series.
+- [ ] **E5 — Partial artifacts for failed and cancelled jobs (D40).** `IPartialArtifactStore` +
+  file store (own directory, TTL prune, opt-in DI); runner captures on Failed **and Cancelled**
+  (best-effort finalize, files renamed `{name}.partial.{ext}`); `GET /jobs/{id}/partial-artifacts`
+  + its own `/download` (completed artifacts surface never changed); JobFailed partial-output card
+  with warning banner + two distinct honest empty states.
+- [ ] **E6 — Scheduling (D41, supersedes D35).** `ScheduleConfig` on `ReportConfig` (Abstractions,
+  additive; **UTC-only cron**, UI renders next run in viewer-local time) + builder `.Schedule()`;
+  `IRecurringReportScheduler` (Core) implemented by Hangfire (`neoreports:{name}` ids, per-firing
+  job records) **and** InMemory (Cronos + `PeriodicTimer`; Cronos approved into CPM); overlapping
+  firings run concurrently; runtime overrides for **both origins** via `IScheduleOverrideStore`
+  (tombstone semantics; config documents never patched — D33(f) stays punted);
+  `PUT/DELETE /reports/{name}/schedule`; startup hydration/reconciliation hosted service;
+  `Scheduling` in capabilities; `NextRunAt` (computed, never fabricated) in report detail;
+  Schedule cards return (ReportDetail + Builder step 5). May split into E6a (engine) / E6b
+  (API + UI) if the PR grows.
+
+## Epic F — Source registry (named source instances + on-demand health)
+
+Scope authorized in **D42** (2026-07); **MIT** (maintainer call). Blueprint:
+**`docs/epic-f-source-registry.md`** — read it first; its "locked design decisions" section
+(run-time `Ref` resolution, `PUT` full-replace, typed by-name in scope) is not up for
+re-litigation. Independent of Epic E; expected to start after it. GET responses never return
+source `Properties` — this is where the actual secrets live.
+
+- [ ] **F1 — Core: `SourceDefinition` + `ISourceRegistryStore`/file store + `ISourceRegistry`.**
+  One JSON per source (same atomic-write + name-regex discipline as `FileReportConfigStore`);
+  resolve substitutes `${VAR}` **per call**; read-through cache invalidated on save/delete;
+  `CompiledReport.SourceRef` for computed (never tracked) reference counts.
+- [ ] **F2 — Compiler + dynamic path: `SourceConfig.Ref`** (Abstractions, additive). Compile-time
+  existence/type checks; **run-time** definition resolution + merge (definition base, report
+  overlay, then substitution) so source edits apply on the next run without recompiles;
+  providers untouched; sources hydrate before dynamic reports. Inline sources unchanged.
+- [ ] **F3 — AspNetCore: CRUD + health.** `GET/POST/PUT/DELETE /sources` (`PUT` full-replace;
+  delete 409 while referenced; responses never carry properties — regression-guarded) +
+  `POST /sources/{name}/health` (on-demand only, cached + timestamped result, 422 when the type
+  has no check); `ISourceHealthCheck` contract in Core; open-and-ping implementation in
+  `Sources.Sql`. May split (CRUD / health) if it grows.
+- [ ] **F4 — UI: sources screens on the registry.** Registered-sources grid returns (name/type/
+  description/ref-count/last-health + "Check now"); health strip aggregates only real results
+  ("N never checked" is a state, not a gap); add/edit forms with write-only properties + `${VAR}`
+  hint; Builder "use a registered source" picker (`source.ref`); Dashboard "Most referenced
+  sources" card. Source explorer stays out (own ADR still required).
+- [ ] **F5 — Typed path: `Source.SqlNamed("sales-db", sql)`.** Per-run registry resolution wired
+  at compile time (sources have no DI on the read path); populates `SourceRef`; E2E proof:
+  swapping the definition's connection string between runs redirects the next run.
+  **Depends on:** F1, F2.
