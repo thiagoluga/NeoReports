@@ -9,6 +9,7 @@ using NeoReports.Abstractions;
 using NeoReports.Core;
 using NeoReports.Core.Artifacts;
 using NeoReports.Core.Configuration;
+using NeoReports.Core.Events;
 using NeoReports.Core.Pipeline;
 using NeoReports.Core.Registry;
 
@@ -32,6 +33,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
     /// <item><c>POST {prefix}/jobs/{id}/cancel</c> — request cancellation</item>
     /// <item><c>GET  {prefix}/jobs/{id}/download</c> — download the finished result</item>
     /// <item><c>GET  {prefix}/jobs/{id}/artifacts</c> — list finished output files (name/mime/size, never the on-disk path)</item>
+    /// <item><c>GET  {prefix}/jobs/{id}/events</c> — structured per-job lifecycle events (ADR D38); <c>[]</c> when no event store is registered</item>
     /// </list>
     /// Authorization is inherited from the host; set <see cref="NeoReportsEndpointOptions.RequireAuthorization"/>
     /// to apply <c>RequireAuthorization</c> to the group.
@@ -71,6 +73,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         group.MapPost("/jobs/{id}/cancel", CancelJobAsync);
         group.MapGet("/jobs/{id}/download", DownloadAsync);
         group.MapGet("/jobs/{id}/artifacts", GetJobArtifactsAsync);
+        group.MapGet("/jobs/{id}/events", GetJobEventsAsync);
 
         return group;
     }
@@ -452,6 +455,31 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         IReadOnlyList<ReportArtifact> artifacts = await artifactStore.ListAsync(id, cancellationToken).ConfigureAwait(false);
         ArtifactView[] views = artifacts
             .Select(a => new ArtifactView(a.FileName, a.MimeType, a.SizeBytes))
+            .ToArray();
+
+        return Results.Ok(views);
+    }
+
+    private static async Task<IResult> GetJobEventsAsync(
+        string id, string? type, int? limit, int? offset,
+        IReportJobScheduler scheduler, HttpContext http, CancellationToken cancellationToken)
+    {
+        ReportJob? job = await scheduler.GetAsync(id, cancellationToken).ConfigureAwait(false);
+        if (job is null)
+            return Results.NotFound(new { error = $"No job with id '{id}'." });
+
+        // Optional: hosts that never call AddJobEvents()/AddInMemoryJobEvents() have no
+        // IJobEventStore registered — every job simply has no recorded events (ADR D38), not an error.
+        IJobEventStore? store = http.RequestServices.GetService<IJobEventStore>();
+        if (store is null)
+            return Results.Ok(Array.Empty<JobEventView>());
+
+        int effectiveLimit = Math.Clamp(limit ?? 200, 1, 1000);
+        int effectiveOffset = Math.Max(0, offset ?? 0);
+
+        IReadOnlyList<JobEvent> events = await store.ListAsync(id, type, effectiveLimit, effectiveOffset, cancellationToken).ConfigureAwait(false);
+        JobEventView[] views = events
+            .Select(e => new JobEventView(e.Sequence, e.At, e.Type, e.Message, e.Data))
             .ToArray();
 
         return Results.Ok(views);

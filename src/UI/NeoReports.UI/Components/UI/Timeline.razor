@@ -1,0 +1,26 @@
+@* Timeline — event list: [time mono] [round icon] [text + detail].
+   Icon color by kind: info (gray), ok (green), warn (amber), err (red).
+   Internal vertical scroll (max-height) unless Expanded.
+   Driven by real GET /api/jobs/{id}/events rows (ADR D38) — see JobEventFormatter.ToTimelineRow. *@
+
+<div class="tl" style="@(Expanded ? "max-height:none" : "")">
+    @foreach (var e in Rows)
+    {
+        <span class="ts">@e.Time</span>
+        <span class="ic @e.Kind"><i class="ti ti-@e.Icon"></i></span>
+        <span class="text">
+            @e.Text
+            @if (!string.IsNullOrEmpty(e.Detail))
+            {
+                <span class="detail">@e.Detail</span>
+            }
+        </span>
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<JobEventFormatter.TimelineRow> Rows { get; set; } = Array.Empty<JobEventFormatter.TimelineRow>();
+
+    /// <summary>Removes the internal max-height scroll.</summary>
+    [Parameter] public bool Expanded { get; set; }
+}

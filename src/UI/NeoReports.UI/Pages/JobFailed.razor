@@ -84,11 +84,37 @@
             <span class="muted" style="font-size:12px">No error detail recorded for this job.</span>
         }
     </Card>
+
+    @* Timeline + Retries — GET /api/jobs/{id}/events (ADR D38); [] when no event store is
+       registered on the host, same wire shape as "no events yet" — one honest state either way. *@
+    <Card Title="Timeline" Sub="@(_events.Count == 0 ? "—" : $"{_events.Count} event(s)")">
+        @if (_events.Count == 0)
+        {
+            <span class="muted" style="font-size:12px">No events recorded — the event log may not be enabled on this host.</span>
+        }
+        else
+        {
+            <Timeline Rows="@_events.Select(JobEventFormatter.ToTimelineRow).ToArray()" />
+        }
+    </Card>
+
+    <Card Title="Retries this job" Sub="@(_retryEvents.Count == 0 ? "—" : $"{_retryEvents.Count} retry(ies)")">
+        @if (_retryEvents.Count == 0)
+        {
+            <span class="muted" style="font-size:12px">No retries so far.</span>
+        }
+        else
+        {
+            <Timeline Rows="@_retryEvents.Select(JobEventFormatter.ToTimelineRow).ToArray()" Expanded="true" />
+        }
+    </Card>
 </div>
 
 @code {
     [Parameter] public string? Id { get; set; }
     private ApiJobView? _job;
+    private IReadOnlyList<ApiJobEvent> _events = Array.Empty<ApiJobEvent>();
+    private IReadOnlyList<ApiJobEvent> _retryEvents = Array.Empty<ApiJobEvent>();
 
     private TimeSpan? Duration => _job?.StartedAt is { } s && _job.CompletedAt is { } c ? c - s : null;
     private string DurationText => Duration is { } d ? FormatSpan(d) : "—";
@@ -105,6 +131,15 @@
             return;
 
         _job = await Api.TryGetJobAsync(Id);
+        if (_job is not null)
+        {
+            var events = await Api.TryGetJobEventsAsync(Id);
+            if (events is not null)
+            {
+                _events = events;
+                _retryEvents = events.Where(e => e.Type == "retry").ToArray();
+            }
+        }
     }
 
     private async Task RetryAsync()

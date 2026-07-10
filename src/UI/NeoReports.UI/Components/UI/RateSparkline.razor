@@ -1,0 +1,36 @@
+@* RateSparkline — rows/s interval-rate chart from real page-completed events (ADR D38, D38 E3).
+   Renders nothing when there are fewer than 2 series points (not enough data for an interval). *@
+
+@if (Rates.Count > 0)
+{
+    <svg viewBox="0 0 300 60" style="width:100%;height:60px" preserveAspectRatio="none">
+        <polyline points="@Points" fill="none" stroke="var(--info-dot)" stroke-width="2" />
+    </svg>
+}
+
+@code {
+    [Parameter] public IReadOnlyList<JobEventFormatter.RatePoint> Series { get; set; } = Array.Empty<JobEventFormatter.RatePoint>();
+
+    private IReadOnlyList<double> Rates => JobEventFormatter.ToIntervalRates(Series);
+
+    private string Points
+    {
+        get
+        {
+            IReadOnlyList<double> rates = Rates;
+            if (rates.Count == 0)
+                return "";
+
+            var max = Math.Max(1, rates.Max());
+            var points = new string[rates.Count];
+            for (var i = 0; i < rates.Count; i++)
+            {
+                var x = rates.Count == 1 ? 0 : i * (300.0 / (rates.Count - 1));
+                var y = 58 - rates[i] / max * 54;
+                points[i] = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{x:0.#},{y:0.#}");
+            }
+
+            return string.Join(' ', points);
+        }
+    }
+}

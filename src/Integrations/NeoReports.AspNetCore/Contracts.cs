@@ -82,6 +82,19 @@ public sealed record ValidateReportResponse(
 /// <param name="SizeBytes">The file size, in bytes.</param>
 public sealed record ArtifactView(string FileName, string MimeType, long SizeBytes);
 
+/// <summary>One structured lifecycle event of a job run, as returned by <c>GET /jobs/{id}/events</c> (ADR D38).</summary>
+/// <param name="Sequence">Monotonic, per-job event ordinal (1-based).</param>
+/// <param name="At">When the event was recorded (UTC).</param>
+/// <param name="Type">One of the closed vocabulary values (e.g. "page-completed", "retry", "run-completed").</param>
+/// <param name="Message">Optional free-text detail (e.g. a truncated, sanitized exception message).</param>
+/// <param name="Data">Optional structured fields specific to <paramref name="Type"/>.</param>
+public sealed record JobEventView(
+    int Sequence,
+    DateTimeOffset At,
+    string Type,
+    string? Message,
+    IReadOnlyDictionary<string, string>? Data);
+
 /// <summary>What the host can build dynamic reports out of, from its own DI registrations.</summary>
 /// <param name="Sources">Registered <c>IConfigSourceProvider</c> type ids, sorted.</param>
 /// <param name="Formats">Registered <c>IWriterFactory</c> format ids, sorted.</param>
