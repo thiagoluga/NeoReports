@@ -71,11 +71,14 @@ public sealed class ReportJobWorker
         }
         catch (OperationCanceledException)
         {
+            // Record the event before flipping the store status, so any observer that polls the
+            // store and sees Cancelled is guaranteed to already find the event on lookup — not a
+            // race where the status update wins and the event append hasn't landed yet.
+            await TryEmitCancelledEventAsync(jobId).ConfigureAwait(false);
             // Use CancellationToken.None for the store update — the cancelling token is already
             // tripped and we still need to record the terminal state.
             await _store.UpdateStatusAsync(jobId, ReportJobStatus.Cancelled, "Cancelled.", CancellationToken.None)
                 .ConfigureAwait(false);
-            await TryEmitCancelledEventAsync(jobId).ConfigureAwait(false);
             _logger.LogInformation("Job {JobId} for report {Report} was cancelled.", jobId, reportName);
         }
         catch (Exception ex)
