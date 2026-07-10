@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using NeoReports.Abstractions;
+using NeoReports.Core.Events;
 using NeoReports.Core.Pipeline;
 
 namespace NeoReports.Jobs;
@@ -20,16 +21,21 @@ public sealed class ReportJobWorker
     private readonly IReportRunner _runner;
     private readonly IJobStore _store;
     private readonly ILogger<ReportJobWorker> _logger;
+    private readonly IJobEventStore? _jobEvents;
 
     /// <summary>Creates the worker.</summary>
     /// <param name="runner">Pipeline runner that executes the report.</param>
     /// <param name="store">Store that holds job status and stats.</param>
     /// <param name="logger">Logger.</param>
-    public ReportJobWorker(IReportRunner runner, IJobStore store, ILogger<ReportJobWorker> logger)
+    /// <param name="jobEvents">Optional job event log (ADR D38) — used only to record the terminal
+    /// "run-cancelled" event; the runner itself records everything else. <c>null</c> when the host
+    /// never called <c>AddJobEvents</c>/<c>AddInMemoryJobEvents</c>.</param>
+    public ReportJobWorker(IReportRunner runner, IJobStore store, ILogger<ReportJobWorker> logger, IJobEventStore? jobEvents = null)
     {
         _runner = runner;
         _store = store;
         _logger = logger;
+        _jobEvents = jobEvents;
     }
 
     /// <summary>
@@ -65,6 +71,10 @@ public sealed class ReportJobWorker
         }
         catch (OperationCanceledException)
         {
+            // Record the event before flipping the store status, so any observer that polls the
+            // store and sees Cancelled is guaranteed to already find the event on lookup — not a
+            // race where the status update wins and the event append hasn't landed yet.
+            await TryEmitCancelledEventAsync(jobId).ConfigureAwait(false);
             // Use CancellationToken.None for the store update — the cancelling token is already
             // tripped and we still need to record the terminal state.
             await _store.UpdateStatusAsync(jobId, ReportJobStatus.Cancelled, "Cancelled.", CancellationToken.None)
@@ -77,6 +87,27 @@ public sealed class ReportJobWorker
                 .ConfigureAwait(false);
             _logger.LogError(ex, "Job {JobId} for report {Report} failed.", jobId, reportName);
             throw;
+        }
+    }
+
+    // The runner itself unwinds by exception on cancellation (no normal return to emit
+    // "run-cancelled" from), so the worker records this one terminal event instead. Best-effort,
+    // like every other job-event append (ADR D38, ground rule 3).
+    private async Task TryEmitCancelledEventAsync(string jobId)
+    {
+        if (_jobEvents is null)
+            return;
+
+        try
+        {
+            var existing = (await _jobEvents.ListAsync(jobId, null, int.MaxValue, 0, CancellationToken.None).ConfigureAwait(false)).Count;
+            await _jobEvents.AppendAsync(
+                new JobEvent(jobId, existing + 1, DateTimeOffset.UtcNow, JobEventTypes.RunCancelled, null, null),
+                CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Could not append the run-cancelled event for job {JobId}.", jobId);
         }
     }
 }

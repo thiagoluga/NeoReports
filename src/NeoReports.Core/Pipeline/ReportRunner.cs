@@ -1,6 +1,10 @@
+using System.Diagnostics;
+using System.Globalization;
 using Microsoft.Extensions.Logging;
 using NeoReports.Abstractions;
+using NeoReports.Core.Artifacts;
 using NeoReports.Core.Building;
+using NeoReports.Core.Events;
 using NeoReports.Core.Registry;
 using NeoReports.Core.Sections;
 
@@ -63,7 +67,6 @@ public sealed class ReportRunner : IReportRunner
         ArgumentNullException.ThrowIfNull(report);
         ArgumentNullException.ThrowIfNull(execution);
 
-        var resilience = ResiliencePipelineFactory.Build(report.Retry);
         var tempDir = Path.Combine(Path.GetTempPath(), "neoreports", execution.JobId);
         Directory.CreateDirectory(tempDir);
 
@@ -76,6 +79,77 @@ public sealed class ReportRunner : IReportRunner
         int consecutiveFailures = 0, totalFailures = 0;
         var status = ReportRunStatus.Completed;
         string? error = null;
+        string? cursor = null;
+        var pageNumber = 0;
+        var stopwatch = Stopwatch.StartNew();
+
+        var jobEventStore = services.GetService(typeof(IJobEventStore)) as IJobEventStore;
+        var events = await JobEventEmitter.CreateAsync(jobEventStore, execution.JobId, execution.Logger, cancellationToken)
+            .ConfigureAwait(false);
+        await events.EmitAsync(events.IsRestart ? JobEventTypes.RunRestarted : JobEventTypes.RunStarted, null, null, cancellationToken)
+            .ConfigureAwait(false);
+
+        // The retry hook only ever emits an event (ADR D38, ground rule 3: telemetry must never
+        // change a run's outcome) — ShouldHandle/backoff/jitter above are untouched.
+        var resilience = ResiliencePipelineFactory.Build(report.Retry, async (attempt, delay, ex) =>
+        {
+            await events.EmitAsync(JobEventTypes.Retry, ex?.Message, new Dictionary<string, string>
+            {
+                ["page"] = pageNumber.ToString(CultureInfo.InvariantCulture),
+                ["attempt"] = attempt.ToString(CultureInfo.InvariantCulture),
+                ["delayMs"] = delay.TotalMilliseconds.ToString("0", CultureInfo.InvariantCulture),
+                ["exceptionType"] = ex?.GetType().Name ?? "Unknown",
+            }, cancellationToken).ConfigureAwait(false);
+        });
+
+        // Best-effort capture of whatever was already written when a run fails or is cancelled
+        // (ADR D40) — never at the report's real configured destinations (protects D2/D15's
+        // all-or-nothing publish guarantee), only in a dedicated partial-artifact store, and only
+        // when one is registered. A capture failure (writer refuses to finalize mid-failure, store
+        // I/O error, ...) must never change the run's own outcome.
+        async Task CaptureOnePartialAsync(
+            Func<CancellationToken, Task> finalize, Func<ValueTask> disposeWriter, FileStream stream,
+            Action markClosed, string path, string fileName, string mimeType, IPartialArtifactStore partialStore)
+        {
+            try
+            {
+                await finalize(CancellationToken.None).ConfigureAwait(false);
+                await disposeWriter().ConfigureAwait(false);
+                await stream.FlushAsync(CancellationToken.None).ConfigureAwait(false);
+                await stream.DisposeAsync().ConfigureAwait(false);
+                markClosed();
+
+                var partialName = Path.GetFileNameWithoutExtension(fileName) + ".partial" + Path.GetExtension(fileName);
+                await partialStore.SaveAsync(execution.JobId, path, partialName, mimeType, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                // This one file's partial couldn't be captured (writer refused to finalize
+                // mid-failure, store I/O error, ...) — move on to the next, never affect the run.
+            }
+        }
+
+        async Task CapturePartialArtifactsAsync()
+        {
+            if (services.GetService(typeof(IPartialArtifactStore)) is not IPartialArtifactStore partialStore)
+                return;
+
+            foreach (RunningOutput output in outputs)
+            {
+                await CaptureOnePartialAsync(
+                    output.Writer.FinalizeAsync, output.Writer.DisposeAsync, output.WriteStream,
+                    () => output.Closed = true, output.Path, output.FileName, output.MimeType, partialStore)
+                    .ConfigureAwait(false);
+            }
+
+            foreach (RunningSectioned output in sectioned)
+            {
+                await CaptureOnePartialAsync(
+                    output.Writer.FinalizeAsync, output.Writer.DisposeAsync, output.WriteStream,
+                    () => output.Closed = true, output.Path, output.FileName, output.MimeType, partialStore)
+                    .ConfigureAwait(false);
+            }
+        }
 
         try
         {
@@ -123,9 +197,6 @@ public sealed class ReportRunner : IReportRunner
                     .ConfigureAwait(false);
                 sectioned.Add(new RunningSectioned(writer, stream, path, fileName, writer.MimeType, sectionedSpec.Sections.Count));
             }
-
-            string? cursor = null;
-            var pageNumber = 0;
 
             while (true)
             {
@@ -183,6 +254,14 @@ public sealed class ReportRunner : IReportRunner
 
                     recordsWritten += batch.WrittenCount;
                     consecutiveFailures = 0;
+
+                    await events.EmitAsync(JobEventTypes.PageCompleted, null, new Dictionary<string, string>
+                    {
+                        ["page"] = pageNumber.ToString(CultureInfo.InvariantCulture),
+                        ["recordsRead"] = recordsRead.ToString(CultureInfo.InvariantCulture),
+                        ["recordsWritten"] = recordsWritten.ToString(CultureInfo.InvariantCulture),
+                        ["elapsedMs"] = stopwatch.ElapsedMilliseconds.ToString(CultureInfo.InvariantCulture),
+                    }, cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -202,6 +281,12 @@ public sealed class ReportRunner : IReportRunner
 
                     skipped++;
                     status = ReportRunStatus.CompletedPartial;
+
+                    await events.EmitAsync(JobEventTypes.BatchSkipped, null, new Dictionary<string, string>
+                    {
+                        ["page"] = pageNumber.ToString(CultureInfo.InvariantCulture),
+                        ["reason"] = decision.Reason ?? "",
+                    }, cancellationToken).ConfigureAwait(false);
                 }
 
                 if (!batch.HasMore)
@@ -222,6 +307,12 @@ public sealed class ReportRunner : IReportRunner
                     output.Closed = true;
                     output.SizeBytes = new FileInfo(output.Path).Length;
                     bytesWritten += output.SizeBytes;
+
+                    await events.EmitAsync(JobEventTypes.OutputsFinalized, null, new Dictionary<string, string>
+                    {
+                        ["fileName"] = output.FileName,
+                        ["sizeBytes"] = output.SizeBytes.ToString(CultureInfo.InvariantCulture),
+                    }, cancellationToken).ConfigureAwait(false);
                 }
 
                 foreach (RunningSectioned output in sectioned)
@@ -233,6 +324,12 @@ public sealed class ReportRunner : IReportRunner
                     output.Closed = true;
                     output.SizeBytes = new FileInfo(output.Path).Length;
                     bytesWritten += output.SizeBytes;
+
+                    await events.EmitAsync(JobEventTypes.OutputsFinalized, null, new Dictionary<string, string>
+                    {
+                        ["fileName"] = output.FileName,
+                        ["sizeBytes"] = output.SizeBytes.ToString(CultureInfo.InvariantCulture),
+                    }, cancellationToken).ConfigureAwait(false);
                 }
 
                 var finishedFiles = new List<IFinishedFile>(outputs.Count + sectioned.Count);
@@ -250,6 +347,12 @@ public sealed class ReportRunner : IReportRunner
                         uploads.Add(await destination.UploadAsync(
                             file, new DestinationContext(execution, destSpec.Options), cancellationToken)
                             .ConfigureAwait(false));
+
+                        await events.EmitAsync(JobEventTypes.UploadCompleted, null, new Dictionary<string, string>
+                        {
+                            ["destinationType"] = destSpec.Factory.Type,
+                            ["fileName"] = finished.FileName,
+                        }, cancellationToken).ConfigureAwait(false);
                     }
                 }
 
@@ -263,9 +366,31 @@ public sealed class ReportRunner : IReportRunner
                             .ConfigureAwait(false);
                 }
             }
+            else
+            {
+                // status == Failed (from either a read failure or a write failure escalated to
+                // abort) — CompletedPartial runs legitimately publish above and never reach here;
+                // only a genuine failure captures partials (D11's batch-atomicity: the partial file
+                // contains exactly the fully-written batches).
+                await CapturePartialArtifactsAsync().ConfigureAwait(false);
+            }
+
+            await events.EmitAsync(
+                status == ReportRunStatus.Failed ? JobEventTypes.RunFailed : JobEventTypes.RunCompleted,
+                status == ReportRunStatus.Failed ? error : null,
+                null,
+                cancellationToken).ConfigureAwait(false);
 
             var stats = new JobStats(recordsRead, recordsWritten, bytesWritten, retries, batches);
             return new ReportRunResult(status, stats, skipped, error, uploads);
+        }
+        catch (OperationCanceledException)
+        {
+            // The runner unwinds by exception on cancellation — capture here, before the finally
+            // block deletes the temp directory, then rethrow to preserve the worker's Cancelled
+            // status flow exactly as before this feature existed.
+            await CapturePartialArtifactsAsync().ConfigureAwait(false);
+            throw;
         }
         finally
         {

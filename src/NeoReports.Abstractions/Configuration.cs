@@ -80,23 +80,39 @@ public sealed record DestinationConfig(
     IReadOnlyDictionary<string, object?>? Properties = null);
 
 /// <summary>
+/// Threshold-based escalation from skip-and-log to abort (ADR D37). At least one field must be
+/// set; the effective predicate is the OR of every field that is set (e.g. consecutive OR total OR
+/// rate). Only legal alongside <see cref="ResilienceConfig.OnFailure"/> "skip-and-log" — with
+/// "abort" there is nothing to escalate from.
+/// </summary>
+/// <param name="ConsecutiveFailures">Escalate once this many consecutive batch failures occur (&gt;= 1).</param>
+/// <param name="TotalFailures">Escalate once this many total batch failures occur (&gt;= 1).</param>
+/// <param name="FailureRate">Escalate once the failure ratio reaches this value (0, 1].</param>
+public sealed record AbortThresholdConfig(
+    int? ConsecutiveFailures = null,
+    int? TotalFailures = null,
+    double? FailureRate = null);
+
+/// <summary>
 /// Optional resilience overrides for the dynamic path. Any omitted field keeps the engine's
 /// default retry/failure policy — the same one <c>ReportBuilder&lt;T&gt;</c> uses when
-/// <c>Retry</c>/<c>OnFailure</c> are never called. Threshold-based abort escalation
-/// (<c>FailureStrategyBuilder.AbortIf</c>) is a predicate and has no config-document
-/// equivalent — same reason dynamic filters are JsonLogic, not arbitrary code.
+/// <c>Retry</c>/<c>OnFailure</c> are never called. Per-exception-type retry filtering has no
+/// config-document equivalent (Polly retries any exception uniformly) and is rejected (D37) —
+/// unlike threshold-based abort escalation, which <see cref="AbortWhen"/> now expresses as data.
 /// </summary>
 /// <param name="MaxAttempts">Total attempts including the first (&gt;= 1).</param>
 /// <param name="Backoff">Backoff shape: "Constant" or "Exponential" (matched case-insensitively).</param>
 /// <param name="BaseDelaySeconds">Base delay, in seconds, used for the first retry.</param>
 /// <param name="Jitter">Whether to add randomized jitter to retry delays.</param>
 /// <param name="OnFailure">What happens after a batch exhausts its retries: "abort" or "skip-and-log" (matched case-insensitively).</param>
+/// <param name="AbortWhen">Threshold-based escalation to abort; only legal with <paramref name="OnFailure"/> "skip-and-log" (ADR D37).</param>
 public sealed record ResilienceConfig(
     int? MaxAttempts = null,
     string? Backoff = null,
     double? BaseDelaySeconds = null,
     bool? Jitter = null,
-    string? OnFailure = null);
+    string? OnFailure = null,
+    AbortThresholdConfig? AbortWhen = null);
 
 /// <summary>Parses a serialized report definition (e.g. JSON) into a <see cref="ReportConfig"/>.</summary>
 public interface IReportConfigParser

@@ -48,6 +48,9 @@ public sealed record ReportColumnView(string Name, string Type, string? DisplayN
 /// <param name="RetryUseJitter">Whether randomized jitter is added to retry delays.</param>
 /// <param name="Origin">"code" for a report registered at startup, "config" for one registered at runtime (ADR D33).</param>
 /// <param name="Deletable">True when the report can be removed via <c>DELETE /reports/{name}</c> (only "config" reports).</param>
+/// <param name="AbortAfterConsecutiveFailures">Escalates skip-and-log to abort after this many consecutive batch failures; <c>null</c> when not configured or a custom predicate is used (ADR D37).</param>
+/// <param name="AbortAfterTotalFailures">Escalates skip-and-log to abort after this many total batch failures; <c>null</c> when not configured or a custom predicate is used.</param>
+/// <param name="AbortAtFailureRate">Escalates skip-and-log to abort once the failure ratio reaches this value; <c>null</c> when not configured or a custom predicate is used.</param>
 public sealed record ReportDetailView(
     string Name,
     IReadOnlyList<ReportColumnView> Columns,
@@ -60,7 +63,10 @@ public sealed record ReportDetailView(
     double RetryBaseDelaySeconds,
     bool RetryUseJitter,
     string Origin,
-    bool Deletable);
+    bool Deletable,
+    int? AbortAfterConsecutiveFailures = null,
+    int? AbortAfterTotalFailures = null,
+    double? AbortAtFailureRate = null);
 
 /// <summary>Response returned when a dynamic report is registered.</summary>
 /// <param name="Name">The report name.</param>
@@ -81,6 +87,36 @@ public sealed record ValidateReportResponse(
 /// <param name="MimeType">The file's MIME type.</param>
 /// <param name="SizeBytes">The file size, in bytes.</param>
 public sealed record ArtifactView(string FileName, string MimeType, long SizeBytes);
+
+/// <summary>One structured lifecycle event of a job run, as returned by <c>GET /jobs/{id}/events</c> (ADR D38).</summary>
+/// <param name="Sequence">Monotonic, per-job event ordinal (1-based).</param>
+/// <param name="At">When the event was recorded (UTC).</param>
+/// <param name="Type">One of the closed vocabulary values (e.g. "page-completed", "retry", "run-completed").</param>
+/// <param name="Message">Optional free-text detail (e.g. a truncated, sanitized exception message).</param>
+/// <param name="Data">Optional structured fields specific to <paramref name="Type"/>.</param>
+public sealed record JobEventView(
+    int Sequence,
+    DateTimeOffset At,
+    string Type,
+    string? Message,
+    IReadOnlyDictionary<string, string>? Data);
+
+/// <summary>
+/// Process-level memory reading, as returned by <c>GET /system/memory</c> (ADR D39). Deliberately
+/// process-wide, not per-job — a single worker process runs multiple jobs, so "memory used by this
+/// job" cannot be measured honestly; run a job alone and watch this screen to estimate its footprint.
+/// </summary>
+/// <param name="WorkingSetBytes">The process's current working set (<see cref="Environment.WorkingSet"/>).</param>
+/// <param name="GcHeapSizeBytes">Current GC heap size.</param>
+/// <param name="GcCommittedBytes">Total memory committed by the GC.</param>
+/// <param name="MeasuredAt">When this reading was taken (UTC) — one reading per request, no background sampling.</param>
+/// <param name="RunningJobs">Number of jobs currently in the <c>Running</c> or <c>Retrying</c> status; <c>0</c> when no job store is registered.</param>
+public sealed record MemoryView(
+    long WorkingSetBytes,
+    long GcHeapSizeBytes,
+    long GcCommittedBytes,
+    DateTimeOffset MeasuredAt,
+    int RunningJobs);
 
 /// <summary>What the host can build dynamic reports out of, from its own DI registrations.</summary>
 /// <param name="Sources">Registered <c>IConfigSourceProvider</c> type ids, sorted.</param>

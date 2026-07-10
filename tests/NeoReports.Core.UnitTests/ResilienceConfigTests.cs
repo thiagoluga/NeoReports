@@ -113,4 +113,74 @@ public class ResilienceConfigTests
         var ex = Should.Throw<ConfigurationException>(() => ReportConfigCompiler.Compile(config, services));
         ex.Message.ShouldContain("retry-forever");
     }
+
+    // --- abortWhen (ADR D37) ---
+
+    [Fact]
+    public void Parser_reads_abortWhen()
+    {
+        var config = Parser.Parse(ConfigJson("""
+        { "onFailure": "skip-and-log", "abortWhen": { "consecutiveFailures": 3, "totalFailures": 10, "failureRate": 0.5 } }
+        """));
+
+        config.Resilience!.AbortWhen.ShouldNotBeNull();
+        config.Resilience.AbortWhen.ConsecutiveFailures.ShouldBe(3);
+        config.Resilience.AbortWhen.TotalFailures.ShouldBe(10);
+        config.Resilience.AbortWhen.FailureRate.ShouldBe(0.5);
+    }
+
+    [Fact]
+    public void Compiler_applies_abortWhen_and_it_is_introspectable_on_the_compiled_report()
+    {
+        var config = Parser.Parse(ConfigJson("""
+        { "onFailure": "skip-and-log", "abortWhen": { "consecutiveFailures": 3 } }
+        """));
+
+        using var services = BuildServices();
+        var report = ReportConfigCompiler.Compile(config, services);
+
+        report.FailureStrategy.Name.ShouldBe("skip-and-log");
+        report.AbortThresholds.ShouldBe(new AbortThresholdConfig(ConsecutiveFailures: 3));
+    }
+
+    [Fact]
+    public void Compiler_rejects_abortWhen_with_onFailure_abort()
+    {
+        var config = Parser.Parse(ConfigJson("""
+        { "onFailure": "abort", "abortWhen": { "consecutiveFailures": 3 } }
+        """));
+        using var services = BuildServices();
+
+        var ex = Should.Throw<ConfigurationException>(() => ReportConfigCompiler.Compile(config, services));
+        ex.Message.ShouldContain("skip-and-log");
+    }
+
+    [Fact]
+    public void Compiler_rejects_abortWhen_with_onFailure_omitted()
+    {
+        var config = Parser.Parse(ConfigJson("""{ "abortWhen": { "consecutiveFailures": 3 } }"""));
+        using var services = BuildServices();
+
+        var ex = Should.Throw<ConfigurationException>(() => ReportConfigCompiler.Compile(config, services));
+        ex.Message.ShouldContain("skip-and-log");
+    }
+
+    [Fact]
+    public void Compiler_rejects_an_empty_abortWhen()
+    {
+        var config = Parser.Parse(ConfigJson("""{ "onFailure": "skip-and-log", "abortWhen": {} }"""));
+        using var services = BuildServices();
+
+        Should.Throw<ConfigurationException>(() => ReportConfigCompiler.Compile(config, services));
+    }
+
+    [Fact]
+    public void Omitted_abortWhen_leaves_no_escalation()
+    {
+        var config = Parser.Parse(ConfigJson("""{ "onFailure": "skip-and-log" }"""));
+        using var services = BuildServices();
+
+        var report = ReportConfigCompiler.Compile(config, services);
+        report.AbortThresholds.ShouldBeNull();
+    }
 }
