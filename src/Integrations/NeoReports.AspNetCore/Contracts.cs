@@ -82,6 +82,23 @@ public sealed record ValidateReportResponse(
 /// <param name="SizeBytes">The file size, in bytes.</param>
 public sealed record ArtifactView(string FileName, string MimeType, long SizeBytes);
 
+/// <summary>
+/// Process-level memory reading, as returned by <c>GET /system/memory</c> (ADR D39). Deliberately
+/// process-wide, not per-job — a single worker process runs multiple jobs, so "memory used by this
+/// job" cannot be measured honestly; run a job alone and watch this screen to estimate its footprint.
+/// </summary>
+/// <param name="WorkingSetBytes">The process's current working set (<see cref="Environment.WorkingSet"/>).</param>
+/// <param name="GcHeapSizeBytes">Current GC heap size.</param>
+/// <param name="GcCommittedBytes">Total memory committed by the GC.</param>
+/// <param name="MeasuredAt">When this reading was taken (UTC) — one reading per request, no background sampling.</param>
+/// <param name="RunningJobs">Number of jobs currently in the <c>Running</c> or <c>Retrying</c> status; <c>0</c> when no job store is registered.</param>
+public sealed record MemoryView(
+    long WorkingSetBytes,
+    long GcHeapSizeBytes,
+    long GcCommittedBytes,
+    DateTimeOffset MeasuredAt,
+    int RunningJobs);
+
 /// <summary>What the host can build dynamic reports out of, from its own DI registrations.</summary>
 /// <param name="Sources">Registered <c>IConfigSourceProvider</c> type ids, sorted.</param>
 /// <param name="Formats">Registered <c>IWriterFactory</c> format ids, sorted.</param>

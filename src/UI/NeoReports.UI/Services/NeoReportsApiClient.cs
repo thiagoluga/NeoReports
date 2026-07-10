@@ -74,6 +74,10 @@ public sealed record ApiReportDetail(
 /// <summary>A finished output file of a completed job, as returned by <c>GET /api/jobs/{id}/artifacts</c>.</summary>
 public sealed record ApiArtifact(string FileName, string MimeType, long SizeBytes);
 
+/// <summary>Process-level memory reading, as returned by <c>GET /api/system/memory</c> (ADR D39).</summary>
+public sealed record ApiMemory(
+    long WorkingSetBytes, long GcHeapSizeBytes, long GcCommittedBytes, DateTimeOffset MeasuredAt, int RunningJobs);
+
 /// <summary>
 /// Reads and drives NeoReports engine jobs/reports over its HTTP API (<c>MapNeoReports</c>). Every
 /// call is best-effort: on a network error, timeout, or unexpected shape it logs and returns a
@@ -93,7 +97,8 @@ public interface INeoReportsApiClient
     /// <param name="limit">Maximum number of jobs to return.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task<IReadOnlyList<ApiJobView>?> TryListJobsAsync(
-        string? report = null, DateTimeOffset? since = null, int? limit = null, CancellationToken cancellationToken = default);
+        string? report = null, DateTimeOffset? since = null, int? limit = null, string? status = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>Requests cancellation of a running job. Returns whether the engine accepted the request.</summary>
     Task<bool> TryCancelJobAsync(string jobId, CancellationToken cancellationToken = default);
@@ -131,6 +136,9 @@ public interface INeoReportsApiClient
     /// isn't reachable. An empty (non-null) list means the job exists but isn't complete yet.
     /// </summary>
     Task<IReadOnlyList<ApiArtifact>?> TryGetJobArtifactsAsync(string jobId, CancellationToken cancellationToken = default);
+
+    /// <summary>Reads the current process-level memory reading (ADR D39), or <c>null</c> if the engine API isn't reachable.</summary>
+    Task<ApiMemory?> TryGetMemoryAsync(CancellationToken cancellationToken = default);
 }
 
 /// <summary>Locates the NeoReports engine API the UI calls.</summary>
@@ -191,7 +199,8 @@ internal sealed class NeoReportsApiClient(
     }
 
     public async Task<IReadOnlyList<ApiJobView>?> TryListJobsAsync(
-        string? report = null, DateTimeOffset? since = null, int? limit = null, CancellationToken cancellationToken = default)
+        string? report = null, DateTimeOffset? since = null, int? limit = null, string? status = null,
+        CancellationToken cancellationToken = default)
     {
         var apiBase = ApiBase;
         try
@@ -203,6 +212,8 @@ internal sealed class NeoReportsApiClient(
                 query.Add($"since={Uri.EscapeDataString(since.Value.ToString("O"))}");
             if (limit is not null)
                 query.Add($"limit={limit.Value}");
+            if (!string.IsNullOrEmpty(status))
+                query.Add($"status={Uri.EscapeDataString(status)}");
 
             string queryString = query.Count > 0 ? "?" + string.Join("&", query) : "";
             return await http.GetFromJsonAsync<IReadOnlyList<ApiJobView>>(
@@ -372,6 +383,21 @@ internal sealed class NeoReportsApiClient(
         catch (Exception ex) when (IsTransient(ex))
         {
             logger.LogWarning(ex, "GET {ApiBase}jobs/{JobId}/artifacts unavailable; falling back to sample data.", Sanitize(apiBase.ToString()), Sanitize(jobId));
+            return null;
+        }
+    }
+
+    public async Task<ApiMemory?> TryGetMemoryAsync(CancellationToken cancellationToken = default)
+    {
+        var apiBase = ApiBase;
+        try
+        {
+            return await http.GetFromJsonAsync<ApiMemory>(
+                new Uri(apiBase, "system/memory"), Json, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsTransient(ex))
+        {
+            logger.LogWarning(ex, "GET {ApiBase}system/memory unavailable.", Sanitize(apiBase.ToString()));
             return null;
         }
     }
