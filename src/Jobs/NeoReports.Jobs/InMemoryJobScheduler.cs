@@ -100,7 +100,7 @@ public sealed class InMemoryJobScheduler : IReportJobScheduler, IRecurringReport
         RemoveRecurringEntry(reportName);
 
         var cts = new CancellationTokenSource();
-        Task loop = RunRecurringLoopAsync(reportName, expression, cts.Token);
+        Task loop = RunRecurringLoopAsync(reportName, expression, cts);
         _recurring[reportName] = (cron, cts, loop);
         return Task.CompletedTask;
     }
@@ -133,25 +133,34 @@ public sealed class InMemoryJobScheduler : IReportJobScheduler, IRecurringReport
             entry.Cts.Cancel();
     }
 
-    private async Task RunRecurringLoopAsync(string reportName, CronExpression expression, CancellationToken cancellationToken)
+    // PeriodicTimer's period must fit in ~24.8 days (Int32.MaxValue ms) or its constructor throws —
+    // a far-future cron (e.g. yearly) would otherwise fault the loop immediately. Waits longer than
+    // this are chunked and re-polled instead of attempted in one call.
+    private static readonly TimeSpan MaxWait = TimeSpan.FromHours(1);
+
+    // Owns cts for its whole lifetime and disposes it on every exit path (natural end, cancellation,
+    // or an unexpected exception) — RegisterRecurringAsync/RemoveRecurringAsync only ever Cancel() it.
+    private async Task RunRecurringLoopAsync(string reportName, CronExpression expression, CancellationTokenSource cts)
     {
         try
         {
-            while (!cancellationToken.IsCancellationRequested)
+            while (!cts.Token.IsCancellationRequested)
             {
                 DateTime? next = expression.GetNextOccurrence(DateTime.UtcNow);
                 if (next is null)
                     return;
 
-                TimeSpan delay = next.Value - DateTime.UtcNow;
-                if (delay > TimeSpan.Zero)
+                TimeSpan remaining = next.Value - DateTime.UtcNow;
+                while (remaining > TimeSpan.Zero)
                 {
-                    using var timer = new PeriodicTimer(delay);
-                    if (!await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
+                    TimeSpan chunk = remaining < MaxWait ? remaining : MaxWait;
+                    using var timer = new PeriodicTimer(chunk);
+                    if (!await timer.WaitForNextTickAsync(cts.Token).ConfigureAwait(false))
                         return;
+                    remaining = next.Value - DateTime.UtcNow;
                 }
 
-                if (cancellationToken.IsCancellationRequested)
+                if (cts.Token.IsCancellationRequested)
                     return;
 
                 // Overlapping firings run concurrently (ADR D41) — no skip-if-running check; the
@@ -162,6 +171,10 @@ public sealed class InMemoryJobScheduler : IReportJobScheduler, IRecurringReport
         catch (OperationCanceledException)
         {
             // Removed/disposed — stop the loop.
+        }
+        finally
+        {
+            cts.Dispose();
         }
     }
 
