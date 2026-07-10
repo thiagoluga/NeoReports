@@ -69,7 +69,10 @@ public sealed record ApiReportDetail(
     double RetryBaseDelaySeconds,
     bool RetryUseJitter,
     string Origin,
-    bool Deletable);
+    bool Deletable,
+    int? AbortAfterConsecutiveFailures = null,
+    int? AbortAfterTotalFailures = null,
+    double? AbortAtFailureRate = null);
 
 /// <summary>A finished output file of a completed job, as returned by <c>GET /api/jobs/{id}/artifacts</c>.</summary>
 public sealed record ApiArtifact(string FileName, string MimeType, long SizeBytes);

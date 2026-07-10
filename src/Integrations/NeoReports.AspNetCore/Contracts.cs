@@ -48,6 +48,9 @@ public sealed record ReportColumnView(string Name, string Type, string? DisplayN
 /// <param name="RetryUseJitter">Whether randomized jitter is added to retry delays.</param>
 /// <param name="Origin">"code" for a report registered at startup, "config" for one registered at runtime (ADR D33).</param>
 /// <param name="Deletable">True when the report can be removed via <c>DELETE /reports/{name}</c> (only "config" reports).</param>
+/// <param name="AbortAfterConsecutiveFailures">Escalates skip-and-log to abort after this many consecutive batch failures; <c>null</c> when not configured or a custom predicate is used (ADR D37).</param>
+/// <param name="AbortAfterTotalFailures">Escalates skip-and-log to abort after this many total batch failures; <c>null</c> when not configured or a custom predicate is used.</param>
+/// <param name="AbortAtFailureRate">Escalates skip-and-log to abort once the failure ratio reaches this value; <c>null</c> when not configured or a custom predicate is used.</param>
 public sealed record ReportDetailView(
     string Name,
     IReadOnlyList<ReportColumnView> Columns,
@@ -60,7 +63,10 @@ public sealed record ReportDetailView(
     double RetryBaseDelaySeconds,
     bool RetryUseJitter,
     string Origin,
-    bool Deletable);
+    bool Deletable,
+    int? AbortAfterConsecutiveFailures = null,
+    int? AbortAfterTotalFailures = null,
+    double? AbortAtFailureRate = null);
 
 /// <summary>Response returned when a dynamic report is registered.</summary>
 /// <param name="Name">The report name.</param>
