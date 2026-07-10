@@ -7,6 +7,7 @@ using NeoReports.Core.Events;
 using NeoReports.Core.Pipeline;
 using NeoReports.Core.Registry;
 using NeoReports.Core.Scheduling;
+using NeoReports.Core.SourceRegistry;
 
 namespace NeoReports.Core.DependencyInjection;
 
@@ -22,6 +23,13 @@ public sealed class ScheduleOverrideOptions
 {
     /// <summary>Directory where runtime schedule overrides are persisted. Default: <c>./neoreports-schedules</c>.</summary>
     public string Directory { get; set; } = "./neoreports-schedules";
+}
+
+/// <summary>Options for <see cref="ServiceCollectionExtensions.AddSourceRegistry"/>.</summary>
+public sealed class SourceRegistryOptions
+{
+    /// <summary>Directory where source definitions are persisted. Default: <c>./neoreports-sources</c>.</summary>
+    public string Directory { get; set; } = "./neoreports-sources";
 }
 
 /// <summary>DI entry points for registering NeoReports and individual reports.</summary>
@@ -221,6 +229,45 @@ public static class ServiceCollectionExtensions
         services.AddNeoReports();
         services.TryAddSingleton<IScheduleOverrideStore, InMemoryScheduleOverrideStore>();
         services.AddHostedService<ScheduleReconciliationHostedService>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the named source registry (ADR D42): a file-backed <see cref="ISourceRegistryStore"/>
+    /// plus <see cref="ISourceRegistry"/>, which resolves definitions with <c>${VAR}</c> placeholders
+    /// substituted at run time (never baked into a compiled report). Combine with the AspNetCore
+    /// package's source CRUD/health endpoints and/or the dynamic path's <c>SourceConfig.Ref</c> to
+    /// let reports reference a registered source by name instead of inlining connection details.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configure">Optional options callback (storage directory).</param>
+    public static IServiceCollection AddSourceRegistry(this IServiceCollection services, Action<SourceRegistryOptions>? configure = null)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        var options = new SourceRegistryOptions();
+        configure?.Invoke(options);
+        services.TryAddSingleton(options);
+        services.TryAddSingleton<ISourceRegistryStore>(
+            sp => new FileSourceRegistryStore(sp.GetRequiredService<SourceRegistryOptions>().Directory));
+        services.TryAddSingleton<ISourceRegistry, SourceRegistryService>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the named source registry (ADR D42) with an in-process store — same behavior as
+    /// <see cref="AddSourceRegistry"/>, but definitions are lost on restart. Intended for tests and
+    /// single-process dev hosts.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    public static IServiceCollection AddInMemorySourceRegistry(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.TryAddSingleton<ISourceRegistryStore, InMemorySourceRegistryStore>();
+        services.TryAddSingleton<ISourceRegistry, SourceRegistryService>();
 
         return services;
     }

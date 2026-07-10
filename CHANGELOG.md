@@ -9,6 +9,17 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 ## [Unreleased]
 
 ### Added
+- `NeoReports.Core` — the source registry's Core layer (ADR D42): `SourceDefinition` (name/type/
+  property bag with `${VAR}` placeholders/description), `ISourceRegistryStore` (file- or
+  in-memory-backed, `AddSourceRegistry()`/`AddInMemorySourceRegistry()`) with atomic writes and
+  corrupt-file skip-at-load, and `ISourceRegistry` — a thin, cached resolution layer that
+  substitutes placeholders **at resolve time** (never baked into a compiled report or cached
+  itself), so rotating a connection string takes effect on the next run of every referencing
+  report without recompiling anything. `CompiledReport` gains `SourceRef` (populated starting
+  with the dynamic path's `SourceConfig.Ref` and the typed path's by-name authoring, both
+  upcoming); "used in N reports" for a source will always be this derivable count, never a
+  separately tracked number. No HTTP surface yet (Epic F continues with the CRUD/health endpoints
+  and UI screens).
 - `NeoReports.Abstractions` — `AbortThresholdConfig` (`ConsecutiveFailures`/`TotalFailures`/`FailureRate`)
   and a trailing optional `ResilienceConfig.AbortWhen`, letting the dynamic path express
   threshold-based abort escalation as data (ADR D37). `FailureStrategyBuilder` gains a data-based

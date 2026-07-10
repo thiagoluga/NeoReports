@@ -39,7 +39,14 @@ public static partial class ReportConfigEnvironment
         return config with { Source = source, Outputs = outputs, Destinations = destinations };
     }
 
-    private static IReadOnlyDictionary<string, object?>? SubstituteProperties(
+    /// <summary>
+    /// Substitutes <c>${VAR}</c> placeholders in a standalone property bag — the same whole-value
+    /// mechanism <see cref="Substitute"/> applies to a <see cref="ReportConfig"/>'s sections.
+    /// Shared with the source registry (ADR D42) so there is only one secret-substitution story.
+    /// </summary>
+    /// <param name="properties">The property bag to substitute.</param>
+    /// <exception cref="ConfigurationException">Thrown when a referenced environment variable is not set.</exception>
+    internal static IReadOnlyDictionary<string, object?>? SubstituteProperties(
         IReadOnlyDictionary<string, object?>? properties)
     {
         if (properties is null || properties.Count == 0)

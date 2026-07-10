@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using NeoReports.Abstractions;
@@ -70,42 +69,5 @@ public sealed class JsonReportConfigParser : IReportConfigParser
 
         public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options) =>
             writer.WriteStringValue(value);
-    }
-
-    /// <summary>
-    /// Reads JSON values typed as <c>object?</c> (the property-bag values) into CLR primitives.
-    /// Nested objects/arrays are preserved as a cloned <see cref="JsonElement"/>.
-    /// </summary>
-    private sealed class PrimitiveObjectConverter : JsonConverter<object?>
-    {
-        public override object? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
-            reader.TokenType switch
-            {
-                JsonTokenType.Null => null,
-                JsonTokenType.True => true,
-                JsonTokenType.False => false,
-                JsonTokenType.String => ConvertString(reader.GetString()),
-                JsonTokenType.Number => reader.TryGetInt64(out var l) ? l : reader.GetDouble(),
-                _ => JsonDocument.ParseValue(ref reader).RootElement.Clone(),
-            };
-
-        // Report configurations are read-only data: the parser never serializes them, so the
-        // write direction is intentionally unsupported (IReportConfigParser exposes only Parse).
-        public override void Write(Utf8JsonWriter writer, object? value, JsonSerializerOptions options) =>
-            throw new NotSupportedException("Report configurations are parsed, not serialized.");
-
-        private static object? ConvertString(string? text)
-        {
-            if (text is null)
-                return null;
-
-            // Recover round-tripped ISO-8601 timestamps as DateTime so date parameters bind
-            // correctly downstream. RoundtripKind honors any 'Z'/offset and must not be combined
-            // with AdjustToUniversal/AssumeUniversal (.NET rejects that pairing).
-            if (DateTime.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out DateTime dt))
-                return dt;
-
-            return text;
-        }
     }
 }
