@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.IO.Compression;
+using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -13,6 +14,7 @@ using NeoReports.Core.Events;
 using NeoReports.Core.Pipeline;
 using NeoReports.Core.Registry;
 using NeoReports.Core.Scheduling;
+using NeoReports.Core.SourceRegistry;
 
 namespace NeoReports.AspNetCore;
 
@@ -40,6 +42,10 @@ public static class NeoReportsEndpointRouteBuilderExtensions
     /// <item><c>GET  {prefix}/jobs/{id}/partial-artifacts/download</c> — download the partial output</item>
     /// <item><c>PUT  {prefix}/reports/{name}/schedule</c> — set a runtime recurring-schedule override (ADR D41); works for both origins; 409 when no recurring scheduler is registered</item>
     /// <item><c>DELETE {prefix}/reports/{name}/schedule</c> — clear the runtime override (tombstones a declared schedule, or removes a prior override)</item>
+    /// <item><c>GET  {prefix}/sources</c> / <c>GET {prefix}/sources/{name}</c> — list/read registered sources (ADR D42); never returns properties</item>
+    /// <item><c>POST {prefix}/sources</c> / <c>PUT {prefix}/sources/{name}</c> — register / full-replace a source; 409 when a report still references it on delete</item>
+    /// <item><c>DELETE {prefix}/sources/{name}</c> — remove a source; blocked (409) while any registered report references it</item>
+    /// <item><c>POST {prefix}/sources/{name}/health</c> — run an on-demand health check now; cached + timestamped; 422 when the type has no registered check</item>
     /// </list>
     /// Authorization is inherited from the host; set <see cref="NeoReportsEndpointOptions.RequireAuthorization"/>
     /// to apply <c>RequireAuthorization</c> to the group.
@@ -85,6 +91,12 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         group.MapGet("/jobs/{id}/partial-artifacts/download", DownloadPartialArtifactsAsync);
         group.MapPut("/reports/{name}/schedule", SetScheduleAsync);
         group.MapDelete("/reports/{name}/schedule", ClearScheduleAsync);
+        group.MapGet("/sources", ListSourcesAsync);
+        group.MapGet("/sources/{name}", GetSourceAsync);
+        group.MapPost("/sources", CreateSourceAsync);
+        group.MapPut("/sources/{name}", ReplaceSourceAsync);
+        group.MapDelete("/sources/{name}", DeleteSourceAsync);
+        group.MapPost("/sources/{name}/health", CheckSourceHealthAsync);
 
         return group;
     }
@@ -715,5 +727,183 @@ public static class NeoReportsEndpointRouteBuilderExtensions
 
         zip.Position = 0;
         return Results.File(zip, "application/zip", $"{job.ReportName}-{id}-partial.zip");
+    }
+
+    private static async Task<IResult> ListSourcesAsync(
+        HttpContext http, [FromServices] IReportRegistry reportRegistry, CancellationToken cancellationToken)
+    {
+        ISourceRegistry? registry = http.RequestServices.GetService<ISourceRegistry>();
+        if (registry is null)
+            return Results.Ok(Array.Empty<SourceView>());
+
+        IReadOnlyList<SourceDefinition> definitions = await registry.ListAsync(cancellationToken).ConfigureAwait(false);
+        ISourceHealthCache? healthCache = http.RequestServices.GetService<ISourceHealthCache>();
+        SourceView[] views = definitions.Select(d => ToSourceView(d, reportRegistry, healthCache)).ToArray();
+        return Results.Ok(views);
+    }
+
+    private static async Task<IResult> GetSourceAsync(
+        string name, HttpContext http, [FromServices] IReportRegistry reportRegistry, CancellationToken cancellationToken)
+    {
+        ISourceRegistry? registry = http.RequestServices.GetService<ISourceRegistry>();
+        SourceDefinition? definition = registry is null ? null : await registry.GetAsync(name, cancellationToken).ConfigureAwait(false);
+        if (definition is null)
+            return Results.NotFound(new { error = $"No source named '{name}' is registered." });
+
+        ISourceHealthCache? healthCache = http.RequestServices.GetService<ISourceHealthCache>();
+        return Results.Ok(ToSourceView(definition, reportRegistry, healthCache));
+    }
+
+    private static async Task<IResult> CreateSourceAsync(HttpContext http, CancellationToken cancellationToken)
+    {
+        ISourceRegistry? registry = http.RequestServices.GetService<ISourceRegistry>();
+        if (registry is null)
+            return Results.Conflict(new { error = "No source registry is configured on this host. Register one with AddSourceRegistry()/AddInMemorySourceRegistry()." });
+
+        SourceRequest? body = await ReadJsonBodyAsync<SourceRequest>(http, cancellationToken).ConfigureAwait(false);
+        IResult? validationError = ValidateSourceRequest(http, body, name: null);
+        if (validationError is not null)
+            return validationError;
+
+        if (await registry.GetAsync(body!.Name, cancellationToken).ConfigureAwait(false) is not null)
+            return Results.Conflict(new { error = $"A source named '{body.Name}' already exists." });
+
+        await registry.SaveAsync(new SourceDefinition(body.Name, body.Type, body.Properties, body.Description), cancellationToken).ConfigureAwait(false);
+        return Results.Created($"{http.Request.PathBase}/api/sources/{body.Name}", ToSourceView(
+            new SourceDefinition(body.Name, body.Type, Description: body.Description), reportRegistry: http.RequestServices.GetRequiredService<IReportRegistry>(), healthCache: null));
+    }
+
+    private static async Task<IResult> ReplaceSourceAsync(string name, HttpContext http, CancellationToken cancellationToken)
+    {
+        ISourceRegistry? registry = http.RequestServices.GetService<ISourceRegistry>();
+        if (registry is null)
+            return Results.Conflict(new { error = "No source registry is configured on this host. Register one with AddSourceRegistry()/AddInMemorySourceRegistry()." });
+
+        SourceRequest? body = await ReadJsonBodyAsync<SourceRequest>(http, cancellationToken).ConfigureAwait(false);
+        IResult? validationError = ValidateSourceRequest(http, body, name);
+        if (validationError is not null)
+            return validationError;
+
+        if (await registry.GetAsync(name, cancellationToken).ConfigureAwait(false) is null)
+            return Results.NotFound(new { error = $"No source named '{name}' is registered." });
+
+        await registry.SaveAsync(new SourceDefinition(name, body!.Type, body.Properties, body.Description), cancellationToken).ConfigureAwait(false);
+        var reportRegistry = http.RequestServices.GetRequiredService<IReportRegistry>();
+        var healthCache = http.RequestServices.GetService<ISourceHealthCache>();
+        return Results.Ok(ToSourceView(new SourceDefinition(name, body.Type, Description: body.Description), reportRegistry, healthCache));
+    }
+
+    private static async Task<IResult> DeleteSourceAsync(
+        string name, HttpContext http, [FromServices] IReportRegistry reportRegistry, CancellationToken cancellationToken)
+    {
+        ISourceRegistry? registry = http.RequestServices.GetService<ISourceRegistry>();
+        if (registry is null)
+            return Results.Conflict(new { error = "No source registry is configured on this host." });
+
+        if (await registry.GetAsync(name, cancellationToken).ConfigureAwait(false) is null)
+            return Results.NotFound(new { error = $"No source named '{name}' is registered." });
+
+        int referencedByCount = reportRegistry.Reports.Count(r => string.Equals(r.SourceRef, name, StringComparison.Ordinal));
+        if (referencedByCount > 0)
+        {
+            return Results.Conflict(new
+            {
+                error = $"Source '{name}' is referenced by {referencedByCount} registered report(s) and cannot be deleted.",
+            });
+        }
+
+        await registry.DeleteAsync(name, cancellationToken).ConfigureAwait(false);
+        http.RequestServices.GetService<ISourceHealthCache>()?.Remove(name);
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> CheckSourceHealthAsync(string name, HttpContext http, CancellationToken cancellationToken)
+    {
+        ISourceRegistry? registry = http.RequestServices.GetService<ISourceRegistry>();
+        if (registry is null)
+            return Results.Conflict(new { error = "No source registry is configured on this host." });
+
+        SourceDefinition? definition;
+        try
+        {
+            definition = await registry.ResolveAsync(name, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ConfigurationException ex)
+        {
+            return Results.Problem(title: "Could not resolve the source.", detail: ex.Message, statusCode: StatusCodes.Status500InternalServerError);
+        }
+
+        if (definition is null)
+            return Results.NotFound(new { error = $"No source named '{name}' is registered." });
+
+        ISourceHealthCheck? check = http.RequestServices.GetServices<ISourceHealthCheck>()
+            .FirstOrDefault(c => string.Equals(c.Type, definition.Type, StringComparison.OrdinalIgnoreCase));
+        if (check is null)
+        {
+            return Results.Problem(
+                title: "Health check not supported for this source type.",
+                detail: $"No ISourceHealthCheck is registered for type '{definition.Type}'.",
+                statusCode: StatusCodes.Status422UnprocessableEntity);
+        }
+
+        SourceHealthResult result = await check.CheckAsync(definition, http.RequestServices, cancellationToken).ConfigureAwait(false);
+        var checkedAt = DateTimeOffset.UtcNow;
+
+        ISourceHealthCache? healthCache = http.RequestServices.GetService<ISourceHealthCache>();
+        healthCache?.Set(name, new SourceHealthReading(result.Healthy, result.Error, result.Latency.TotalMilliseconds, checkedAt));
+
+        return Results.Ok(new SourceHealthResponse(result.Healthy, result.Error, result.Latency.TotalMilliseconds, checkedAt));
+    }
+
+    private static SourceView ToSourceView(SourceDefinition definition, IReportRegistry reportRegistry, ISourceHealthCache? healthCache)
+    {
+        int referencedByCount = reportRegistry.Reports.Count(r => string.Equals(r.SourceRef, definition.Name, StringComparison.Ordinal));
+        SourceHealthReading? reading = healthCache?.Get(definition.Name);
+
+        return new SourceView(
+            Name: definition.Name,
+            Type: definition.Type,
+            Description: definition.Description,
+            ReferencedByCount: referencedByCount,
+            LastHealthStatus: reading is null ? null : (reading.Healthy ? "healthy" : "unhealthy"),
+            LastHealthError: reading?.Error,
+            LastHealthLatencyMs: reading?.LatencyMs,
+            LastCheckedAt: reading?.CheckedAt);
+    }
+
+    private static IResult? ValidateSourceRequest(HttpContext http, SourceRequest? body, string? name)
+    {
+        if (body is null || string.IsNullOrWhiteSpace(body.Name) || string.IsNullOrWhiteSpace(body.Type))
+            return Results.BadRequest(new { error = "A source request requires a non-empty 'name' and 'type'." });
+
+        if (name is not null && !string.Equals(body.Name, name, StringComparison.Ordinal))
+            return Results.BadRequest(new { error = $"The request body's name '{body.Name}' does not match the URL segment '{name}'." });
+
+        if (!DynamicReportName.IsValid(body.Name))
+        {
+            return Results.BadRequest(new
+            {
+                error = $"'{body.Name}' is not a valid source name. Names must match {DynamicReportName.Pattern}.",
+            });
+        }
+
+        bool typeRegistered = http.RequestServices.GetServices<IConfigSourceProvider>()
+            .Any(p => string.Equals(p.Type, body.Type, StringComparison.OrdinalIgnoreCase));
+        if (!typeRegistered)
+            return Results.BadRequest(new { error = $"No source provider is registered for type '{body.Type}'." });
+
+        return null;
+    }
+
+    private static async Task<T?> ReadJsonBodyAsync<T>(HttpContext http, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await http.Request.ReadFromJsonAsync<T>(cancellationToken).ConfigureAwait(false);
+        }
+        catch (JsonException)
+        {
+            return default;
+        }
     }
 }

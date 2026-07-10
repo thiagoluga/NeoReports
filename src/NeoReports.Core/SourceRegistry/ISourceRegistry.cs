@@ -28,6 +28,16 @@ public interface ISourceRegistry
     Task<IReadOnlyList<SourceDefinition>> ListAsync(CancellationToken cancellationToken);
 
     /// <summary>
+    /// Reads a source definition by name, as stored (placeholders unsubstituted), or <c>null</c>
+    /// when it doesn't exist. Prefer this over <see cref="ResolveAsync"/> when only metadata is
+    /// needed (e.g. rendering source details) — unlike <see cref="ResolveAsync"/>, this never
+    /// throws for a missing environment variable.
+    /// </summary>
+    /// <param name="name">The source name.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<SourceDefinition?> GetAsync(string name, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Resolves a source definition by name with every <c>${VAR}</c> property placeholder
     /// substituted from the current environment, or <c>null</c> when no definition exists under
     /// that name.

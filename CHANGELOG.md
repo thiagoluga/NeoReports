@@ -19,6 +19,21 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   properties overlay, `${VAR}` substituted last), so rotating a connection string or deleting the
   source takes effect on the very next run without recompiling anything. `CompiledReport.SourceRef`
   is now populated for ref-based reports. Inline sources (`Ref` omitted) are entirely unaffected.
+- `NeoReports.AspNetCore` — source registry CRUD and on-demand health endpoints (ADR D42):
+  `GET/POST/PUT/DELETE /sources[/{name}]` and `POST /sources/{name}/health`. `SourceView` (the
+  read model) never carries `properties` — the D33 property-bag rule at its most literal, since
+  that's precisely where secrets live — and its `ReferencedByCount` is always the live count of
+  registered reports whose `SourceRef` matches, never a separately tracked number. All endpoints
+  degrade gracefully (empty list / 404 / 409 "not supported") when no `ISourceRegistry` is
+  configured on the host, matching the rest of the optional-service surface. `DELETE` is blocked
+  (409) while any report still references the source. `NeoReports.Core` — `ISourceHealthCheck`
+  (provider-type-extensible, resolved by `Type` exactly like `IConfigSourceProvider`) and
+  `ISourceHealthCache` (in-memory only, deliberately not persisted, so "never checked" is the
+  honest state after a restart); checks run **on-demand only**, never on a background poller (D36).
+  `ISourceRegistry` gains `GetAsync` — a raw, non-throwing single-name lookup for metadata display,
+  distinct from `ResolveAsync` which substitutes `${VAR}` placeholders and can throw.
+  `NeoReports.Sources.Sql` — `SqlSourceHealthCheck` (`type: "sql"`): opens a connection and runs
+  `SELECT 1`, bounded by a 10s timeout so the endpoint can never hang on an unreachable server.
 - `NeoReports.Core` — the source registry's Core layer (ADR D42): `SourceDefinition` (name/type/
   property bag with `${VAR}` placeholders/description), `ISourceRegistryStore` (file- or
   in-memory-backed, `AddSourceRegistry()`/`AddInMemorySourceRegistry()`) with atomic writes and

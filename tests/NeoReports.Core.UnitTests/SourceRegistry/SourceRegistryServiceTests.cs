@@ -108,5 +108,41 @@ public class SourceRegistryServiceTests : IDisposable
         listed[0].Properties!["connectionString"].ShouldBe($"${{{VarName}}}");
     }
 
+    [Fact]
+    public async Task GetAsync_returns_the_definition_unsubstituted()
+    {
+        Environment.SetEnvironmentVariable(VarName, "secret-value");
+        var store = new InMemorySourceRegistryStore();
+        var registry = new SourceRegistryService(store);
+        await registry.SaveAsync(new SourceDefinition("sales-db", "sql",
+            new Dictionary<string, object?> { ["connectionString"] = $"${{{VarName}}}" }), CancellationToken.None);
+
+        SourceDefinition? raw = await registry.GetAsync("sales-db", CancellationToken.None);
+
+        raw.ShouldNotBeNull();
+        raw!.Properties!["connectionString"].ShouldBe($"${{{VarName}}}");
+    }
+
+    [Fact]
+    public async Task GetAsync_returns_null_for_an_unknown_source()
+    {
+        var registry = new SourceRegistryService(new InMemorySourceRegistryStore());
+        (await registry.GetAsync("missing", CancellationToken.None)).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task GetAsync_does_not_throw_for_an_unset_referenced_variable()
+    {
+        Environment.SetEnvironmentVariable(VarName, null);
+        var store = new InMemorySourceRegistryStore();
+        var registry = new SourceRegistryService(store);
+        await registry.SaveAsync(new SourceDefinition("sales-db", "sql",
+            new Dictionary<string, object?> { ["connectionString"] = $"${{{VarName}}}" }), CancellationToken.None);
+
+        SourceDefinition? raw = await registry.GetAsync("sales-db", CancellationToken.None);
+
+        raw.ShouldNotBeNull();
+    }
+
     public void Dispose() => Environment.SetEnvironmentVariable(VarName, null);
 }

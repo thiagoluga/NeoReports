@@ -252,6 +252,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<ISourceRegistryStore>(
             sp => new FileSourceRegistryStore(sp.GetRequiredService<SourceRegistryOptions>().Directory));
         services.TryAddSingleton<ISourceRegistry, SourceRegistryService>();
+        services.TryAddSingleton<ISourceHealthCache, InMemorySourceHealthCache>();
 
         return services;
     }
@@ -268,6 +269,7 @@ public static class ServiceCollectionExtensions
 
         services.TryAddSingleton<ISourceRegistryStore, InMemorySourceRegistryStore>();
         services.TryAddSingleton<ISourceRegistry, SourceRegistryService>();
+        services.TryAddSingleton<ISourceHealthCache, InMemorySourceHealthCache>();
 
         return services;
     }

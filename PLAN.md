@@ -621,11 +621,16 @@ source `Properties` — this is where the actual secrets live.
   overlay-precedence-both-directions, env var change reflected on the very next run without
   recompiling, source deleted after compile fails the next run with a clear error, existing inline
   configs compile unchanged).
-- [ ] **F3 — AspNetCore: CRUD + health.** `GET/POST/PUT/DELETE /sources` (`PUT` full-replace;
+- [x] **F3 — AspNetCore: CRUD + health.** `GET/POST/PUT/DELETE /sources` (`PUT` full-replace;
   delete 409 while referenced; responses never carry properties — regression-guarded) +
   `POST /sources/{name}/health` (on-demand only, cached + timestamped result, 422 when the type
   has no check); `ISourceHealthCheck` contract in Core; open-and-ping implementation in
-  `Sources.Sql`. May split (CRUD / health) if it grows.
+  `Sources.Sql`. Landed as a single PR (didn't grow enough to justify a split). `ISourceRegistry`
+  gained `GetAsync` (raw, non-throwing single-name lookup) for the metadata-only GET handlers.
+  17 new AspNetCore integration tests (CRUD happy paths + every error case, delete blocked-then-
+  allowed, health 200/404/422, GET reflects cached health after a check, no `properties` key
+  anywhere) + 3 new Core tests for `GetAsync` + 3 new `Sources.Sql` Testcontainers tests for
+  `SqlSourceHealthCheck` (healthy/missing-property/unreachable).
 - [ ] **F4 — UI: sources screens on the registry.** Registered-sources grid returns (name/type/
   description/ref-count/last-health + "Check now"); health strip aggregates only real results
   ("N never checked" is a state, not a gap); add/edit forms with write-only properties + `${VAR}`
