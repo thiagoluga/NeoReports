@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using NeoReports.Abstractions;
 using NeoReports.Core.Building;
 using NeoReports.Core.Configuration;
+using NeoReports.Core.Events;
 using NeoReports.Core.Pipeline;
 using NeoReports.Core.Registry;
 
@@ -129,6 +130,45 @@ public static class ServiceCollectionExtensions
 
         if (!services.Any(d => d.ServiceType == typeof(IRegistryHydrator) && d.ImplementationType == typeof(FileStoreRegistryHydrator)))
             services.AddSingleton<IRegistryHydrator, FileStoreRegistryHydrator>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the file-backed job event log (ADR D38): the runner records discrete, structured
+    /// per-job lifecycle events (retries, page progress, uploads, terminal status) that back the
+    /// job Timeline/Retries/rate-history UI cards. Opt-in and best-effort — omitting this call means
+    /// the runner emits nothing and behaves exactly as it did before this feature existed.
+    /// Events survive a process restart; see <see cref="AddInMemoryJobEvents"/> for tests/dev.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configure">Optional options callback (cap, retention, storage directory).</param>
+    public static IServiceCollection AddJobEvents(this IServiceCollection services, Action<JobEventOptions>? configure = null)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        var options = new JobEventOptions();
+        configure?.Invoke(options);
+        services.TryAddSingleton(options);
+        services.TryAddSingleton<IJobEventStore, FileJobEventStore>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers an in-process job event log (ADR D38) — same behavior as <see cref="AddJobEvents"/>,
+    /// but events are lost on restart. Intended for tests and single-process dev hosts.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configure">Optional options callback (cap, retention).</param>
+    public static IServiceCollection AddInMemoryJobEvents(this IServiceCollection services, Action<JobEventOptions>? configure = null)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        var options = new JobEventOptions();
+        configure?.Invoke(options);
+        services.TryAddSingleton(options);
+        services.TryAddSingleton<IJobEventStore, InMemoryJobEventStore>();
 
         return services;
     }

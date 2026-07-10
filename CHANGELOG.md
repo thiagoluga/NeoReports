@@ -16,6 +16,14 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   alongside the existing predicate overload which stays non-introspectable); `CompiledReport`
   exposes it, `GET /reports/{name}` returns it, and the Builder's "Abort when" switches and the
   Report detail resilience summary are wired to it. Legal only alongside `onFailure: skip-and-log`.
+- `NeoReports.Core` — a job event log (ADR D38): `IJobEventStore` (`InMemoryJobEventStore` /
+  `FileJobEventStore`, one JSONL file per job) records a closed vocabulary of structured, per-job
+  lifecycle events (started/restarted, page progress, retries, skipped batches, finalized outputs,
+  uploads, terminal status) with a configurable per-job cap and optional retention. Opt-in via
+  `AddJobEvents()`/`AddInMemoryJobEvents()` — a host that never calls either sees zero behavioral
+  change. `ResiliencePipelineFactory` gains an optional retry hook used to emit `retry` events.
+  This is the foundation for the job Timeline/Retries/processing-rate UI cards (not yet exposed
+  over HTTP).
 
 ## [1.2.0] - 2026-07-03
 
