@@ -149,6 +149,32 @@ public class PartialArtifactsEndpointTests
     }
 
     [Fact]
+    public async Task Multiple_partial_files_download_as_a_zip()
+    {
+        using var host = await TestApp.StartAsync(services =>
+        {
+            services.AddPartialArtifacts();
+            services.AddReport<Sale>("failing-multi", b => b
+                .From(new FailOnSecondPageSource())
+                .WithPageSize(10)
+                .Column(v => v.Id, "Id")
+                .To(Csv())
+                .To(Csv(o => o.Delimiter(';'))));
+        });
+        var client = host.GetTestClient();
+
+        var jobId = await RunToFailureAsync(client, "failing-multi");
+
+        var partials = await client.GetFromJsonAsync<List<JsonElement>>($"/api/jobs/{jobId}/partial-artifacts", Json);
+        partials.ShouldNotBeNull();
+        partials!.Count.ShouldBe(2);
+
+        var download = await client.GetAsync($"/api/jobs/{jobId}/partial-artifacts/download");
+        download.StatusCode.ShouldBe(HttpStatusCode.OK);
+        download.Content.Headers.ContentType!.MediaType.ShouldBe("application/zip");
+    }
+
+    [Fact]
     public async Task Completed_artifacts_endpoint_never_includes_partials()
     {
         using var host = await TestApp.StartAsync(AddFailingReportWithPartials);

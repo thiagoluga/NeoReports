@@ -83,6 +83,28 @@ public sealed class ReportRunner : IReportRunner
         // all-or-nothing publish guarantee), only in a dedicated partial-artifact store, and only
         // when one is registered. A capture failure (writer refuses to finalize mid-failure, store
         // I/O error, ...) must never change the run's own outcome.
+        async Task CaptureOnePartialAsync(
+            Func<CancellationToken, Task> finalize, Func<ValueTask> disposeWriter, FileStream stream,
+            Action markClosed, string path, string fileName, string mimeType, IPartialArtifactStore partialStore)
+        {
+            try
+            {
+                await finalize(CancellationToken.None).ConfigureAwait(false);
+                await disposeWriter().ConfigureAwait(false);
+                await stream.FlushAsync(CancellationToken.None).ConfigureAwait(false);
+                await stream.DisposeAsync().ConfigureAwait(false);
+                markClosed();
+
+                var partialName = Path.GetFileNameWithoutExtension(fileName) + ".partial" + Path.GetExtension(fileName);
+                await partialStore.SaveAsync(execution.JobId, path, partialName, mimeType, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                // This one file's partial couldn't be captured (writer refused to finalize
+                // mid-failure, store I/O error, ...) — move on to the next, never affect the run.
+            }
+        }
+
         async Task CapturePartialArtifactsAsync()
         {
             if (services.GetService(typeof(IPartialArtifactStore)) is not IPartialArtifactStore partialStore)
@@ -90,40 +112,18 @@ public sealed class ReportRunner : IReportRunner
 
             foreach (RunningOutput output in outputs)
             {
-                try
-                {
-                    await output.Writer.FinalizeAsync(CancellationToken.None).ConfigureAwait(false);
-                    await output.Writer.DisposeAsync().ConfigureAwait(false);
-                    await output.WriteStream.FlushAsync(CancellationToken.None).ConfigureAwait(false);
-                    await output.WriteStream.DisposeAsync().ConfigureAwait(false);
-                    output.Closed = true;
-
-                    var partialName = Path.GetFileNameWithoutExtension(output.FileName) + ".partial" + Path.GetExtension(output.FileName);
-                    await partialStore.SaveAsync(execution.JobId, output.Path, partialName, output.MimeType, CancellationToken.None).ConfigureAwait(false);
-                }
-                catch (Exception)
-                {
-                    // This one file's partial couldn't be captured — move on to the next.
-                }
+                await CaptureOnePartialAsync(
+                    output.Writer.FinalizeAsync, output.Writer.DisposeAsync, output.WriteStream,
+                    () => output.Closed = true, output.Path, output.FileName, output.MimeType, partialStore)
+                    .ConfigureAwait(false);
             }
 
             foreach (RunningSectioned output in sectioned)
             {
-                try
-                {
-                    await output.Writer.FinalizeAsync(CancellationToken.None).ConfigureAwait(false);
-                    await output.Writer.DisposeAsync().ConfigureAwait(false);
-                    await output.WriteStream.FlushAsync(CancellationToken.None).ConfigureAwait(false);
-                    await output.WriteStream.DisposeAsync().ConfigureAwait(false);
-                    output.Closed = true;
-
-                    var partialName = Path.GetFileNameWithoutExtension(output.FileName) + ".partial" + Path.GetExtension(output.FileName);
-                    await partialStore.SaveAsync(execution.JobId, output.Path, partialName, output.MimeType, CancellationToken.None).ConfigureAwait(false);
-                }
-                catch (Exception)
-                {
-                    // Same as above.
-                }
+                await CaptureOnePartialAsync(
+                    output.Writer.FinalizeAsync, output.Writer.DisposeAsync, output.WriteStream,
+                    () => output.Closed = true, output.Path, output.FileName, output.MimeType, partialStore)
+                    .ConfigureAwait(false);
             }
         }
 
