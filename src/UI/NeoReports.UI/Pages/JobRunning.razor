@@ -77,6 +77,43 @@
         }
         </Card>
     </div>
+
+    @* Processing rate, Timeline and Retries — GET /api/jobs/{id}/events (ADR D38). Refreshed on
+       the same poll tick as the job status above. When no event store is registered on the host,
+       the endpoint returns [] the same as "no events yet" — indistinguishable from the wire, so
+       every honest state below reads simply "no events recorded". *@
+    <Card Title="Processing rate" Sub="rows written over time, from page-completed events">
+        @if (_rateSeries.Count < 2)
+        {
+            <span class="muted" style="font-size:12px">Collecting rate data…</span>
+        }
+        else
+        {
+            <RateSparkline Series="@_rateSeries" />
+        }
+    </Card>
+
+    <Card Title="Timeline" Sub="@(_events.Count == 0 ? "—" : $"{_events.Count} event(s)")">
+        @if (_events.Count == 0)
+        {
+            <span class="muted" style="font-size:12px">No events recorded — the event log may not be enabled on this host.</span>
+        }
+        else
+        {
+            <Timeline Rows="@_events.Select(JobEventFormatter.ToTimelineRow).ToArray()" />
+        }
+    </Card>
+
+    <Card Title="Retries this job" Sub="@(_retryEvents.Count == 0 ? "—" : $"{_retryEvents.Count} retry(ies)")">
+        @if (_retryEvents.Count == 0)
+        {
+            <span class="muted" style="font-size:12px">No retries so far.</span>
+        }
+        else
+        {
+            <Timeline Rows="@_retryEvents.Select(JobEventFormatter.ToTimelineRow).ToArray()" Expanded="true" />
+        }
+    </Card>
 </div>
 
 @code {
@@ -104,13 +141,24 @@
     private bool IsCancellable => _job is null || string.Equals(_job.Status, "Running", StringComparison.Ordinal)
         || string.Equals(_job.Status, "Retrying", StringComparison.Ordinal);
 
-    // Rate/s — RecordsWritten / elapsed since StartedAt, recomputed on every poll tick; peak is
-    // the highest rate seen across polls so far. "Memory" stays a fixed placeholder: the engine
-    // tracks no per-job memory usage, so there's nothing real to show.
+    // Rate/s — RecordsWritten / elapsed since StartedAt, recomputed on every poll tick. Peak comes
+    // from the real page-completed interval rates (ADR D38) — no second sampling mechanism.
     private double _currentRatePerSecond;
-    private double _peakRatePerSecond;
+    private IReadOnlyList<ApiJobEvent> _events = Array.Empty<ApiJobEvent>();
+    private IReadOnlyList<ApiJobEvent> _retryEvents = Array.Empty<ApiJobEvent>();
+    private IReadOnlyList<JobEventFormatter.RatePoint> _rateSeries = Array.Empty<JobEventFormatter.RatePoint>();
     private string RateValue => _job is not null ? _currentRatePerSecond.ToString("0") : "—";
-    private string RateSub => _job is not null ? $"rows/s · peak {_peakRatePerSecond:0}" : "—";
+    private string RateSub => _job is null
+        ? "—"
+        : $"rows/s · peak {PeakRatePerSecond:0}";
+    private double PeakRatePerSecond
+    {
+        get
+        {
+            IReadOnlyList<double> intervals = JobEventFormatter.ToIntervalRates(_rateSeries);
+            return intervals.Count == 0 ? _currentRatePerSecond : Math.Max(_currentRatePerSecond, intervals.Max());
+        }
+    }
 
     // Configuration/Destinations cards — real once GET /api/reports/{name} resolves for the
     // job's report; "Worker" (a multi-worker-pool concept) is dropped rather than replaced, since
@@ -158,12 +206,19 @@
         {
             var elapsedSeconds = (DateTimeOffset.UtcNow - started).TotalSeconds;
             _currentRatePerSecond = elapsedSeconds > 0 ? job.Stats.RecordsWritten / elapsedSeconds : 0;
-            _peakRatePerSecond = Math.Max(_peakRatePerSecond, _currentRatePerSecond);
         }
 
         // Fetched once per report name, not on every poll tick.
         if (_reportDetail is null || !string.Equals(_reportDetail.Name, job.ReportName, StringComparison.Ordinal))
             _reportDetail = await Api.TryGetReportDetailAsync(job.ReportName);
+
+        var events = await Api.TryGetJobEventsAsync(Id);
+        if (events is not null)
+        {
+            _events = events;
+            _retryEvents = events.Where(e => e.Type == "retry").ToArray();
+            _rateSeries = JobEventFormatter.ToRateSeries(events);
+        }
 
         if (string.Equals(job.Status, "Completed", StringComparison.Ordinal))
         {

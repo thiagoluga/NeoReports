@@ -9,6 +9,7 @@ using NeoReports.Abstractions;
 using NeoReports.Core;
 using NeoReports.Core.Artifacts;
 using NeoReports.Core.Configuration;
+using NeoReports.Core.Events;
 using NeoReports.Core.Pipeline;
 using NeoReports.Core.Registry;
 
@@ -32,6 +33,10 @@ public static class NeoReportsEndpointRouteBuilderExtensions
     /// <item><c>POST {prefix}/jobs/{id}/cancel</c> — request cancellation</item>
     /// <item><c>GET  {prefix}/jobs/{id}/download</c> — download the finished result</item>
     /// <item><c>GET  {prefix}/jobs/{id}/artifacts</c> — list finished output files (name/mime/size, never the on-disk path)</item>
+    /// <item><c>GET  {prefix}/jobs/{id}/events</c> — structured per-job lifecycle events (ADR D38); <c>[]</c> when no event store is registered</item>
+    /// <item><c>GET  {prefix}/system/memory</c> — process-level memory reading + running-job count (ADR D39)</item>
+    /// <item><c>GET  {prefix}/jobs/{id}/partial-artifacts</c> — best-effort partial output of a Failed/Cancelled job (ADR D40); completely separate from the completed-artifacts surface</item>
+    /// <item><c>GET  {prefix}/jobs/{id}/partial-artifacts/download</c> — download the partial output</item>
     /// </list>
     /// Authorization is inherited from the host; set <see cref="NeoReportsEndpointOptions.RequireAuthorization"/>
     /// to apply <c>RequireAuthorization</c> to the group.
@@ -71,6 +76,10 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         group.MapPost("/jobs/{id}/cancel", CancelJobAsync);
         group.MapGet("/jobs/{id}/download", DownloadAsync);
         group.MapGet("/jobs/{id}/artifacts", GetJobArtifactsAsync);
+        group.MapGet("/jobs/{id}/events", GetJobEventsAsync);
+        group.MapGet("/system/memory", GetMemoryAsync);
+        group.MapGet("/jobs/{id}/partial-artifacts", GetPartialArtifactsAsync);
+        group.MapGet("/jobs/{id}/partial-artifacts/download", DownloadPartialArtifactsAsync);
 
         return group;
     }
@@ -170,7 +179,10 @@ public static class NeoReportsEndpointRouteBuilderExtensions
             RetryBaseDelaySeconds: report.Retry.BaseDelay.TotalSeconds,
             RetryUseJitter: report.Retry.UseJitter,
             Origin: isConfigOrigin ? "config" : "code",
-            Deletable: isConfigOrigin);
+            Deletable: isConfigOrigin,
+            AbortAfterConsecutiveFailures: report.AbortThresholds?.ConsecutiveFailures,
+            AbortAfterTotalFailures: report.AbortThresholds?.TotalFailures,
+            AbortAtFailureRate: report.AbortThresholds?.FailureRate);
 
         return Results.Ok(detail);
     }
@@ -455,5 +467,122 @@ public static class NeoReportsEndpointRouteBuilderExtensions
             .ToArray();
 
         return Results.Ok(views);
+    }
+
+    private static async Task<IResult> GetJobEventsAsync(
+        string id, string? type, int? limit, int? offset,
+        IReportJobScheduler scheduler, HttpContext http, CancellationToken cancellationToken)
+    {
+        ReportJob? job = await scheduler.GetAsync(id, cancellationToken).ConfigureAwait(false);
+        if (job is null)
+            return Results.NotFound(new { error = $"No job with id '{id}'." });
+
+        // Optional: hosts that never call AddJobEvents()/AddInMemoryJobEvents() have no
+        // IJobEventStore registered — every job simply has no recorded events (ADR D38), not an error.
+        IJobEventStore? store = http.RequestServices.GetService<IJobEventStore>();
+        if (store is null)
+            return Results.Ok(Array.Empty<JobEventView>());
+
+        int effectiveLimit = Math.Clamp(limit ?? 200, 1, 1000);
+        int effectiveOffset = Math.Max(0, offset ?? 0);
+
+        IReadOnlyList<JobEvent> events = await store.ListAsync(id, type, effectiveLimit, effectiveOffset, cancellationToken).ConfigureAwait(false);
+        JobEventView[] views = events
+            .Select(e => new JobEventView(e.Sequence, e.At, e.Type, e.Message, e.Data))
+            .ToArray();
+
+        return Results.Ok(views);
+    }
+
+    private static async Task<IResult> GetMemoryAsync(HttpContext http, CancellationToken cancellationToken)
+    {
+        // Optional: hosts that never register a job stack (typed-only, no AddNeoReportsInMemoryJobs
+        // / AddNeoReportsHangfireJobs) have no IJobStore — RunningJobs is simply 0, not an error.
+        IJobStore? jobStore = http.RequestServices.GetService<IJobStore>();
+        var runningJobs = 0;
+        if (jobStore is not null)
+        {
+            IReadOnlyList<ReportJob> running = await jobStore.ListAsync(
+                new JobQuery { Status = ReportJobStatus.Running, Limit = 1000 }, cancellationToken).ConfigureAwait(false);
+            IReadOnlyList<ReportJob> retrying = await jobStore.ListAsync(
+                new JobQuery { Status = ReportJobStatus.Retrying, Limit = 1000 }, cancellationToken).ConfigureAwait(false);
+            runningJobs = running.Count + retrying.Count;
+        }
+
+        // One reading per request — no background poller, no time series (D39, CLAUDE.md's "no
+        // general metrics dashboard").
+        GCMemoryInfo gc = GC.GetGCMemoryInfo();
+        var view = new MemoryView(
+            Environment.WorkingSet, gc.HeapSizeBytes, gc.TotalCommittedBytes, DateTimeOffset.UtcNow, runningJobs);
+
+        return Results.Ok(view);
+    }
+
+    private static async Task<IResult> GetPartialArtifactsAsync(
+        string id, IReportJobScheduler scheduler, HttpContext http, CancellationToken cancellationToken)
+    {
+        ReportJob? job = await scheduler.GetAsync(id, cancellationToken).ConfigureAwait(false);
+        if (job is null)
+            return Results.NotFound(new { error = $"No job with id '{id}'." });
+
+        // Only Failed and Cancelled runs ever capture partials (ADR D40) — a CompletedPartial run
+        // (SkipBatchAndLog) legitimately published to the real destinations and has no partial.
+        if (job.Status is not (ReportJobStatus.Failed or ReportJobStatus.Cancelled))
+            return Results.Ok(Array.Empty<ArtifactView>());
+
+        // Optional: hosts that never call AddPartialArtifacts() have no IPartialArtifactStore —
+        // every job simply has no captured partials, not an error.
+        IPartialArtifactStore? partialStore = http.RequestServices.GetService<IPartialArtifactStore>();
+        if (partialStore is null)
+            return Results.Ok(Array.Empty<ArtifactView>());
+
+        IReadOnlyList<ReportArtifact> partials = await partialStore.ListAsync(id, cancellationToken).ConfigureAwait(false);
+        ArtifactView[] views = partials
+            .Select(a => new ArtifactView(a.FileName, a.MimeType, a.SizeBytes))
+            .ToArray();
+
+        return Results.Ok(views);
+    }
+
+    private static async Task<IResult> DownloadPartialArtifactsAsync(
+        string id, IReportJobScheduler scheduler, HttpContext http, CancellationToken cancellationToken)
+    {
+        ReportJob? job = await scheduler.GetAsync(id, cancellationToken).ConfigureAwait(false);
+        if (job is null)
+            return Results.NotFound(new { error = $"No job with id '{id}'." });
+
+        if (job.Status is not (ReportJobStatus.Failed or ReportJobStatus.Cancelled))
+            return Results.NotFound(new { error = $"Job '{id}' has no partial output (status: {job.Status})." });
+
+        IPartialArtifactStore? partialStore = http.RequestServices.GetService<IPartialArtifactStore>();
+        if (partialStore is null)
+            return Results.NotFound(new { error = "Partial-artifact capture is not enabled on this host." });
+
+        IReadOnlyList<ReportArtifact> partials = await partialStore.ListAsync(id, cancellationToken).ConfigureAwait(false);
+        if (partials.Count == 0)
+            return Results.NotFound(new { error = $"No partial output was captured for job '{id}'." });
+
+        if (partials.Count == 1)
+        {
+            var single = partials[0];
+            return Results.File(single.Path, single.MimeType, single.FileName);
+        }
+
+        // Completely separate from the completed-artifacts zip helper above — this route, and the
+        // files it serves, are never reachable from GET /jobs/{id}/artifacts or /download.
+        var zip = new MemoryStream();
+        using (var archive = new ZipArchive(zip, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            foreach (var partial in partials)
+            {
+                var entry = archive.CreateEntry(partial.FileName, CompressionLevel.Optimal);
+                await using var entryStream = entry.Open();
+                await using var fileStream = new FileStream(partial.Path, FileMode.Open, FileAccess.Read, FileShare.Read);
+                await fileStream.CopyToAsync(entryStream, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        zip.Position = 0;
+        return Results.File(zip, "application/zip", $"{job.ReportName}-{id}-partial.zip");
     }
 }

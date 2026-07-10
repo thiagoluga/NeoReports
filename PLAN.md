@@ -485,3 +485,113 @@ invented behavior as if real.
 
 **Out of scope for the epic** (recorded in D33/blueprint, D35): `PUT` (edit), scheduling/recurring,
 real progress percentage, source introspection (schema/preview), settings screens, variants.
+(Scheduling and several of the audit-removed cards later entered scope as Epics E/F — D37–D42.)
+
+## Epic E — Real backing for the removed UI content (post-D36)
+
+Scope authorized in **D37–D41** (2026-07). Full task specifications — files, types, endpoint
+contracts, edge cases, test plans, acceptance criteria — live in the blueprint
+**`docs/epic-e-real-backing.md`**; read it before starting any item. One PR per item; E2 → E3 are
+sequential, everything else is independent. Ground rules for every item: `Abstractions` changes
+only as additive trailing optional record parameters (two in this epic); no `Abstractions`
+interface gains a member — new contracts live in Core (D20 pattern); GET responses never echo
+property bags; telemetry/capture is fire-and-forget and never changes a run's outcome; every
+returning UI card has an honest empty/unavailable state (D36) — no fabricated fallback content.
+
+- [x] **E1 — Abort thresholds as config (D37).** `AbortThresholdConfig` +
+  `ResilienceConfig.AbortWhen` (Abstractions, additive; skip-and-log only, OR semantics);
+  compiler → the same `AbortIf` the fluent path uses; data-based `AbortIf` overload on
+  `FailureStrategyBuilder` + `CompiledReport.AbortThresholds` for introspection;
+  `ReportDetailView` threshold fields; Builder "Abort when" switches return. The "Retry on
+  errors" pills stay removed — per-exception retry filtering **rejected** (D37, reopens D6).
+  ✅ solution builds 0 warnings; new Core/AspNetCore/UI tests (validation, compiler round-trip,
+  API round-trip, UI serialization/rendering); browser-verified via `samples/09-web-ui-live`.
+  PR [#114](https://github.com/thiagoluga/NeoReports/pull/114).
+- [x] **E2 — Job event log: Core store + engine emission (D38).** `JobEvent` + `IJobEventStore`
+  (+ InMemory/JSONL file stores; configurable per-job cap with `events-truncated` marker +
+  optional TTL retention); **opt-in** `AddJobEvents()`; `ReportRunner` emits the closed lifecycle
+  vocabulary; `ResiliencePipelineFactory` gains the optional `OnRetry` hook. No HTTP yet.
+  Unregistered store ⇒ byte-identical behavior (regression-guarded).
+  ✅ solution builds 0 warnings; 25 new Core tests (stores, DI, full-lifecycle emission ordering/
+  counters, retry/skip/abort events, a throwing store never fails the run) + 3 new Jobs tests
+  (cancelled/completed lifecycle, no-registration is a no-op); all pre-existing tests unaffected.
+- [x] **E3 — `GET /jobs/{id}/events` + UI telemetry (D38).** Endpoint (type filter, paging,
+  404/`[]` semantics, `JobView` untouched per D5); Timeline card (Running/Completed/Failed),
+  Retries card (`?type=retry`), processing-rate sparkline derived from `page-completed` events —
+  no second sampling mechanism. Honest states for store-absent/truncated/no-retries.
+  **Depends on:** E2. ✅ solution builds 0 warnings; 8 new AspNetCore integration tests + 7 new
+  UI unit tests (`JobEventFormatter`); browser-verified via `samples/09-web-ui-live`: real
+  Timeline events (started → page-completed → outputs-finalized → uploaded → completed) render
+  correctly on `JobCompleted`, the "not enough data" honest state shows with 1 page-completed
+  event, and the sparkline renders real points with 2+.
+- [x] **E4 — Memory screen (D39).** `GET /api/system/memory` (working set, GC heap/committed,
+  measured-at, running-jobs count); UI Memory page with auto-refresh + running-jobs table composed
+  client-side from `GET /jobs?status=Running`; process-wide copy per D39. No per-job memory,
+  no time series. ✅ solution builds 0 warnings; 3 new AspNetCore integration tests
+  (shape/sanity, running-jobs count reflects a started job, host without a job store still 200
+  with 0 — `RemoveAll<IJobStore>()` after normal registration, since a fully bare host breaks
+  minimal-API metadata inference for the whole `MapNeoReports` group per the D2 lesson);
+  browser-verified via `samples/09-web-ui-live` (real working-set reading, honest "No jobs
+  running" empty state, "Memory" nav item). Caught and fixed a Blazor "unclosed element" crash
+  during verification: the honest-empty-state branch must be `@if/else`, not an early `return`
+  inside an unclosed wrapping `<div>` (unlike the Job pages' pattern, which returns before any
+  wrapping div opens).
+- [x] **E5 — Partial artifacts for failed and cancelled jobs (D40).** `IPartialArtifactStore` +
+  file store (own directory, TTL prune, opt-in DI); runner captures on Failed **and Cancelled**
+  (best-effort finalize, files renamed `{name}.partial.{ext}`); `GET /jobs/{id}/partial-artifacts`
+  + its own `/download` (completed artifacts surface never changed); JobFailed partial-output card
+  with warning banner. One honest empty state, not two — the wire can't distinguish "no store
+  registered" from "registered but nothing captured" (both `[]`), same resolution as E3's job
+  events. ✅ solution builds 0 warnings; 16 new Core tests (5 covering capture behavior — aborted
+  run captures exactly the fully-written batches renamed `.partial`, `CompletedPartial` runs never
+  capture and still publish, cancelled run captures, no-store-registered and throwing-store are
+  both no-ops for the run's own outcome — + 11 for `FileSystemPartialArtifactStore` itself) + 7
+  new AspNetCore integration tests (404/empty-for-completed/captured-for-failed/download-streams/
+  no-store-is-empty/completed-artifacts-never-includes-partials/multi-file-zip-download). Found
+  and fixed a real bug during testing: `PartialArtifactOptions.Directory`'s blueprint-specified
+  relative default (`./neoreports-partials`) breaks `Results.File(string, ...)`, which resolves a
+  relative path against the ASP.NET **web root**, not the process working directory — changed the
+  default to an absolute temp-folder path, matching `FileSystemArtifactStore`'s existing pattern.
+  Extracted a shared `FileSystemArtifactLayout` helper to dedupe the on-disk mechanics between
+  `FileSystemArtifactStore` and `FileSystemPartialArtifactStore` (SonarCloud duplication gate).
+- [ ] **E6 — Scheduling (D41, supersedes D35).** `ScheduleConfig` on `ReportConfig` (Abstractions,
+  additive; **UTC-only cron**, UI renders next run in viewer-local time) + builder `.Schedule()`;
+  `IRecurringReportScheduler` (Core) implemented by Hangfire (`neoreports:{name}` ids, per-firing
+  job records) **and** InMemory (Cronos + `PeriodicTimer`; Cronos approved into CPM); overlapping
+  firings run concurrently; runtime overrides for **both origins** via `IScheduleOverrideStore`
+  (tombstone semantics; config documents never patched — D33(f) stays punted);
+  `PUT/DELETE /reports/{name}/schedule`; startup hydration/reconciliation hosted service;
+  `Scheduling` in capabilities; `NextRunAt` (computed, never fabricated) in report detail;
+  Schedule cards return (ReportDetail + Builder step 5). May split into E6a (engine) / E6b
+  (API + UI) if the PR grows.
+
+## Epic F — Source registry (named source instances + on-demand health)
+
+Scope authorized in **D42** (2026-07); **MIT** (maintainer call). Blueprint:
+**`docs/epic-f-source-registry.md`** — read it first; its "locked design decisions" section
+(run-time `Ref` resolution, `PUT` full-replace, typed by-name in scope) is not up for
+re-litigation. Independent of Epic E; expected to start after it. GET responses never return
+source `Properties` — this is where the actual secrets live.
+
+- [ ] **F1 — Core: `SourceDefinition` + `ISourceRegistryStore`/file store + `ISourceRegistry`.**
+  One JSON per source (same atomic-write + name-regex discipline as `FileReportConfigStore`);
+  resolve substitutes `${VAR}` **per call**; read-through cache invalidated on save/delete;
+  `CompiledReport.SourceRef` for computed (never tracked) reference counts.
+- [ ] **F2 — Compiler + dynamic path: `SourceConfig.Ref`** (Abstractions, additive). Compile-time
+  existence/type checks; **run-time** definition resolution + merge (definition base, report
+  overlay, then substitution) so source edits apply on the next run without recompiles;
+  providers untouched; sources hydrate before dynamic reports. Inline sources unchanged.
+- [ ] **F3 — AspNetCore: CRUD + health.** `GET/POST/PUT/DELETE /sources` (`PUT` full-replace;
+  delete 409 while referenced; responses never carry properties — regression-guarded) +
+  `POST /sources/{name}/health` (on-demand only, cached + timestamped result, 422 when the type
+  has no check); `ISourceHealthCheck` contract in Core; open-and-ping implementation in
+  `Sources.Sql`. May split (CRUD / health) if it grows.
+- [ ] **F4 — UI: sources screens on the registry.** Registered-sources grid returns (name/type/
+  description/ref-count/last-health + "Check now"); health strip aggregates only real results
+  ("N never checked" is a state, not a gap); add/edit forms with write-only properties + `${VAR}`
+  hint; Builder "use a registered source" picker (`source.ref`); Dashboard "Most referenced
+  sources" card. Source explorer stays out (own ADR still required).
+- [ ] **F5 — Typed path: `Source.SqlNamed("sales-db", sql)`.** Per-run registry resolution wired
+  at compile time (sources have no DI on the read path); populates `SourceRef`; E2E proof:
+  swapping the definition's connection string between runs redirects the next run.
+  **Depends on:** F1, F2.
