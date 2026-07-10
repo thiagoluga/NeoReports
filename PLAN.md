@@ -536,11 +536,24 @@ returning UI card has an honest empty/unavailable state (D36) — no fabricated 
   during verification: the honest-empty-state branch must be `@if/else`, not an early `return`
   inside an unclosed wrapping `<div>` (unlike the Job pages' pattern, which returns before any
   wrapping div opens).
-- [ ] **E5 — Partial artifacts for failed and cancelled jobs (D40).** `IPartialArtifactStore` +
+- [x] **E5 — Partial artifacts for failed and cancelled jobs (D40).** `IPartialArtifactStore` +
   file store (own directory, TTL prune, opt-in DI); runner captures on Failed **and Cancelled**
   (best-effort finalize, files renamed `{name}.partial.{ext}`); `GET /jobs/{id}/partial-artifacts`
   + its own `/download` (completed artifacts surface never changed); JobFailed partial-output card
-  with warning banner + two distinct honest empty states.
+  with warning banner. One honest empty state, not two — the wire can't distinguish "no store
+  registered" from "registered but nothing captured" (both `[]`), same resolution as E3's job
+  events. ✅ solution builds 0 warnings; 16 new Core tests (5 covering capture behavior — aborted
+  run captures exactly the fully-written batches renamed `.partial`, `CompletedPartial` runs never
+  capture and still publish, cancelled run captures, no-store-registered and throwing-store are
+  both no-ops for the run's own outcome — + 11 for `FileSystemPartialArtifactStore` itself) + 7
+  new AspNetCore integration tests (404/empty-for-completed/captured-for-failed/download-streams/
+  no-store-is-empty/completed-artifacts-never-includes-partials/multi-file-zip-download). Found
+  and fixed a real bug during testing: `PartialArtifactOptions.Directory`'s blueprint-specified
+  relative default (`./neoreports-partials`) breaks `Results.File(string, ...)`, which resolves a
+  relative path against the ASP.NET **web root**, not the process working directory — changed the
+  default to an absolute temp-folder path, matching `FileSystemArtifactStore`'s existing pattern.
+  Extracted a shared `FileSystemArtifactLayout` helper to dedupe the on-disk mechanics between
+  `FileSystemArtifactStore` and `FileSystemPartialArtifactStore` (SonarCloud duplication gate).
 - [ ] **E6 — Scheduling (D41, supersedes D35).** `ScheduleConfig` on `ReportConfig` (Abstractions,
   additive; **UTC-only cron**, UI renders next run in viewer-local time) + builder `.Schedule()`;
   `IRecurringReportScheduler` (Core) implemented by Hangfire (`neoreports:{name}` ids, per-firing

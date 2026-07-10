@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using Microsoft.Extensions.Logging;
 using NeoReports.Abstractions;
+using NeoReports.Core.Artifacts;
 using NeoReports.Core.Building;
 using NeoReports.Core.Events;
 using NeoReports.Core.Registry;
@@ -100,6 +101,55 @@ public sealed class ReportRunner : IReportRunner
                 ["exceptionType"] = ex?.GetType().Name ?? "Unknown",
             }, cancellationToken).ConfigureAwait(false);
         });
+
+        // Best-effort capture of whatever was already written when a run fails or is cancelled
+        // (ADR D40) — never at the report's real configured destinations (protects D2/D15's
+        // all-or-nothing publish guarantee), only in a dedicated partial-artifact store, and only
+        // when one is registered. A capture failure (writer refuses to finalize mid-failure, store
+        // I/O error, ...) must never change the run's own outcome.
+        async Task CaptureOnePartialAsync(
+            Func<CancellationToken, Task> finalize, Func<ValueTask> disposeWriter, FileStream stream,
+            Action markClosed, string path, string fileName, string mimeType, IPartialArtifactStore partialStore)
+        {
+            try
+            {
+                await finalize(CancellationToken.None).ConfigureAwait(false);
+                await disposeWriter().ConfigureAwait(false);
+                await stream.FlushAsync(CancellationToken.None).ConfigureAwait(false);
+                await stream.DisposeAsync().ConfigureAwait(false);
+                markClosed();
+
+                var partialName = Path.GetFileNameWithoutExtension(fileName) + ".partial" + Path.GetExtension(fileName);
+                await partialStore.SaveAsync(execution.JobId, path, partialName, mimeType, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                // This one file's partial couldn't be captured (writer refused to finalize
+                // mid-failure, store I/O error, ...) — move on to the next, never affect the run.
+            }
+        }
+
+        async Task CapturePartialArtifactsAsync()
+        {
+            if (services.GetService(typeof(IPartialArtifactStore)) is not IPartialArtifactStore partialStore)
+                return;
+
+            foreach (RunningOutput output in outputs)
+            {
+                await CaptureOnePartialAsync(
+                    output.Writer.FinalizeAsync, output.Writer.DisposeAsync, output.WriteStream,
+                    () => output.Closed = true, output.Path, output.FileName, output.MimeType, partialStore)
+                    .ConfigureAwait(false);
+            }
+
+            foreach (RunningSectioned output in sectioned)
+            {
+                await CaptureOnePartialAsync(
+                    output.Writer.FinalizeAsync, output.Writer.DisposeAsync, output.WriteStream,
+                    () => output.Closed = true, output.Path, output.FileName, output.MimeType, partialStore)
+                    .ConfigureAwait(false);
+            }
+        }
 
         try
         {
@@ -316,6 +366,14 @@ public sealed class ReportRunner : IReportRunner
                             .ConfigureAwait(false);
                 }
             }
+            else
+            {
+                // status == Failed (from either a read failure or a write failure escalated to
+                // abort) — CompletedPartial runs legitimately publish above and never reach here;
+                // only a genuine failure captures partials (D11's batch-atomicity: the partial file
+                // contains exactly the fully-written batches).
+                await CapturePartialArtifactsAsync().ConfigureAwait(false);
+            }
 
             await events.EmitAsync(
                 status == ReportRunStatus.Failed ? JobEventTypes.RunFailed : JobEventTypes.RunCompleted,
@@ -325,6 +383,14 @@ public sealed class ReportRunner : IReportRunner
 
             var stats = new JobStats(recordsRead, recordsWritten, bytesWritten, retries, batches);
             return new ReportRunResult(status, stats, skipped, error, uploads);
+        }
+        catch (OperationCanceledException)
+        {
+            // The runner unwinds by exception on cancellation — capture here, before the finally
+            // block deletes the temp directory, then rethrow to preserve the worker's Cancelled
+            // status flow exactly as before this feature existed.
+            await CapturePartialArtifactsAsync().ConfigureAwait(false);
+            throw;
         }
         finally
         {

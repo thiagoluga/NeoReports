@@ -159,6 +159,17 @@ public interface INeoReportsApiClient
 
     /// <summary>Reads the current process-level memory reading (ADR D39), or <c>null</c> if the engine API isn't reachable.</summary>
     Task<ApiMemory?> TryGetMemoryAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lists a Failed/Cancelled job's best-effort partial output (ADR D40), or <c>null</c> if the
+    /// job doesn't exist or the API isn't reachable. Empty covers both "no partial-artifact store
+    /// registered on this host" and "registered, but nothing was captured" — indistinguishable
+    /// over the wire, so callers show one honest empty state either way.
+    /// </summary>
+    Task<IReadOnlyList<ApiArtifact>?> TryGetPartialArtifactsAsync(string jobId, CancellationToken cancellationToken = default);
+
+    /// <summary>Builds the absolute download URL for a Failed/Cancelled job's partial output.</summary>
+    string BuildPartialDownloadUrl(string jobId);
 }
 
 /// <summary>Locates the NeoReports engine API the UI calls.</summary>
@@ -286,6 +297,9 @@ internal sealed class NeoReportsApiClient(
     }
 
     public string BuildDownloadUrl(string jobId) => new Uri(ApiBase, $"jobs/{Uri.EscapeDataString(jobId)}/download").ToString();
+
+    public string BuildPartialDownloadUrl(string jobId) =>
+        new Uri(ApiBase, $"jobs/{Uri.EscapeDataString(jobId)}/partial-artifacts/download").ToString();
 
     public async Task<ApiCapabilities?> TryGetCapabilitiesAsync(CancellationToken cancellationToken = default)
     {
@@ -445,6 +459,25 @@ internal sealed class NeoReportsApiClient(
         catch (Exception ex) when (IsTransient(ex))
         {
             logger.LogWarning(ex, "GET {ApiBase}system/memory unavailable.", Sanitize(apiBase.ToString()));
+            return null;
+        }
+    }
+
+    public async Task<IReadOnlyList<ApiArtifact>?> TryGetPartialArtifactsAsync(string jobId, CancellationToken cancellationToken = default)
+    {
+        var apiBase = ApiBase;
+        try
+        {
+            using var response = await http.GetAsync(
+                new Uri(apiBase, $"jobs/{Uri.EscapeDataString(jobId)}/partial-artifacts"), cancellationToken).ConfigureAwait(false);
+            if (response.StatusCode == HttpStatusCode.NotFound)
+                return null;
+            response.EnsureSuccessStatusCode();
+            return await response.Content.ReadFromJsonAsync<IReadOnlyList<ApiArtifact>>(Json, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsTransient(ex))
+        {
+            logger.LogWarning(ex, "GET {ApiBase}jobs/{JobId}/partial-artifacts unavailable.", Sanitize(apiBase.ToString()), Sanitize(jobId));
             return null;
         }
     }
