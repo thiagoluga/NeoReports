@@ -142,39 +142,38 @@ public sealed class InMemoryJobScheduler : IReportJobScheduler, IRecurringReport
     // or an unexpected exception) — RegisterRecurringAsync/RemoveRecurringAsync only ever Cancel() it.
     private async Task RunRecurringLoopAsync(string reportName, CronExpression expression, CancellationTokenSource cts)
     {
-        try
+        using (cts)
         {
-            while (!cts.Token.IsCancellationRequested)
+            try
             {
-                DateTime? next = expression.GetNextOccurrence(DateTime.UtcNow);
-                if (next is null)
-                    return;
-
-                TimeSpan remaining = next.Value - DateTime.UtcNow;
-                while (remaining > TimeSpan.Zero)
+                while (!cts.Token.IsCancellationRequested)
                 {
-                    TimeSpan chunk = remaining < MaxWait ? remaining : MaxWait;
-                    using var timer = new PeriodicTimer(chunk);
-                    if (!await timer.WaitForNextTickAsync(cts.Token).ConfigureAwait(false))
+                    DateTime? next = expression.GetNextOccurrence(DateTime.UtcNow);
+                    if (next is null)
                         return;
-                    remaining = next.Value - DateTime.UtcNow;
+
+                    TimeSpan remaining = next.Value - DateTime.UtcNow;
+                    while (remaining > TimeSpan.Zero)
+                    {
+                        TimeSpan chunk = remaining < MaxWait ? remaining : MaxWait;
+                        using var timer = new PeriodicTimer(chunk);
+                        if (!await timer.WaitForNextTickAsync(cts.Token).ConfigureAwait(false))
+                            return;
+                        remaining = next.Value - DateTime.UtcNow;
+                    }
+
+                    if (cts.Token.IsCancellationRequested)
+                        return;
+
+                    // Overlapping firings run concurrently (ADR D41) — no skip-if-running check;
+                    // the engine already isolates concurrent job runs.
+                    await EnqueueAsync(new ReportJobRequest(reportName), CancellationToken.None).ConfigureAwait(false);
                 }
-
-                if (cts.Token.IsCancellationRequested)
-                    return;
-
-                // Overlapping firings run concurrently (ADR D41) — no skip-if-running check; the
-                // engine already isolates concurrent job runs.
-                await EnqueueAsync(new ReportJobRequest(reportName), CancellationToken.None).ConfigureAwait(false);
             }
-        }
-        catch (OperationCanceledException)
-        {
-            // Removed/disposed — stop the loop.
-        }
-        finally
-        {
-            cts.Dispose();
+            catch (OperationCanceledException)
+            {
+                // Removed/disposed — stop the loop.
+            }
         }
     }
 
