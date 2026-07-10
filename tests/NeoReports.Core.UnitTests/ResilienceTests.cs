@@ -93,4 +93,30 @@ public class ResilienceTests
         result.Error.ShouldNotBeNull();
         result.Error.ShouldContain("threshold");
     }
+
+    [Fact]
+    public async Task Data_based_threshold_aborts_the_same_way_as_the_predicate_overload()
+    {
+        // Same fixture as Threshold_aborts_even_in_skip_mode, using the data-based AbortIf(AbortThresholdConfig)
+        // overload (ADR D37) instead of a raw predicate — proves it compiles to the identical escalation.
+        var source = new FakeBatchSource<Sale>(new[] { Page(1), Page(2), Page(3), Page(4) });
+        var writer = new FakeWriterFactory(1, 2, 3);
+
+        var report = Build(source, writer, b => b
+            .OnFailure(f => f.SkipBatchAndLog().AbortIf(new AbortThresholdConfig(ConsecutiveFailures: 3))));
+        var result = await Run(report);
+
+        result.Status.ShouldBe(ReportRunStatus.Failed);
+        result.SkippedBatches.ShouldBe(2);
+        result.Error.ShouldNotBeNull();
+        result.Error.ShouldContain("threshold");
+        report.AbortThresholds.ShouldBe(new AbortThresholdConfig(ConsecutiveFailures: 3));
+    }
+
+    [Fact]
+    public void CompiledReport_AbortThresholds_is_null_without_escalation()
+    {
+        var report = Build(new FakeBatchSource<Sale>(new[] { Page(1) }), new FakeWriterFactory());
+        report.AbortThresholds.ShouldBeNull();
+    }
 }

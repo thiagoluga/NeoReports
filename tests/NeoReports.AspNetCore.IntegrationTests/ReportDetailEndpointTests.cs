@@ -130,6 +130,59 @@ public class ReportDetailEndpointTests
     }
 
     [Fact]
+    public async Task Detail_reflects_abort_thresholds_when_configured()
+    {
+        var configDir = Path.Join(Path.GetTempPath(), "nr-d37-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            using var host = await TestApp.StartAsync(services =>
+            {
+                services.AddDynamicReports(o => o.Directory = configDir);
+                services.AddSingleton<IConfigSourceProvider>(new FakeConfigSourceProvider(
+                    new[] { new object?[] { 1L } }));
+                services.AddSingleton<IWriterFactory>(new CsvWriterFactory(new CsvOptions()));
+            });
+            var client = host.GetTestClient();
+
+            const string config = """
+            {
+              "name": "abort-threshold-one",
+              "source": { "type": "inmemory" },
+              "columns": [ { "name": "Id", "type": "Integer" } ],
+              "outputs": [ { "format": "csv" } ],
+              "resilience": { "onFailure": "skip-and-log", "abortWhen": { "consecutiveFailures": 3, "failureRate": 0.5 } }
+            }
+            """;
+            using var content = new StringContent(config, Encoding.UTF8, "application/json");
+            await client.PostAsync("/api/reports", content);
+
+            var body = await client.GetFromJsonAsync<JsonElement>("/api/reports/abort-threshold-one", Json);
+
+            body.GetProperty("abortAfterConsecutiveFailures").GetInt32().ShouldBe(3);
+            body.GetProperty("abortAtFailureRate").GetDouble().ShouldBe(0.5);
+            body.TryGetProperty("abortAfterTotalFailures", out var total).ShouldBeTrue();
+            total.ValueKind.ShouldBe(JsonValueKind.Null);
+        }
+        finally
+        {
+            if (Directory.Exists(configDir))
+                Directory.Delete(configDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Detail_omits_abort_thresholds_when_not_configured()
+    {
+        using var host = await TestApp.StartAsync();
+        var client = host.GetTestClient();
+
+        var body = await client.GetFromJsonAsync<JsonElement>("/api/reports/sales", Json);
+
+        body.TryGetProperty("abortAfterConsecutiveFailures", out var consecutive).ShouldBeTrue();
+        consecutive.ValueKind.ShouldBe(JsonValueKind.Null);
+    }
+
+    [Fact]
     public async Task Detail_of_unknown_report_returns_404()
     {
         using var host = await TestApp.StartAsync();
