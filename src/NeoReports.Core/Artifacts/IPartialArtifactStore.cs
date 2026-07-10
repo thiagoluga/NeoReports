@@ -10,7 +10,7 @@ public sealed class PartialArtifactOptions
     /// relative path against the ASP.NET web root, not the process working directory, which would
     /// silently break the download endpoint for a relative default.
     /// </summary>
-    public string Directory { get; set; } = Path.Combine(Path.GetTempPath(), "neoreports-partials");
+    public string Directory { get; set; } = Path.Join(Path.GetTempPath(), "neoreports-partials");
 
     /// <summary>Age after which a job's captured partials may be pruned. Default 7 days.</summary>
     public TimeSpan Retention { get; set; } = TimeSpan.FromDays(7);

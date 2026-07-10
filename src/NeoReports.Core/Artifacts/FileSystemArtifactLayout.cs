@@ -14,7 +14,7 @@ internal static class FileSystemArtifactLayout
         var safe = Path.GetFileName(jobId);
         if (string.IsNullOrEmpty(safe) || safe != jobId)
             throw new ArgumentException("Invalid job id.", nameof(jobId));
-        return Path.Combine(root, safe);
+        return Path.Join(root, safe);
     }
 
     public static async Task SaveAsync(string dir, string sourcePath, string fileName, string mimeType, CancellationToken cancellationToken)
@@ -26,7 +26,7 @@ internal static class FileSystemArtifactLayout
         var safeFileName = Path.GetFileName(fileName);
         if (string.IsNullOrEmpty(safeFileName))
             throw new ArgumentException("File name must be a simple file name.", nameof(fileName));
-        var target = Path.Combine(dir, safeFileName);
+        var target = Path.Join(dir, safeFileName);
 
         await using (var source = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read))
         await using (var dest = new FileStream(target, FileMode.Create, FileAccess.Write, FileShare.None))
@@ -43,19 +43,18 @@ internal static class FileSystemArtifactLayout
         if (!Directory.Exists(dir))
             return Task.FromResult<IReadOnlyList<ReportArtifact>>(Array.Empty<ReportArtifact>());
 
-        var artifacts = new List<ReportArtifact>();
-        foreach (var path in Directory.EnumerateFiles(dir))
-        {
-            if (path.EndsWith(".mime", StringComparison.Ordinal))
-                continue;
+        IReadOnlyList<ReportArtifact> artifacts = Directory.EnumerateFiles(dir)
+            .Where(path => !path.EndsWith(".mime", StringComparison.Ordinal))
+            .Select(path =>
+            {
+                var mimePath = path + ".mime";
+                var mime = File.Exists(mimePath) ? File.ReadAllText(mimePath) : "application/octet-stream";
+                var info = new FileInfo(path);
+                return new ReportArtifact(Path.GetFileName(path), mime, path, info.Length);
+            })
+            .ToArray();
 
-            var mimePath = path + ".mime";
-            var mime = File.Exists(mimePath) ? File.ReadAllText(mimePath) : "application/octet-stream";
-            var info = new FileInfo(path);
-            artifacts.Add(new ReportArtifact(Path.GetFileName(path), mime, path, info.Length));
-        }
-
-        return Task.FromResult<IReadOnlyList<ReportArtifact>>(artifacts);
+        return Task.FromResult(artifacts);
     }
 
     public static void Delete(string dir)

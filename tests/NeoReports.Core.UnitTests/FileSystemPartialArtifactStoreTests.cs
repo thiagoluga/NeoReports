@@ -7,13 +7,13 @@ namespace NeoReports.Core.UnitTests;
 /// <summary>ADR D40: <see cref="FileSystemPartialArtifactStore"/>.</summary>
 public sealed class FileSystemPartialArtifactStoreTests : IDisposable
 {
-    private readonly string _root = Path.Combine(Path.GetTempPath(), "nr-d40-store-tests", Guid.NewGuid().ToString("N"));
+    private readonly string _root = Path.Join(Path.GetTempPath(), "nr-d40-store-tests", Guid.NewGuid().ToString("N"));
     private static readonly CancellationToken Ct = CancellationToken.None;
 
     private string MakeSourceFile(string content)
     {
         Directory.CreateDirectory(_root);
-        var path = Path.Combine(_root, "src-" + Guid.NewGuid().ToString("N") + ".tmp");
+        var path = Path.Join(_root, "src-" + Guid.NewGuid().ToString("N") + ".tmp");
         File.WriteAllText(path, content);
         return path;
     }
