@@ -175,6 +175,39 @@ public class BuilderConfigMapperTests
     }
 
     [Fact]
+    public void Blank_ScheduleCron_omits_the_schedule_field()
+    {
+        var state = FullState();
+        state.ScheduleCron = "";
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        doc.RootElement.TryGetProperty("schedule", out _).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void ScheduleCron_serializes_a_schedule_object()
+    {
+        var state = FullState();
+        state.ScheduleCron = "0 6 * * 1";
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        doc.RootElement.GetProperty("schedule").GetProperty("cron").GetString().ShouldBe("0 6 * * 1");
+    }
+
+    [Fact]
+    public void ScheduleCron_is_trimmed()
+    {
+        var state = FullState();
+        state.ScheduleCron = "  0 6 * * 1  ";
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        doc.RootElement.GetProperty("schedule").GetProperty("cron").GetString().ShouldBe("0 6 * * 1");
+    }
+
+    [Fact]
     public void Report_name_passes_through_unchanged()
     {
         var state = FullState();

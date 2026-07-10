@@ -1,6 +1,7 @@
 using System.Linq.Expressions;
 using NeoReports.Abstractions;
 using NeoReports.Core.Pipeline;
+using NeoReports.Core.Scheduling;
 using NeoReports.Core.Sections;
 using NeoReports.Core.Sources;
 
@@ -27,6 +28,7 @@ public sealed class ReportBuilder<TRow>
     private IBatchSource<TRow>? _batchSource;
     private IStreamingSource<TRow>? _streamingSource;
     private int _pageSize = 1000;
+    private ScheduleConfig? _schedule;
 
     /// <summary>Creates a builder for a report registered under <paramref name="name"/>.</summary>
     /// <param name="name">Unique report name.</param>
@@ -204,6 +206,20 @@ public sealed class ReportBuilder<TRow>
         return this;
     }
 
+    /// <summary>
+    /// Declares a recurring-run schedule (ADR D41). The cron expression is validated immediately
+    /// and evaluated strictly in UTC by whatever <c>IRecurringReportScheduler</c> is registered; a
+    /// host with no recurring scheduler simply never runs this report on its own.
+    /// </summary>
+    /// <param name="cron">A 5-field cron expression, evaluated in UTC.</param>
+    /// <exception cref="ConfigurationException">Thrown when the cron expression is invalid.</exception>
+    public ReportBuilder<TRow> Schedule(string cron)
+    {
+        CronValidation.Validate(cron);
+        _schedule = new ScheduleConfig(cron);
+        return this;
+    }
+
     /// <summary>Validates the configuration and produces an immutable compiled report.</summary>
     /// <exception cref="ConfigurationException">Thrown when the configuration is incomplete.</exception>
     public CompiledReport Build()
@@ -267,7 +283,8 @@ public sealed class ReportBuilder<TRow>
             _destinations.ToArray(),
             _retry,
             _failure.Build(),
-            _failure.AbortThresholds);
+            _failure.AbortThresholds,
+            _schedule);
     }
 
     private (ReportSchema Schema, OutputProjection<TRow> Projection) ResolveView(OutputView<TRow>? view, string what)

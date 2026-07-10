@@ -43,6 +43,25 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   own `/download`, completely separate from the completed-artifacts surface. `NeoReports.UI` —
   the JobFailed page's "Partial output" card returns, with a warning banner and per-file/zip
   download.
+- `NeoReports.Abstractions` — `ScheduleConfig` (`Cron`, UTC-only) and a trailing optional
+  `ReportConfig.Schedule` (ADR D41). `NeoReports.Core` — `ReportBuilder<T>.Schedule(cron)` and
+  `CompiledReport.Schedule`, cron validated via Cronos; `IRecurringReportScheduler` (register/
+  remove/next-occurrence/list, implemented by `InMemoryJobScheduler` and `HangfireJobScheduler`
+  — recurring-job id `neoreports:{name}`, each firing creates its own job record); a uniform,
+  file- or in-memory-backed `IScheduleOverrideStore` for runtime overrides on either origin
+  (code-first or config-first), with an explicit "unscheduled" tombstone — effective schedule =
+  override if present else the declaration, never patching the declaration or config document.
+  A startup `ScheduleReconciliationHostedService` (`AddScheduling`/`AddInMemoryScheduling`)
+  reconciles every report's effective schedule and removes orphaned registrations for reports no
+  longer registered. Overlapping firings run concurrently — no skip-if-running. `NeoReports.AspNetCore`
+  — `PUT`/`DELETE {prefix}/reports/{name}/schedule`, `GET /reports/{name}` gains `scheduleCron`/
+  `nextRunAt`/`scheduleOverridden`, `GET /capabilities` gains `scheduling`; `POST /reports` with a
+  `schedule` field is effective immediately, and rejected (400) without a recurring scheduler
+  registered; `DELETE /reports/{name}` removes the recurring registration and any override first.
+  `NeoReports.UI` — the Schedule card returns on Report detail and the Builder's Review step: cron
+  input with preset chips, "Next run" in the viewer's local time (UTC subline), an "overridden at
+  runtime" chip, and Set/Clear actions; honest states when scheduling isn't supported or nothing
+  is scheduled.
 
 ## [1.2.0] - 2026-07-03
 

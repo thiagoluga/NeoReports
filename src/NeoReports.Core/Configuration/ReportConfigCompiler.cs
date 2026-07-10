@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using NeoReports.Abstractions;
 using NeoReports.Core.Building;
+using NeoReports.Core.Scheduling;
 using NeoReports.Core.Sections;
 
 namespace NeoReports.Core.Configuration;
@@ -70,6 +71,9 @@ public static class ReportConfigCompiler
 
         if (config.Resilience is { } resilience)
             ApplyResilience(builder, resilience);
+
+        if (config.Schedule is { } schedule)
+            builder.Schedule(schedule.Cron);
 
         foreach (OutputSpec output in regularOutputs)
             builder.To(output);

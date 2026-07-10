@@ -6,6 +6,7 @@ using NeoReports.Core.Configuration;
 using NeoReports.Core.Events;
 using NeoReports.Core.Pipeline;
 using NeoReports.Core.Registry;
+using NeoReports.Core.Scheduling;
 
 namespace NeoReports.Core.DependencyInjection;
 
@@ -14,6 +15,13 @@ public sealed class DynamicReportsOptions
 {
     /// <summary>Directory where dynamic report configs are persisted. Default: <c>./neoreports-configs</c>.</summary>
     public string Directory { get; set; } = "./neoreports-configs";
+}
+
+/// <summary>Options for <see cref="ServiceCollectionExtensions.AddScheduling"/>.</summary>
+public sealed class ScheduleOverrideOptions
+{
+    /// <summary>Directory where runtime schedule overrides are persisted. Default: <c>./neoreports-schedules</c>.</summary>
+    public string Directory { get; set; } = "./neoreports-schedules";
 }
 
 /// <summary>DI entry points for registering NeoReports and individual reports.</summary>
@@ -169,6 +177,50 @@ public static class ServiceCollectionExtensions
         configure?.Invoke(options);
         services.TryAddSingleton(options);
         services.TryAddSingleton<IJobEventStore, InMemoryJobEventStore>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers recurring-schedule support (ADR D41): a file-backed <see cref="IScheduleOverrideStore"/>
+    /// and a startup hosted service that reconciles every registered report's effective schedule with
+    /// whatever <see cref="IRecurringReportScheduler"/> a Jobs package registered (e.g.
+    /// <c>AddNeoReportsInMemoryJobs</c>/<c>AddNeoReportsHangfireJobs</c>). Call order with those
+    /// doesn't matter — the hosted service resolves everything at host startup, after the full
+    /// service collection is built. Opt-in: a host that never calls this has no recurring support;
+    /// the schedule endpoints reject schedule input rather than silently dropping it.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configure">Optional options callback (override storage directory).</param>
+    public static IServiceCollection AddScheduling(this IServiceCollection services, Action<ScheduleOverrideOptions>? configure = null)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.AddNeoReports();
+
+        var options = new ScheduleOverrideOptions();
+        configure?.Invoke(options);
+        services.TryAddSingleton(options);
+        services.TryAddSingleton<IScheduleOverrideStore>(
+            sp => new FileScheduleOverrideStore(sp.GetRequiredService<ScheduleOverrideOptions>().Directory));
+        services.AddHostedService<ScheduleReconciliationHostedService>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers recurring-schedule support (ADR D41) with an in-process override store — same
+    /// behavior as <see cref="AddScheduling"/>, but overrides are lost on restart. Intended for
+    /// tests and single-process dev hosts.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    public static IServiceCollection AddInMemoryScheduling(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.AddNeoReports();
+        services.TryAddSingleton<IScheduleOverrideStore, InMemoryScheduleOverrideStore>();
+        services.AddHostedService<ScheduleReconciliationHostedService>();
 
         return services;
     }

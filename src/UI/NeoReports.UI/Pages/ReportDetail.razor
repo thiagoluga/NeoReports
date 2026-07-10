@@ -48,12 +48,14 @@
     }
 
     @* Metric strip — Total runs/Success rate/Avg duration computed from GET /api/jobs.
-       "Next run" stays honest ("Not scheduled") since v1 has no scheduler. *@
+       "Next run" reflects the real effective schedule (ADR D41), never fabricated. *@
     <div class="grid-4">
         <MetricCard Icon="player-play" Label="Total runs" Value="@_metrics.TotalRuns" Sub="known jobs" />
         <MetricCard Icon="circle-check" Label="Success rate" Value="@_metrics.SuccessRate" Sub="known jobs · terminal" />
         <MetricCard Icon="clock" Label="Avg duration" Value="@_metrics.AvgDuration" Sub="completed jobs" />
-        <MetricCard Icon="calendar" Label="Next run" Value="Not scheduled" Sub="trigger via API or the run button" />
+        <MetricCard Icon="calendar" Label="Next run"
+            Value="@(_detail.NextRunAt is not null ? NextRunLocal : "Not scheduled")"
+            Sub="@(_detail.NextRunAt is not null ? $"{NextRunUtc} UTC" : "trigger via API or the run button")" />
     </div>
 
     <div>
@@ -103,6 +105,61 @@
             </div>
             </ChildContent>
         </Card>
+
+        @* Schedule — GET/PUT/DELETE /api/reports/{name}/schedule (ADR D41). Honest states: no
+           Scheduling capability => explain and hide controls; no active schedule => "Not scheduled". *@
+        <Card Title="Schedule" Sub="Recurring runs, evaluated in UTC">
+            <ChildContent>
+            @if (_capabilities is not null && !_capabilities.Scheduling)
+            {
+                <span class="muted" style="font-size:12px">Scheduling is not supported by this host's job scheduler.</span>
+            }
+            else
+            {
+                <div class="cfg-row">
+                    <span class="lbl"><i class="ti ti-clock"></i>Status</span>
+                    <div class="val">
+                        @if (_detail.ScheduleCron is not null)
+                        {
+                            <span class="mono" style="font-size:12px">@_detail.ScheduleCron</span>
+                        }
+                        else
+                        {
+                            <span class="muted">Not scheduled</span>
+                        }
+                        @if (_detail.ScheduleOverridden)
+                        {
+                            <Chip Kind="token">overridden at runtime</Chip>
+                        }
+                    </div>
+                    <span></span>
+                </div>
+                <div class="cfg-row">
+                    <span class="lbl"><i class="ti ti-calendar"></i>Cron</span>
+                    <div class="val" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                        <input class="mono" style="width:160px" @bind="_scheduleCronInput" @bind:event="oninput" placeholder="0 6 * * 1" />
+                        <Button Variant="outline" Size="sm" OnClick="@(() => _scheduleCronInput = "0 * * * *")">Hourly</Button>
+                        <Button Variant="outline" Size="sm" OnClick="@(() => _scheduleCronInput = "0 6 * * *")">Daily 06:00</Button>
+                        <Button Variant="outline" Size="sm" OnClick="@(() => _scheduleCronInput = "0 6 * * 1")">Weekly Mon 06:00</Button>
+                    </div>
+                    <span></span>
+                </div>
+                @if (_scheduleError is not null)
+                {
+                    <Banner Variant="danger" Icon="alert-triangle"><span style="font-size:12px">@_scheduleError</span></Banner>
+                }
+                <div style="display:flex;gap:8px;margin-top:8px">
+                    <Button Variant="primary" Loading="_savingSchedule" OnClick="SetScheduleAsync">
+                        @(_detail.ScheduleCron is null ? "Set schedule" : "Update schedule")
+                    </Button>
+                    @if (_detail.ScheduleCron is not null || _detail.ScheduleOverridden)
+                    {
+                        <Button Variant="outline" Loading="_clearingSchedule" OnClick="ClearScheduleAsync">Clear</Button>
+                    }
+                </div>
+            }
+            </ChildContent>
+        </Card>
     </div>
 
     @* History — GET /api/jobs?report={name} *@
@@ -150,6 +207,62 @@
     private string Description => $"{_detail!.Columns.Count} column(s) · {_detail.Formats.Count} format(s).";
     private string Destinations => _detail!.Destinations.Count > 0 ? string.Join(" + ", _detail.Destinations) : "—";
     private string? AbortThresholds => _detail is null ? null : ResilienceFormatter.FormatAbortThresholds(_detail);
+
+    private ApiCapabilities? _capabilities;
+    private string _scheduleCronInput = "";
+    private bool _savingSchedule;
+    private bool _clearingSchedule;
+    private string? _scheduleError;
+
+    private string NextRunLocal => _detail?.NextRunAt is { } t ? t.ToLocalTime().ToString("MMM d · HH:mm") : "—";
+    private string NextRunUtc => _detail?.NextRunAt is { } t ? t.ToString("yyyy-MM-dd HH:mm") : "—";
+
+    private async Task SetScheduleAsync()
+    {
+        if (_detail is null || string.IsNullOrWhiteSpace(_scheduleCronInput))
+            return;
+
+        _savingSchedule = true;
+        _scheduleError = null;
+        try
+        {
+            bool ok = await Api.TrySetScheduleAsync(_detail.Name, _scheduleCronInput.Trim());
+            if (ok)
+                _detail = await Api.TryGetReportDetailAsync(_detail.Name);
+            else
+                _scheduleError = "The engine rejected the schedule (invalid cron, unknown report, or scheduling isn't supported).";
+        }
+        finally
+        {
+            _savingSchedule = false;
+        }
+    }
+
+    private async Task ClearScheduleAsync()
+    {
+        if (_detail is null)
+            return;
+
+        _clearingSchedule = true;
+        _scheduleError = null;
+        try
+        {
+            bool ok = await Api.TryClearScheduleAsync(_detail.Name);
+            if (ok)
+            {
+                _detail = await Api.TryGetReportDetailAsync(_detail.Name);
+                _scheduleCronInput = "";
+            }
+            else
+            {
+                _scheduleError = "The engine rejected the request.";
+            }
+        }
+        finally
+        {
+            _clearingSchedule = false;
+        }
+    }
 
     private sealed record ReportMetrics(string TotalRuns, string SuccessRate, string AvgDuration)
     {
@@ -253,9 +366,12 @@
         _detail = await Api.TryGetReportDetailAsync(Slug);
         _metrics = ReportMetrics.Unavailable;
         _history = Array.Empty<HistoryRow>();
+        _capabilities = await Api.TryGetCapabilitiesAsync();
 
         if (_detail is null)
             return;
+
+        _scheduleCronInput = _detail.ScheduleCron ?? "";
 
         // limit: 200 so the metric strip reflects the report's full known history, not just
         // the 10 rows shown in the table below (same pattern as Dashboard's ComputeMetrics).
