@@ -28,7 +28,7 @@ public sealed record ApiJobView(
 
 /// <summary>What the engine can build dynamic reports out of, as returned by <c>GET /api/capabilities</c>.</summary>
 public sealed record ApiCapabilities(
-    IReadOnlyList<string> Sources, IReadOnlyList<string> Formats, IReadOnlyList<string> Destinations);
+    IReadOnlyList<string> Sources, IReadOnlyList<string> Formats, IReadOnlyList<string> Destinations, bool Scheduling = false);
 
 /// <summary>Result of <c>POST /api/reports/validate</c> — a dry-run compile, never a registration.</summary>
 public sealed record ApiValidationResult(
@@ -72,7 +72,10 @@ public sealed record ApiReportDetail(
     bool Deletable,
     int? AbortAfterConsecutiveFailures = null,
     int? AbortAfterTotalFailures = null,
-    double? AbortAtFailureRate = null);
+    double? AbortAtFailureRate = null,
+    string? ScheduleCron = null,
+    DateTimeOffset? NextRunAt = null,
+    bool ScheduleOverridden = false);
 
 /// <summary>A finished output file of a completed job, as returned by <c>GET /api/jobs/{id}/artifacts</c>.</summary>
 public sealed record ApiArtifact(string FileName, string MimeType, long SizeBytes);
@@ -170,6 +173,24 @@ public interface INeoReportsApiClient
 
     /// <summary>Builds the absolute download URL for a Failed/Cancelled job's partial output.</summary>
     string BuildPartialDownloadUrl(string jobId);
+
+    /// <summary>
+    /// Sets a runtime schedule override for a report (ADR D41), for either origin. Returns
+    /// <c>false</c> on 404 (unknown report), 400 (invalid cron), 409 (no recurring scheduler
+    /// registered on this host), or if the engine API isn't reachable.
+    /// </summary>
+    /// <param name="name">The report name.</param>
+    /// <param name="cron">A 5-field cron expression, evaluated in UTC.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<bool> TrySetScheduleAsync(string name, string cron, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Clears a report's runtime schedule override (tombstones a declared schedule, or removes a
+    /// prior override — ADR D41). Returns <c>false</c> on 404, 409, or if the engine API isn't reachable.
+    /// </summary>
+    /// <param name="name">The report name.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<bool> TryClearScheduleAsync(string name, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Locates the NeoReports engine API the UI calls.</summary>
@@ -379,6 +400,38 @@ internal sealed class NeoReportsApiClient(
         catch (Exception ex) when (IsTransient(ex))
         {
             logger.LogWarning(ex, "DELETE {ApiBase}reports/{Name} failed.", Sanitize(apiBase.ToString()), Sanitize(name));
+            return false;
+        }
+    }
+
+    public async Task<bool> TrySetScheduleAsync(string name, string cron, CancellationToken cancellationToken = default)
+    {
+        var apiBase = ApiBase;
+        try
+        {
+            using var response = await http.PutAsJsonAsync(
+                new Uri(apiBase, $"reports/{Uri.EscapeDataString(name)}/schedule"), new { cron }, Json, cancellationToken).ConfigureAwait(false);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex) when (IsTransient(ex))
+        {
+            logger.LogWarning(ex, "PUT {ApiBase}reports/{Name}/schedule failed.", Sanitize(apiBase.ToString()), Sanitize(name));
+            return false;
+        }
+    }
+
+    public async Task<bool> TryClearScheduleAsync(string name, CancellationToken cancellationToken = default)
+    {
+        var apiBase = ApiBase;
+        try
+        {
+            using var response = await http.DeleteAsync(
+                new Uri(apiBase, $"reports/{Uri.EscapeDataString(name)}/schedule"), cancellationToken).ConfigureAwait(false);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex) when (IsTransient(ex))
+        {
+            logger.LogWarning(ex, "DELETE {ApiBase}reports/{Name}/schedule failed.", Sanitize(apiBase.ToString()), Sanitize(name));
             return false;
         }
     }

@@ -9,11 +9,13 @@
   <ItemGroup>
     <ProjectReference Include="..\NeoReports.Jobs\NeoReports.Jobs.csproj" />
     <ProjectReference Include="..\..\NeoReports.Abstractions\NeoReports.Abstractions.csproj" />
+    <ProjectReference Include="..\..\NeoReports.Core\NeoReports.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Hangfire.Core" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Cronos" />
   </ItemGroup>
 
 </Project>

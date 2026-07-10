@@ -17,6 +17,7 @@ namespace NeoReports.Abstractions;
 /// <param name="PageSize">Optional page size; the engine default is used when null.</param>
 /// <param name="Filter">Optional dynamic filter expression (JsonLogic); evaluated by a later epic.</param>
 /// <param name="Resilience">Optional retry/failure-strategy overrides; the engine default policy is used when null.</param>
+/// <param name="Schedule">Optional recurring-run schedule (ADR D41); the report is run-on-demand only when null.</param>
 public sealed record ReportConfig(
     string Name,
     SourceConfig Source,
@@ -25,7 +26,8 @@ public sealed record ReportConfig(
     IReadOnlyList<DestinationConfig>? Destinations = null,
     int? PageSize = null,
     string? Filter = null,
-    ResilienceConfig? Resilience = null);
+    ResilienceConfig? Resilience = null,
+    ScheduleConfig? Schedule = null);
 
 /// <summary>A source section: a stable type id plus a free-form property bag the provider reads.</summary>
 /// <param name="Type">Stable source type id (e.g. "sql"); resolved to an <see cref="IConfigSourceProvider"/>.</param>
@@ -113,6 +115,16 @@ public sealed record ResilienceConfig(
     bool? Jitter = null,
     string? OnFailure = null,
     AbortThresholdConfig? AbortWhen = null);
+
+/// <summary>
+/// A recurring-run schedule (ADR D41). The cron expression is evaluated strictly in **UTC** — there
+/// is no timezone field; a host presenting "next run" to a user converts the computed UTC instant
+/// to the viewer's local time for display. Overlapping firings (a run still in progress when the
+/// next occurrence comes due) run concurrently — the engine already isolates concurrent job runs,
+/// so there is no skip-if-running logic.
+/// </summary>
+/// <param name="Cron">A 5-field cron expression (minute hour day-of-month month day-of-week), evaluated in UTC.</param>
+public sealed record ScheduleConfig(string Cron);
 
 /// <summary>Parses a serialized report definition (e.g. JSON) into a <see cref="ReportConfig"/>.</summary>
 public interface IReportConfigParser

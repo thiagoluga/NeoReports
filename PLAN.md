@@ -554,16 +554,31 @@ returning UI card has an honest empty/unavailable state (D36) — no fabricated 
   default to an absolute temp-folder path, matching `FileSystemArtifactStore`'s existing pattern.
   Extracted a shared `FileSystemArtifactLayout` helper to dedupe the on-disk mechanics between
   `FileSystemArtifactStore` and `FileSystemPartialArtifactStore` (SonarCloud duplication gate).
-- [ ] **E6 — Scheduling (D41, supersedes D35).** `ScheduleConfig` on `ReportConfig` (Abstractions,
+- [x] **E6 — Scheduling (D41, supersedes D35).** `ScheduleConfig` on `ReportConfig` (Abstractions,
   additive; **UTC-only cron**, UI renders next run in viewer-local time) + builder `.Schedule()`;
   `IRecurringReportScheduler` (Core) implemented by Hangfire (`neoreports:{name}` ids, per-firing
-  job records) **and** InMemory (Cronos + `PeriodicTimer`; Cronos approved into CPM); overlapping
-  firings run concurrently; runtime overrides for **both origins** via `IScheduleOverrideStore`
-  (tombstone semantics; config documents never patched — D33(f) stays punted);
-  `PUT/DELETE /reports/{name}/schedule`; startup hydration/reconciliation hosted service;
+  job records, orphan detection reads Hangfire's own storage via `IStorageConnection.GetRecurringJobs()`)
+  **and** InMemory (Cronos + `PeriodicTimer`; Cronos approved into CPM); overlapping firings run
+  concurrently; runtime overrides for **both origins** via `IScheduleOverrideStore` (file/in-memory
+  twin, tombstone semantics; config documents never patched — D33(f) stays punted);
+  `PUT/DELETE /reports/{name}/schedule`; `ScheduleReconciliationHostedService`
+  (`AddScheduling`/`AddInMemoryScheduling`) reconciles at startup and removes orphans;
   `Scheduling` in capabilities; `NextRunAt` (computed, never fabricated) in report detail;
-  Schedule cards return (ReportDetail + Builder step 5). May split into E6a (engine) / E6b
-  (API + UI) if the PR grows.
+  Schedule cards return on ReportDetail and Builder step 5 (cron input + presets, "overridden at
+  runtime" chip, honest no-scheduling/not-scheduled states). ✅ solution builds 0 warnings; 42 new
+  Core tests (cron validation, builder/compiler wiring, effective-schedule matrix, file/in-memory
+  override store roundtrip + tombstone, reconciliation registers/overrides/tombstones/removes
+  orphans/no-op without a scheduler, DI) + 8 new Jobs tests (InMemory registration/next-occurrence/
+  removal/replace/invalid-cron/listing) + 5 new Hangfire seam tests (real `InMemoryStorage` +
+  `RecurringJobManager`) + 13 new AspNetCore integration tests (capabilities flag, detail fields,
+  404/400/409 error cases, activate/tombstone/clear for both origins, dynamic-report schedule
+  effective immediately, delete removes the registration) + 3 new UI mapper tests. Browser-verified
+  live end-to-end via `samples/09-web-ui-live` (`AddInMemoryScheduling()`): scheduled a report for
+  "every minute" via the API, watched a real job appear and complete with **no manual trigger** at
+  the exact minute boundary (confirmed via the job's `createdAt`), the ReportDetail Schedule card
+  and "Next run" metric rendered the real cron/next-run/override state, clicked "Clear" in the
+  actual UI, watched the card flip to "Not scheduled", and confirmed no further job fired after
+  clearing.
 
 ## Epic F — Source registry (named source instances + on-demand health)
 

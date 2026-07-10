@@ -26,7 +26,8 @@ public sealed class CompiledReport
         IReadOnlyList<DestinationSpec> destinations,
         RetryOptions retry,
         IFailureStrategy failureStrategy,
-        AbortThresholdConfig? abortThresholds = null)
+        AbortThresholdConfig? abortThresholds = null,
+        ScheduleConfig? schedule = null)
     {
         Name = name;
         Schema = schema;
@@ -39,6 +40,7 @@ public sealed class CompiledReport
         Retry = retry;
         FailureStrategy = failureStrategy;
         AbortThresholds = abortThresholds;
+        Schedule = schedule;
 
         OutputFormats = outputs.Select(o => o.Factory.Format).ToArray();
         DestinationTypes = destinations.Select(d => d.Factory.Type).ToArray();
@@ -88,4 +90,13 @@ public sealed class CompiledReport
     /// or <c>null</c> when none were set, or a raw predicate was used instead (not introspectable — ADR D37).
     /// </summary>
     public AbortThresholdConfig? AbortThresholds { get; }
+
+    /// <summary>
+    /// The recurring-run schedule declared via <c>ReportBuilder&lt;T&gt;.Schedule(cron)</c> or the
+    /// config document's <c>Schedule</c>, or <c>null</c> when the report has no declared schedule
+    /// (ADR D41). A runtime override, if any, takes precedence over this at effective-schedule
+    /// resolution time (<c>EffectiveSchedule.Resolve</c>) — this property always reflects only the
+    /// declaration, never the override.
+    /// </summary>
+    public ScheduleConfig? Schedule { get; }
 }

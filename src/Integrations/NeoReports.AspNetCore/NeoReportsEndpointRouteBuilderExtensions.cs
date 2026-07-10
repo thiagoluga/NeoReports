@@ -12,6 +12,7 @@ using NeoReports.Core.Configuration;
 using NeoReports.Core.Events;
 using NeoReports.Core.Pipeline;
 using NeoReports.Core.Registry;
+using NeoReports.Core.Scheduling;
 
 namespace NeoReports.AspNetCore;
 
@@ -37,6 +38,8 @@ public static class NeoReportsEndpointRouteBuilderExtensions
     /// <item><c>GET  {prefix}/system/memory</c> — process-level memory reading + running-job count (ADR D39)</item>
     /// <item><c>GET  {prefix}/jobs/{id}/partial-artifacts</c> — best-effort partial output of a Failed/Cancelled job (ADR D40); completely separate from the completed-artifacts surface</item>
     /// <item><c>GET  {prefix}/jobs/{id}/partial-artifacts/download</c> — download the partial output</item>
+    /// <item><c>PUT  {prefix}/reports/{name}/schedule</c> — set a runtime recurring-schedule override (ADR D41); works for both origins; 409 when no recurring scheduler is registered</item>
+    /// <item><c>DELETE {prefix}/reports/{name}/schedule</c> — clear the runtime override (tombstones a declared schedule, or removes a prior override)</item>
     /// </list>
     /// Authorization is inherited from the host; set <see cref="NeoReportsEndpointOptions.RequireAuthorization"/>
     /// to apply <c>RequireAuthorization</c> to the group.
@@ -80,6 +83,8 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         group.MapGet("/system/memory", GetMemoryAsync);
         group.MapGet("/jobs/{id}/partial-artifacts", GetPartialArtifactsAsync);
         group.MapGet("/jobs/{id}/partial-artifacts/download", DownloadPartialArtifactsAsync);
+        group.MapPut("/reports/{name}/schedule", SetScheduleAsync);
+        group.MapDelete("/reports/{name}/schedule", ClearScheduleAsync);
 
         return group;
     }
@@ -167,6 +172,9 @@ public static class NeoReportsEndpointRouteBuilderExtensions
             .Select(c => new ReportColumnView(c.Name, c.Type.ToString(), c.DisplayName, c.Format, c.Nullable))
             .ToArray();
 
+        (string? scheduleCron, DateTimeOffset? nextRunAt, bool scheduleOverridden) =
+            await ResolveScheduleAsync(report, http, cancellationToken).ConfigureAwait(false);
+
         var detail = new ReportDetailView(
             Name: report.Name,
             Columns: columns,
@@ -182,9 +190,37 @@ public static class NeoReportsEndpointRouteBuilderExtensions
             Deletable: isConfigOrigin,
             AbortAfterConsecutiveFailures: report.AbortThresholds?.ConsecutiveFailures,
             AbortAfterTotalFailures: report.AbortThresholds?.TotalFailures,
-            AbortAtFailureRate: report.AbortThresholds?.FailureRate);
+            AbortAtFailureRate: report.AbortThresholds?.FailureRate,
+            ScheduleCron: scheduleCron,
+            NextRunAt: nextRunAt,
+            ScheduleOverridden: scheduleOverridden);
 
         return Results.Ok(detail);
+    }
+
+    /// <summary>
+    /// Resolves a report's effective schedule for display: the override store and recurring
+    /// scheduler are both optional (ADR D41) — a host that never called <c>AddScheduling</c>/a Jobs
+    /// recurring scheduler simply shows "not scheduled" for every report, never a fabricated value.
+    /// </summary>
+    private static async Task<(string? Cron, DateTimeOffset? NextRunAt, bool Overridden)> ResolveScheduleAsync(
+        CompiledReport report, HttpContext http, CancellationToken cancellationToken)
+    {
+        IScheduleOverrideStore? overrides = http.RequestServices.GetService<IScheduleOverrideStore>();
+        ScheduleOverrideEntry? overrideEntry = null;
+        if (overrides is not null && DynamicReportName.IsValid(report.Name))
+            overrideEntry = await overrides.GetAsync(report.Name, cancellationToken).ConfigureAwait(false);
+
+        string? effectiveCron = EffectiveSchedule.Resolve(report.Schedule, overrideEntry);
+        if (effectiveCron is null)
+            return (null, null, EffectiveSchedule.IsOverridden(overrideEntry));
+
+        IRecurringReportScheduler? scheduler = http.RequestServices.GetService<IRecurringReportScheduler>();
+        DateTimeOffset? nextRunAt = scheduler is null
+            ? null
+            : await scheduler.GetNextOccurrenceAsync(report.Name, cancellationToken).ConfigureAwait(false);
+
+        return (effectiveCron, nextRunAt, EffectiveSchedule.IsOverridden(overrideEntry));
     }
 
     private static async Task<IResult> CreateReportAsync(
@@ -215,6 +251,15 @@ public static class NeoReportsEndpointRouteBuilderExtensions
 
         if (registry.Contains(config.Name))
             return Results.Conflict(new { error = $"A report named '{config.Name}' already exists." });
+
+        if (config.Schedule is not null && http.RequestServices.GetService<IRecurringReportScheduler>() is null)
+        {
+            return Results.BadRequest(new
+            {
+                error = "This report declares a schedule, but no recurring scheduler is registered on this host. " +
+                        "Register one (e.g. AddNeoReportsInMemoryJobs/AddNeoReportsHangfireJobs) or omit 'schedule'.",
+            });
+        }
 
         CompiledReport compiled;
         try
@@ -251,6 +296,15 @@ public static class NeoReportsEndpointRouteBuilderExtensions
                 title: "Failed to persist the dynamic report.",
                 detail: ex.Message,
                 statusCode: StatusCodes.Status500InternalServerError);
+        }
+
+        // Effective at registration (ADR D41): a declared schedule starts firing immediately,
+        // without waiting for the next host restart's reconciliation pass.
+        if (compiled.Schedule is { } declaredSchedule)
+        {
+            IRecurringReportScheduler? scheduler = http.RequestServices.GetService<IRecurringReportScheduler>();
+            if (scheduler is not null)
+                await scheduler.RegisterRecurringAsync(config.Name, declaredSchedule.Cron, cancellationToken).ConfigureAwait(false);
         }
 
         var columns = compiled.Schema.Columns.Select(c => c.Name).ToArray();
@@ -298,6 +352,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
 
     private static async Task<IResult> DeleteReportAsync(
         string name,
+        HttpContext http,
         [FromServices] IMutableReportRegistry registry,
         [FromServices] IReportConfigStore configStore,
         CancellationToken cancellationToken)
@@ -315,6 +370,16 @@ public static class NeoReportsEndpointRouteBuilderExtensions
             });
         }
 
+        // Recurring registration and any override are removed first (ADR D41), before the report
+        // itself disappears, so no new firing can race the delete.
+        IRecurringReportScheduler? scheduler = http.RequestServices.GetService<IRecurringReportScheduler>();
+        if (scheduler is not null)
+            await scheduler.RemoveRecurringAsync(name, cancellationToken).ConfigureAwait(false);
+
+        IScheduleOverrideStore? overrides = http.RequestServices.GetService<IScheduleOverrideStore>();
+        if (overrides is not null)
+            await overrides.RemoveAsync(name, cancellationToken).ConfigureAwait(false);
+
         // Store first: if the process dies between the two calls, the report stays registered
         // until restart but won't rehydrate on the next one — self-healing. The opposite order
         // would resurrect a "deleted" report on the next rehydration.
@@ -331,8 +396,74 @@ public static class NeoReportsEndpointRouteBuilderExtensions
             .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(s => s, StringComparer.Ordinal).ToArray();
         var destinations = http.RequestServices.GetServices<IDestinationFactory>().Select(f => f.Type)
             .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(s => s, StringComparer.Ordinal).ToArray();
+        bool scheduling = http.RequestServices.GetService<IRecurringReportScheduler>() is not null;
 
-        return Results.Ok(new CapabilitiesResponse(sources, formats, destinations));
+        return Results.Ok(new CapabilitiesResponse(sources, formats, destinations, scheduling));
+    }
+
+    private static async Task<IResult> SetScheduleAsync(
+        string name, SetScheduleRequest? body, HttpContext http,
+        [FromServices] IReportRegistry registry, CancellationToken cancellationToken)
+    {
+        if (!registry.Contains(name))
+            return Results.NotFound(new { error = $"No report named '{name}' is registered." });
+
+        if (body is null || string.IsNullOrWhiteSpace(body.Cron))
+            return Results.BadRequest(new { error = "A 'cron' expression must be provided." });
+
+        IRecurringReportScheduler? scheduler = http.RequestServices.GetService<IRecurringReportScheduler>();
+        IScheduleOverrideStore? overrides = http.RequestServices.GetService<IScheduleOverrideStore>();
+        if (scheduler is null || overrides is null)
+        {
+            return Results.Conflict(new
+            {
+                error = "No recurring scheduler is registered on this host. Register one " +
+                        "(e.g. AddNeoReportsInMemoryJobs/AddNeoReportsHangfireJobs) and AddScheduling to use schedules.",
+            });
+        }
+
+        try
+        {
+            CronValidation.Validate(body.Cron);
+        }
+        catch (ConfigurationException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+
+        // The override is durable; registering with the scheduler is what actually starts firing.
+        // Neither the declared schedule nor the config document is ever patched (ADR D41).
+        await overrides.SaveAsync(name, new ScheduleOverrideEntry(body.Cron), cancellationToken).ConfigureAwait(false);
+        await scheduler.RegisterRecurringAsync(name, body.Cron, cancellationToken).ConfigureAwait(false);
+
+        return Results.Ok();
+    }
+
+    private static async Task<IResult> ClearScheduleAsync(
+        string name, HttpContext http,
+        [FromServices] IReportRegistry registry, CancellationToken cancellationToken)
+    {
+        CompiledReport? report = registry.Find(name);
+        if (report is null)
+            return Results.NotFound(new { error = $"No report named '{name}' is registered." });
+
+        IRecurringReportScheduler? scheduler = http.RequestServices.GetService<IRecurringReportScheduler>();
+        IScheduleOverrideStore? overrides = http.RequestServices.GetService<IScheduleOverrideStore>();
+        if (scheduler is null || overrides is null)
+            return Results.Conflict(new { error = "No recurring scheduler is registered on this host." });
+
+        // A declared schedule needs an explicit "unscheduled" tombstone — merely removing any prior
+        // override would let the declaration re-apply on the next reconciliation. A report with no
+        // declaration has nothing to tombstone, so the override entry (if any) is just removed —
+        // "delete" always means "stops firing" either way (ADR D41).
+        if (report.Schedule is not null)
+            await overrides.SaveAsync(name, new ScheduleOverrideEntry(null), cancellationToken).ConfigureAwait(false);
+        else
+            await overrides.RemoveAsync(name, cancellationToken).ConfigureAwait(false);
+
+        await scheduler.RemoveRecurringAsync(name, cancellationToken).ConfigureAwait(false);
+
+        return Results.NoContent();
     }
 
     private static async Task<string> ReadBodyAsync(HttpContext http, CancellationToken cancellationToken)

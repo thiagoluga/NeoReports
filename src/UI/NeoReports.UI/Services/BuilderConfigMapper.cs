@@ -19,8 +19,8 @@ public static class BuilderConfigMapper
 
     /// <summary>Serializes <paramref name="state"/> into a report config JSON document.</summary>
     /// <param name="state">The wizard state to map. <see cref="BuilderState.ReportName"/> and the
-    /// other "real" fields (source/query/columns/formats/destination) are used; cosmetic fields
-    /// (schedule, template metadata) are not part of the output.</param>
+    /// other "real" fields (source/query/columns/formats/destination/schedule) are used; cosmetic
+    /// template metadata is not part of the output.</param>
     public static string ToConfigJson(BuilderState state)
     {
         ArgumentNullException.ThrowIfNull(state);
@@ -55,6 +55,10 @@ public static class BuilderConfigMapper
             OnFailure: state.FailureStrategy,
             AbortWhen: BuildAbortWhen(state));
 
+        ScheduleDocument? schedule = string.IsNullOrWhiteSpace(state.ScheduleCron)
+            ? null
+            : new ScheduleDocument(state.ScheduleCron.Trim());
+
         var document = new ConfigDocument(
             Name: state.ReportName,
             Source: new SourceDocument(state.SourceType, sourceProperties),
@@ -62,7 +66,8 @@ public static class BuilderConfigMapper
             Outputs: outputs,
             Destinations: destinations,
             PageSize: state.PageSize,
-            Resilience: resilience);
+            Resilience: resilience,
+            Schedule: schedule);
 
         return JsonSerializer.Serialize(document, Json);
     }
@@ -95,7 +100,8 @@ public static class BuilderConfigMapper
         IReadOnlyList<OutputDocument> Outputs,
         IReadOnlyList<DestinationDocument>? Destinations,
         int PageSize,
-        ResilienceDocument Resilience);
+        ResilienceDocument Resilience,
+        ScheduleDocument? Schedule);
 
     private sealed record SourceDocument(string Type, IReadOnlyDictionary<string, object?> Properties);
 
@@ -109,4 +115,6 @@ public static class BuilderConfigMapper
         int MaxAttempts, string Backoff, double BaseDelaySeconds, bool Jitter, string OnFailure, AbortWhenDocument? AbortWhen);
 
     private sealed record AbortWhenDocument(int? ConsecutiveFailures, int? TotalFailures, double? FailureRate);
+
+    private sealed record ScheduleDocument(string Cron);
 }

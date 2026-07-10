@@ -72,6 +72,13 @@ public sealed class BuilderState
     public double AbortFailureRatePercent { get; set; } = 50;
 
     /// <summary>
+    /// Recurring-run cron expression (ADR D41), evaluated in UTC; empty means no schedule. Only
+    /// sent to <c>POST /api/reports</c> when non-blank — omitting "schedule" entirely from the
+    /// config document is the untouched-wizard default, matching the engine's own "no schedule".
+    /// </summary>
+    public string ScheduleCron { get; set; } = "";
+
+    /// <summary>
     /// True once step 1 has confirmed the engine API is reachable and reports at least one
     /// registered capability. While false, the wizard stays browsable (SampleData) but Save is
     /// disabled — there is nothing real to compile the report against.
@@ -103,6 +110,7 @@ public sealed class BuilderState
         AbortTotalFailures = 10;
         AbortOnFailureRate = false;
         AbortFailureRatePercent = 50;
+        ScheduleCron = "";
         EngineAvailable = false;
     }
 }

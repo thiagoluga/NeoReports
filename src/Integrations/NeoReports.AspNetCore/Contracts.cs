@@ -51,6 +51,9 @@ public sealed record ReportColumnView(string Name, string Type, string? DisplayN
 /// <param name="AbortAfterConsecutiveFailures">Escalates skip-and-log to abort after this many consecutive batch failures; <c>null</c> when not configured or a custom predicate is used (ADR D37).</param>
 /// <param name="AbortAfterTotalFailures">Escalates skip-and-log to abort after this many total batch failures; <c>null</c> when not configured or a custom predicate is used.</param>
 /// <param name="AbortAtFailureRate">Escalates skip-and-log to abort once the failure ratio reaches this value; <c>null</c> when not configured or a custom predicate is used.</param>
+/// <param name="ScheduleCron">The report's effective recurring-run cron expression (override if present, else declared), or <c>null</c> when not scheduled (ADR D41).</param>
+/// <param name="NextRunAt">The next occurrence in UTC, computed via Cronos from the active registration — never fabricated; <c>null</c> when not scheduled or no recurring scheduler is registered.</param>
+/// <param name="ScheduleOverridden">True when a runtime override (including an "unscheduled" tombstone) is in effect, overriding the report's own declared schedule.</param>
 public sealed record ReportDetailView(
     string Name,
     IReadOnlyList<ReportColumnView> Columns,
@@ -66,7 +69,10 @@ public sealed record ReportDetailView(
     bool Deletable,
     int? AbortAfterConsecutiveFailures = null,
     int? AbortAfterTotalFailures = null,
-    double? AbortAtFailureRate = null);
+    double? AbortAtFailureRate = null,
+    string? ScheduleCron = null,
+    DateTimeOffset? NextRunAt = null,
+    bool ScheduleOverridden = false);
 
 /// <summary>Response returned when a dynamic report is registered.</summary>
 /// <param name="Name">The report name.</param>
@@ -122,8 +128,13 @@ public sealed record MemoryView(
 /// <param name="Sources">Registered <c>IConfigSourceProvider</c> type ids, sorted.</param>
 /// <param name="Formats">Registered <c>IWriterFactory</c> format ids, sorted.</param>
 /// <param name="Destinations">Registered <c>IDestinationFactory</c> type ids, sorted.</param>
+/// <param name="Scheduling">True when a recurring-run scheduler is registered (ADR D41); when false, the schedule endpoints reject rather than silently drop schedule input.</param>
 public sealed record CapabilitiesResponse(
-    IReadOnlyList<string> Sources, IReadOnlyList<string> Formats, IReadOnlyList<string> Destinations);
+    IReadOnlyList<string> Sources, IReadOnlyList<string> Formats, IReadOnlyList<string> Destinations, bool Scheduling = false);
+
+/// <summary>Request body for setting a report's runtime schedule override (<c>PUT {prefix}/reports/{name}/schedule</c>).</summary>
+/// <param name="Cron">A 5-field cron expression, evaluated in UTC (ADR D41).</param>
+public sealed record SetScheduleRequest(string Cron);
 
 /// <summary>Status and statistics view of a job.</summary>
 /// <param name="Id">Job id.</param>

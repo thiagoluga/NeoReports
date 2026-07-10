@@ -49,6 +49,25 @@
         </div>
     </Card>
 
+    @* Schedule — sent as an optional "schedule" field on save (ADR D41); blank means no
+       recurring run, exactly like an untouched wizard today. *@
+    <Card Title="Schedule" Sub="Optional recurring run, evaluated in UTC">
+        <div class="cfg-row">
+            <span class="lbl"><i class="ti ti-calendar"></i>Cron</span>
+            <div class="val" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <input class="mono" style="width:160px" @bind="Wizard.ScheduleCron" @bind:event="oninput" placeholder="none" />
+                <Button Variant="outline" Size="sm" OnClick="@(() => Wizard.ScheduleCron = "0 * * * *")">Hourly</Button>
+                <Button Variant="outline" Size="sm" OnClick="@(() => Wizard.ScheduleCron = "0 6 * * *")">Daily 06:00</Button>
+                <Button Variant="outline" Size="sm" OnClick="@(() => Wizard.ScheduleCron = "0 6 * * 1")">Weekly Mon 06:00</Button>
+                @if (!string.IsNullOrWhiteSpace(Wizard.ScheduleCron))
+                {
+                    <Button Variant="outline" Size="sm" OnClick="@(() => Wizard.ScheduleCron = "")">Clear</Button>
+                }
+            </div>
+            <span></span>
+        </div>
+    </Card>
+
     <div class="wizard-footer">
         <Button Variant="outline" Icon="arrow-left" OnClick="@(() => Nav.NavigateTo("builder/destination"))">Back</Button>
         <div style="display:flex;gap:8px">

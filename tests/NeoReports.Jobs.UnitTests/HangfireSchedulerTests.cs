@@ -29,7 +29,7 @@ public class HangfireSchedulerTests
         using var storage = new InMemoryStorage();
         var client = new BackgroundJobClient(storage);
         var store = new InMemoryJobStore();
-        var scheduler = new HangfireJobScheduler(client, store);
+        var scheduler = new HangfireJobScheduler(client, store, new RecurringJobManager(storage));
 
         var jobId = await scheduler.EnqueueAsync(
             new ReportJobRequest("sales", new Dictionary<string, object?> { ["start"] = "2026-01-01" }), Ct);
@@ -48,7 +48,7 @@ public class HangfireSchedulerTests
     {
         using var storage = new InMemoryStorage();
         var client = new BackgroundJobClient(storage);
-        var scheduler = new HangfireJobScheduler(client, new InMemoryJobStore());
+        var scheduler = new HangfireJobScheduler(client, new InMemoryJobStore(), new RecurringJobManager(storage));
 
         var jobId = await scheduler.EnqueueAsync(new ReportJobRequest("sales"), Ct);
 
@@ -88,5 +88,63 @@ public class HangfireSchedulerTests
         finished!.Status.ShouldBe(ReportJobStatus.Completed);
         finished.Stats.RecordsWritten.ShouldBe(20);
         destFactory.Last!.UploadedFiles.ShouldHaveSingleItem();
+    }
+
+    [Fact]
+    public async Task RegisterRecurring_creates_a_hangfire_recurring_job()
+    {
+        using var storage = new InMemoryStorage();
+        JobStorage.Current = storage;
+        var scheduler = new HangfireJobScheduler(new BackgroundJobClient(storage), new InMemoryJobStore(), new RecurringJobManager(storage));
+
+        await scheduler.RegisterRecurringAsync("sales", "0 6 * * 1", Ct);
+
+        var names = await scheduler.ListRegisteredNamesAsync(Ct);
+        names.ShouldContain("sales");
+    }
+
+    [Fact]
+    public async Task RemoveRecurring_removes_the_hangfire_recurring_job()
+    {
+        using var storage = new InMemoryStorage();
+        JobStorage.Current = storage;
+        var scheduler = new HangfireJobScheduler(new BackgroundJobClient(storage), new InMemoryJobStore(), new RecurringJobManager(storage));
+
+        await scheduler.RegisterRecurringAsync("sales", "0 6 * * 1", Ct);
+        await scheduler.RemoveRecurringAsync("sales", Ct);
+
+        var names = await scheduler.ListRegisteredNamesAsync(Ct);
+        names.ShouldNotContain("sales");
+    }
+
+    [Fact]
+    public async Task GetNextOccurrence_computes_from_the_registered_cron()
+    {
+        using var storage = new InMemoryStorage();
+        var scheduler = new HangfireJobScheduler(new BackgroundJobClient(storage), new InMemoryJobStore(), new RecurringJobManager(storage));
+
+        await scheduler.RegisterRecurringAsync("sales", "* * * * *", Ct);
+        var next = await scheduler.GetNextOccurrenceAsync("sales", Ct);
+
+        next.ShouldNotBeNull();
+        next!.Value.ShouldBeLessThan(DateTimeOffset.UtcNow.AddMinutes(1.1));
+    }
+
+    [Fact]
+    public async Task Unregistered_report_has_no_next_occurrence()
+    {
+        using var storage = new InMemoryStorage();
+        var scheduler = new HangfireJobScheduler(new BackgroundJobClient(storage), new InMemoryJobStore(), new RecurringJobManager(storage));
+
+        (await scheduler.GetNextOccurrenceAsync("sales", Ct)).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task RegisterRecurring_rejects_an_invalid_cron_expression()
+    {
+        using var storage = new InMemoryStorage();
+        var scheduler = new HangfireJobScheduler(new BackgroundJobClient(storage), new InMemoryJobStore(), new RecurringJobManager(storage));
+
+        await Should.ThrowAsync<ConfigurationException>(() => scheduler.RegisterRecurringAsync("sales", "garbage", Ct));
     }
 }
