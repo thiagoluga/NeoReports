@@ -603,10 +603,24 @@ source `Properties` — this is where the actual secrets live.
   property kind roundtrips through JSON, registry resolve substitutes per call and reflects a
   changed env var on the very next call without re-saving, cache invalidated on save/delete, list
   stays unsubstituted, DI registration).
-- [ ] **F2 — Compiler + dynamic path: `SourceConfig.Ref`** (Abstractions, additive). Compile-time
-  existence/type checks; **run-time** definition resolution + merge (definition base, report
-  overlay, then substitution) so source edits apply on the next run without recompiles;
-  providers untouched; sources hydrate before dynamic reports. Inline sources unchanged.
+- [x] **F2 — Compiler + dynamic path: `SourceConfig.Ref`** (Abstractions, additive — plus `Type`
+  made nullable, required only for an inline source). Compile-time existence/type checks;
+  **run-time** definition resolution + merge (definition base, report overlay, then substitution)
+  so source edits apply on the next run without recompiles; providers untouched. Inline sources
+  unchanged. Implementation note: "sources hydrate before dynamic reports" turned out not to be a
+  real ordering concern — `ISourceRegistry` resolves on demand straight from the store (unlike the
+  report registry, it never pre-loads anything into memory at startup), so no hydrator sequencing
+  was needed. Mechanism: a new internal `RefBatchSource` (re-)creates the real underlying source
+  at the start of every run — detected the same way the rest of the pipeline already detects "a
+  fresh run" (`BatchContext.Cursor == null` on the first page, a documented invariant) — rather
+  than changing the pipeline's synchronous `CompiledReport.ReaderFactory` signature. Compile-time
+  existence/type checks block synchronously (`GetAwaiter().GetResult()`) since `Compile()` itself
+  is a synchronous, one-time call; no deadlock risk (no captured `SynchronizationContext` on this
+  path, and the underlying store call is local file/in-memory I/O). ✅ solution builds 0 warnings;
+  10 new Core tests (type-from-definition, type-match/mismatch, unknown ref, no-registry-configured,
+  overlay-precedence-both-directions, env var change reflected on the very next run without
+  recompiling, source deleted after compile fails the next run with a clear error, existing inline
+  configs compile unchanged).
 - [ ] **F3 — AspNetCore: CRUD + health.** `GET/POST/PUT/DELETE /sources` (`PUT` full-replace;
   delete 409 while referenced; responses never carry properties — regression-guarded) +
   `POST /sources/{name}/health` (on-demand only, cached + timestamped result, 422 when the type
