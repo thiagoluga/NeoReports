@@ -78,13 +78,10 @@ public sealed class InMemoryJobEventStore : IJobEventStore
             return;
 
         DateTimeOffset cutoff = DateTimeOffset.UtcNow - retention;
-        foreach (KeyValuePair<string, DateTimeOffset> entry in _lastTouched.ToArray())
+        foreach (KeyValuePair<string, DateTimeOffset> entry in _lastTouched.ToArray().Where(e => e.Value < cutoff))
         {
-            if (entry.Value < cutoff)
-            {
-                _byJob.TryRemove(entry.Key, out _);
-                _lastTouched.TryRemove(entry.Key, out _);
-            }
+            _byJob.TryRemove(entry.Key, out _);
+            _lastTouched.TryRemove(entry.Key, out _);
         }
     }
 }

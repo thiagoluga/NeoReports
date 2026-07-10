@@ -117,11 +117,10 @@ public sealed class FileJobEventStore : IJobEventStore
         DateTimeOffset cutoff = DateTimeOffset.UtcNow - retention;
         try
         {
-            foreach (string file in Directory.EnumerateFiles(_options.Directory, "*.jsonl"))
+            IEnumerable<string> expired = Directory.EnumerateFiles(_options.Directory, "*.jsonl")
+                .Where(file => File.GetLastWriteTimeUtc(file) < cutoff);
+            foreach (string file in expired)
             {
-                if (File.GetLastWriteTimeUtc(file) >= cutoff)
-                    continue;
-
                 File.Delete(file);
                 string jobId = Path.GetFileNameWithoutExtension(file);
                 _counts.TryRemove(jobId, out _);
@@ -142,6 +141,9 @@ public sealed class FileJobEventStore : IJobEventStore
         if (string.IsNullOrEmpty(safe) || safe != jobId)
             throw new ArgumentException("Invalid job id.", nameof(jobId));
 
-        return Path.Combine(_options.Directory, safe + ".jsonl");
+        // Path.Join (not Path.Combine) — Combine silently drops earlier segments when a later one
+        // looks rooted; safe is already proven equal to jobId with no path separators, but Join
+        // is the version that can't be fooled by a rooted-looking segment either way.
+        return Path.Join(_options.Directory, safe + ".jsonl");
     }
 }
