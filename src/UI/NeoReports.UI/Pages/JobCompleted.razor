@@ -117,6 +117,30 @@
             <span class="k">Retry policy</span><span class="v mono">@RetryPolicyText</span>
         </div>
     </Card>
+
+    @* Processing rate + Timeline — GET /api/jobs/{id}/events (ADR D38); [] when no event store is
+       registered on the host, same wire shape as "no events yet" — one honest state either way. *@
+    <Card Title="Processing rate" Sub="@(_rateSeries.Count < 2 ? "—" : $"peak {PeakRatePerSecond:0} rows/s")">
+        @if (_rateSeries.Count < 2)
+        {
+            <span class="muted" style="font-size:12px">Not enough page-completed events to chart a rate.</span>
+        }
+        else
+        {
+            <RateSparkline Series="@_rateSeries" />
+        }
+    </Card>
+
+    <Card Title="Timeline" Sub="@(_events.Count == 0 ? "—" : $"{_events.Count} event(s)")">
+        @if (_events.Count == 0)
+        {
+            <span class="muted" style="font-size:12px">No events recorded — the event log may not be enabled on this host.</span>
+        }
+        else
+        {
+            <Timeline Rows="@_events.Select(JobEventFormatter.ToTimelineRow).ToArray()" />
+        }
+    </Card>
 </div>
 
 @code {
@@ -124,6 +148,10 @@
     private ApiJobView? _job;
     private ApiReportDetail? _reportDetail;
     private IReadOnlyList<ApiArtifact>? _artifacts;
+    private IReadOnlyList<ApiJobEvent> _events = Array.Empty<ApiJobEvent>();
+    private IReadOnlyList<JobEventFormatter.RatePoint> _rateSeries = Array.Empty<JobEventFormatter.RatePoint>();
+
+    private double PeakRatePerSecond => JobEventFormatter.ToIntervalRates(_rateSeries) is { Count: > 0 } rates ? rates.Max() : 0;
 
     private string SummaryText => $"{_job!.Stats.RecordsWritten:N0} rows processed{DurationSuffix}";
     private string DurationSuffix => Duration is { } d ? $" in {FormatSpan(d)}" : "";
@@ -157,6 +185,13 @@
         {
             _artifacts = await Api.TryGetJobArtifactsAsync(Id);
             _reportDetail = await Api.TryGetReportDetailAsync(_job.ReportName);
+
+            var events = await Api.TryGetJobEventsAsync(Id);
+            if (events is not null)
+            {
+                _events = events;
+                _rateSeries = JobEventFormatter.ToRateSeries(events);
+            }
         }
     }
 

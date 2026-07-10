@@ -22,8 +22,12 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   uploads, terminal status) with a configurable per-job cap and optional retention. Opt-in via
   `AddJobEvents()`/`AddInMemoryJobEvents()` — a host that never calls either sees zero behavioral
   change. `ResiliencePipelineFactory` gains an optional retry hook used to emit `retry` events.
-  This is the foundation for the job Timeline/Retries/processing-rate UI cards (not yet exposed
-  over HTTP).
+- `NeoReports.AspNetCore` — `GET /jobs/{id}/events` (ADR D38): lists a job's recorded lifecycle
+  events (`type`/`limit`/`offset` filters), `[]` when no event store is registered or the job has
+  none yet, 404 for an unknown job. `NeoReports.UI` — the Timeline, Retries, and processing-rate
+  sparkline cards return on the job pages, driven entirely by this endpoint (no fabricated
+  fallback content, per D36): Timeline on `JobRunning`/`JobCompleted`/`JobFailed`, Retries on
+  `JobRunning`/`JobFailed`, the sparkline on `JobRunning`/`JobCompleted`.
 
 ## [1.2.0] - 2026-07-03
 

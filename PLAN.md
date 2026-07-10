@@ -515,11 +515,15 @@ returning UI card has an honest empty/unavailable state (D36) — no fabricated 
   ✅ solution builds 0 warnings; 25 new Core tests (stores, DI, full-lifecycle emission ordering/
   counters, retry/skip/abort events, a throwing store never fails the run) + 3 new Jobs tests
   (cancelled/completed lifecycle, no-registration is a no-op); all pre-existing tests unaffected.
-- [ ] **E3 — `GET /jobs/{id}/events` + UI telemetry (D38).** Endpoint (type filter, paging,
+- [x] **E3 — `GET /jobs/{id}/events` + UI telemetry (D38).** Endpoint (type filter, paging,
   404/`[]` semantics, `JobView` untouched per D5); Timeline card (Running/Completed/Failed),
   Retries card (`?type=retry`), processing-rate sparkline derived from `page-completed` events —
   no second sampling mechanism. Honest states for store-absent/truncated/no-retries.
-  **Depends on:** E2.
+  **Depends on:** E2. ✅ solution builds 0 warnings; 8 new AspNetCore integration tests + 7 new
+  UI unit tests (`JobEventFormatter`); browser-verified via `samples/09-web-ui-live`: real
+  Timeline events (started → page-completed → outputs-finalized → uploaded → completed) render
+  correctly on `JobCompleted`, the "not enough data" honest state shows with 1 page-completed
+  event, and the sparkline renders real points with 2+.
 - [ ] **E4 — Memory screen (D39).** `GET /api/system/memory` (working set, GC heap/committed,
   measured-at, running-jobs count); UI Memory page with auto-refresh + running-jobs table composed
   client-side from `GET /jobs?status=Running`; process-wide copy per D39. No per-job memory,
