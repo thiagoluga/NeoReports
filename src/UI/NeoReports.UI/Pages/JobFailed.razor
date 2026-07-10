@@ -84,11 +84,41 @@
             <span class="muted" style="font-size:12px">No error detail recorded for this job.</span>
         }
     </Card>
+
+    @* Partial output — GET /api/jobs/{id}/partial-artifacts (ADR D40). Best-effort output staged
+       before the run stopped; never at the report's real configured destinations. The wire can't
+       distinguish "no partial-artifact store registered on this host" from "registered, but
+       nothing was captured" (both return []) — one honest empty state covers both, the same
+       resolution used for the job event log (E3). *@
+    <Card Title="Partial output" Sub="@(_partials.Count == 0 ? "—" : $"{_partials.Count} file(s)")">
+        @if (_partials.Count == 0)
+        {
+            <span class="muted" style="font-size:12px">No partial output was captured for this job.</span>
+        }
+        else
+        {
+            <Banner Variant="warn" Icon="alert-triangle">
+                <b>Best-effort output</b>
+                <span style="font-size:12px">Written before the run stopped — incomplete and unverified. Never delivered to the report's real destinations.</span>
+            </Banner>
+            <div>
+                @foreach (var a in _partials)
+                {
+                    <div class="file-row">
+                        <CatTile Sm="true" Kind="warn" Icon="@FileFormatting.Icon(a.FileName)" />
+                        <div class="file-name"><b>@a.FileName</b><span>@FileFormatting.Bytes(a.SizeBytes) · @a.MimeType</span></div>
+                        <div class="file-actions"><Button Variant="outline" Size="sm" Icon="download" OnClick="DownloadPartial">Download</Button></div>
+                    </div>
+                }
+            </div>
+        }
+    </Card>
 </div>
 
 @code {
     [Parameter] public string? Id { get; set; }
     private ApiJobView? _job;
+    private IReadOnlyList<ApiArtifact> _partials = Array.Empty<ApiArtifact>();
 
     private TimeSpan? Duration => _job?.StartedAt is { } s && _job.CompletedAt is { } c ? c - s : null;
     private string DurationText => Duration is { } d ? FormatSpan(d) : "—";
@@ -105,6 +135,14 @@
             return;
 
         _job = await Api.TryGetJobAsync(Id);
+        if (_job is not null)
+            _partials = await Api.TryGetPartialArtifactsAsync(Id) ?? Array.Empty<ApiArtifact>();
+    }
+
+    private void DownloadPartial()
+    {
+        if (Id is not null)
+            Nav.NavigateTo(Api.BuildPartialDownloadUrl(Id), forceLoad: true);
     }
 
     private async Task RetryAsync()

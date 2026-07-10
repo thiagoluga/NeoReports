@@ -8,6 +8,16 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 
 ## [Unreleased]
 
+### Added
+- `NeoReports.Core` — `IPartialArtifactStore` (ADR D40): when a job fails or is cancelled
+  mid-run, the runner best-effort captures whatever was already written into a dedicated store —
+  never at the report's real configured destinations, protecting the all-or-nothing publish
+  guarantee (D2/D15). Files are renamed `{name}.partial.{ext}`. Opt-in via
+  `AddPartialArtifacts()`. `NeoReports.AspNetCore` — `GET /jobs/{id}/partial-artifacts` and its
+  own `/download`, completely separate from the completed-artifacts surface. `NeoReports.UI` —
+  the JobFailed page's "Partial output" card returns, with a warning banner and per-file/zip
+  download.
+
 ## [1.2.0] - 2026-07-03
 
 Two additive feature sets, both SemVer-minor — v1/v1.1 code is unchanged:

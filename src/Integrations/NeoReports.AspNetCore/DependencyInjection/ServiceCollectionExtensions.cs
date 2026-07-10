@@ -31,4 +31,26 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IReportArtifactStore>(_ => new FileSystemArtifactStore(rootPath));
         return services;
     }
+
+    /// <summary>
+    /// Registers the partial-artifact store (ADR D40): when a job fails or is cancelled mid-run,
+    /// the runner captures its best-effort output here — a location entirely separate from
+    /// <see cref="IReportArtifactStore"/> and the report's real configured destinations, protecting
+    /// the all-or-nothing publish guarantee (D2/D15). Opt-in: a host that never calls this captures
+    /// nothing and behaves exactly as it did before this feature existed.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configure">Optional options callback (storage directory, retention).</param>
+    public static IServiceCollection AddPartialArtifacts(
+        this IServiceCollection services, Action<PartialArtifactOptions>? configure = null)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        var options = new PartialArtifactOptions();
+        configure?.Invoke(options);
+        services.TryAddSingleton(options);
+        services.TryAddSingleton<IPartialArtifactStore>(sp => new FileSystemPartialArtifactStore(sp.GetRequiredService<PartialArtifactOptions>()));
+
+        return services;
+    }
 }

@@ -32,6 +32,8 @@ public static class NeoReportsEndpointRouteBuilderExtensions
     /// <item><c>POST {prefix}/jobs/{id}/cancel</c> — request cancellation</item>
     /// <item><c>GET  {prefix}/jobs/{id}/download</c> — download the finished result</item>
     /// <item><c>GET  {prefix}/jobs/{id}/artifacts</c> — list finished output files (name/mime/size, never the on-disk path)</item>
+    /// <item><c>GET  {prefix}/jobs/{id}/partial-artifacts</c> — best-effort partial output of a Failed/Cancelled job (ADR D40); completely separate from the completed-artifacts surface</item>
+    /// <item><c>GET  {prefix}/jobs/{id}/partial-artifacts/download</c> — download the partial output</item>
     /// </list>
     /// Authorization is inherited from the host; set <see cref="NeoReportsEndpointOptions.RequireAuthorization"/>
     /// to apply <c>RequireAuthorization</c> to the group.
@@ -71,6 +73,8 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         group.MapPost("/jobs/{id}/cancel", CancelJobAsync);
         group.MapGet("/jobs/{id}/download", DownloadAsync);
         group.MapGet("/jobs/{id}/artifacts", GetJobArtifactsAsync);
+        group.MapGet("/jobs/{id}/partial-artifacts", GetPartialArtifactsAsync);
+        group.MapGet("/jobs/{id}/partial-artifacts/download", DownloadPartialArtifactsAsync);
 
         return group;
     }
@@ -455,5 +459,73 @@ public static class NeoReportsEndpointRouteBuilderExtensions
             .ToArray();
 
         return Results.Ok(views);
+    }
+
+    private static async Task<IResult> GetPartialArtifactsAsync(
+        string id, IReportJobScheduler scheduler, HttpContext http, CancellationToken cancellationToken)
+    {
+        ReportJob? job = await scheduler.GetAsync(id, cancellationToken).ConfigureAwait(false);
+        if (job is null)
+            return Results.NotFound(new { error = $"No job with id '{id}'." });
+
+        // Only Failed and Cancelled runs ever capture partials (ADR D40) — a CompletedPartial run
+        // (SkipBatchAndLog) legitimately published to the real destinations and has no partial.
+        if (job.Status is not (ReportJobStatus.Failed or ReportJobStatus.Cancelled))
+            return Results.Ok(Array.Empty<ArtifactView>());
+
+        // Optional: hosts that never call AddPartialArtifacts() have no IPartialArtifactStore —
+        // every job simply has no captured partials, not an error.
+        IPartialArtifactStore? partialStore = http.RequestServices.GetService<IPartialArtifactStore>();
+        if (partialStore is null)
+            return Results.Ok(Array.Empty<ArtifactView>());
+
+        IReadOnlyList<ReportArtifact> partials = await partialStore.ListAsync(id, cancellationToken).ConfigureAwait(false);
+        ArtifactView[] views = partials
+            .Select(a => new ArtifactView(a.FileName, a.MimeType, a.SizeBytes))
+            .ToArray();
+
+        return Results.Ok(views);
+    }
+
+    private static async Task<IResult> DownloadPartialArtifactsAsync(
+        string id, IReportJobScheduler scheduler, HttpContext http, CancellationToken cancellationToken)
+    {
+        ReportJob? job = await scheduler.GetAsync(id, cancellationToken).ConfigureAwait(false);
+        if (job is null)
+            return Results.NotFound(new { error = $"No job with id '{id}'." });
+
+        if (job.Status is not (ReportJobStatus.Failed or ReportJobStatus.Cancelled))
+            return Results.NotFound(new { error = $"Job '{id}' has no partial output (status: {job.Status})." });
+
+        IPartialArtifactStore? partialStore = http.RequestServices.GetService<IPartialArtifactStore>();
+        if (partialStore is null)
+            return Results.NotFound(new { error = "Partial-artifact capture is not enabled on this host." });
+
+        IReadOnlyList<ReportArtifact> partials = await partialStore.ListAsync(id, cancellationToken).ConfigureAwait(false);
+        if (partials.Count == 0)
+            return Results.NotFound(new { error = $"No partial output was captured for job '{id}'." });
+
+        if (partials.Count == 1)
+        {
+            var single = partials[0];
+            return Results.File(single.Path, single.MimeType, single.FileName);
+        }
+
+        // Completely separate from the completed-artifacts zip helper above — this route, and the
+        // files it serves, are never reachable from GET /jobs/{id}/artifacts or /download.
+        var zip = new MemoryStream();
+        using (var archive = new ZipArchive(zip, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            foreach (var partial in partials)
+            {
+                var entry = archive.CreateEntry(partial.FileName, CompressionLevel.Optimal);
+                await using var entryStream = entry.Open();
+                await using var fileStream = new FileStream(partial.Path, FileMode.Open, FileAccess.Read, FileShare.Read);
+                await fileStream.CopyToAsync(entryStream, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        zip.Position = 0;
+        return Results.File(zip, "application/zip", $"{job.ReportName}-{id}-partial.zip");
     }
 }
