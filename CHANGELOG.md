@@ -8,6 +8,16 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 
 ## [Unreleased]
 
+### Added
+- `NeoReports.Core` — a job event log (ADR D38): `IJobEventStore` (`InMemoryJobEventStore` /
+  `FileJobEventStore`, one JSONL file per job) records a closed vocabulary of structured, per-job
+  lifecycle events (started/restarted, page progress, retries, skipped batches, finalized outputs,
+  uploads, terminal status) with a configurable per-job cap and optional retention. Opt-in via
+  `AddJobEvents()`/`AddInMemoryJobEvents()` — a host that never calls either sees zero behavioral
+  change. `ResiliencePipelineFactory` gains an optional retry hook used to emit `retry` events.
+  This is the foundation for the job Timeline/Retries/processing-rate UI cards (not yet exposed
+  over HTTP).
+
 ## [1.2.0] - 2026-07-03
 
 Two additive feature sets, both SemVer-minor — v1/v1.1 code is unchanged:
