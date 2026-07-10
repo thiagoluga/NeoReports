@@ -30,11 +30,26 @@ public sealed record ReportConfig(
     ScheduleConfig? Schedule = null);
 
 /// <summary>A source section: a stable type id plus a free-form property bag the provider reads.</summary>
-/// <param name="Type">Stable source type id (e.g. "sql"); resolved to an <see cref="IConfigSourceProvider"/>.</param>
-/// <param name="Properties">Provider-specific settings (e.g. connection string, query, key).</param>
+/// <param name="Type">
+/// Stable source type id (e.g. "sql"); resolved to an <see cref="IConfigSourceProvider"/>. May be
+/// <c>null</c> only when <paramref name="Ref"/> is set, in which case it is taken from the
+/// registered source definition; when both are present they must match (ADR D42).
+/// </param>
+/// <param name="Properties">
+/// Provider-specific settings (e.g. connection string, query, key). When <paramref name="Ref"/> is
+/// set, these overlay the registered definition's properties (report-local values win) rather than
+/// replacing them outright.
+/// </param>
+/// <param name="Ref">
+/// Optional name of a registered source (ADR D42) this report reads from instead of an inline
+/// connection. Resolved by name at compile time (existence/type check only) and again **at run
+/// time** on every run — a rotated connection string takes effect on the report's next run without
+/// recompiling. <c>null</c> means an ordinary inline source, exactly today's behavior.
+/// </param>
 public sealed record SourceConfig(
-    string Type,
-    IReadOnlyDictionary<string, object?>? Properties = null);
+    string? Type,
+    IReadOnlyDictionary<string, object?>? Properties = null,
+    string? Ref = null);
 
 /// <summary>
 /// A single output column declared as data. Because a dynamic row is positional, the column's

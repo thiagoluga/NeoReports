@@ -29,6 +29,7 @@ public sealed class ReportBuilder<TRow>
     private IStreamingSource<TRow>? _streamingSource;
     private int _pageSize = 1000;
     private ScheduleConfig? _schedule;
+    private string? _sourceRef;
 
     /// <summary>Creates a builder for a report registered under <paramref name="name"/>.</summary>
     /// <param name="name">Unique report name.</param>
@@ -220,6 +221,19 @@ public sealed class ReportBuilder<TRow>
         return this;
     }
 
+    /// <summary>
+    /// Sets the source-registry reference name this report's source resolves to (ADR D42), for
+    /// computed reference counting. Internal: set by the dynamic path's <c>SourceConfig.Ref</c>
+    /// compiler wiring and the typed path's by-name source authoring — never called directly by
+    /// report authors, who declare a ref through those paths instead.
+    /// </summary>
+    /// <param name="sourceRef">The registered source name, or <c>null</c> for an inline source.</param>
+    internal ReportBuilder<TRow> WithSourceRef(string? sourceRef)
+    {
+        _sourceRef = sourceRef;
+        return this;
+    }
+
     /// <summary>Validates the configuration and produces an immutable compiled report.</summary>
     /// <exception cref="ConfigurationException">Thrown when the configuration is incomplete.</exception>
     public CompiledReport Build()
@@ -284,7 +298,8 @@ public sealed class ReportBuilder<TRow>
             _retry,
             _failure.Build(),
             _failure.AbortThresholds,
-            _schedule);
+            _schedule,
+            _sourceRef);
     }
 
     private (ReportSchema Schema, OutputProjection<TRow> Projection) ResolveView(OutputView<TRow>? view, string what)

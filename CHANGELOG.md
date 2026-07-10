@@ -9,6 +9,16 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 ## [Unreleased]
 
 ### Added
+- `NeoReports.Abstractions` — `SourceConfig` gains a trailing optional `Ref` (ADR D42): a report's
+  source can now reference a registered source definition by name instead of inlining a
+  connection. `Type` becomes nullable — required for an inline source, optional (taken from the
+  definition) when `Ref` is set. `NeoReports.Core` — the dynamic-path compiler resolves a `Ref`
+  at compile time only far enough to fail fast (existence + type-match check); the actual
+  properties are **never** baked into the compiled report. At run time, a dedicated source wrapper
+  re-resolves the definition through `ISourceRegistry` on every run (definition base, report-local
+  properties overlay, `${VAR}` substituted last), so rotating a connection string or deleting the
+  source takes effect on the very next run without recompiling anything. `CompiledReport.SourceRef`
+  is now populated for ref-based reports. Inline sources (`Ref` omitted) are entirely unaffected.
 - `NeoReports.Core` — the source registry's Core layer (ADR D42): `SourceDefinition` (name/type/
   property bag with `${VAR}` placeholders/description), `ISourceRegistryStore` (file- or
   in-memory-backed, `AddSourceRegistry()`/`AddInMemorySourceRegistry()`) with atomic writes and

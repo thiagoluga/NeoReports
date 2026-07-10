@@ -3,6 +3,7 @@ using NeoReports.Abstractions;
 using NeoReports.Core.Building;
 using NeoReports.Core.Scheduling;
 using NeoReports.Core.Sections;
+using NeoReports.Core.SourceRegistry;
 
 namespace NeoReports.Core.Configuration;
 
@@ -39,10 +40,6 @@ public static class ReportConfigCompiler
         for (var i = 0; i < config.Columns.Count; i++)
             columnsByName[config.Columns[i].Name] = columns[i];
 
-        // Resolve every registration up front (fail fast on a missing provider/factory) before
-        // instantiating the source, which may open connections.
-        IConfigSourceProvider sourceProvider = ResolveSource(services, config.Source.Type);
-
         var regularOutputs = new List<OutputSpec>();
         var sectionedOutputs = new List<(SectionedOutputSpec Spec, IReadOnlyList<SectionConfig> Sections)>();
         foreach (OutputConfig output in config.Outputs)
@@ -57,11 +54,18 @@ public static class ReportConfigCompiler
             .Select(d => new DestinationSpec(ResolveDestination(services, d.Type), d.Properties))
             .ToArray() ?? Array.Empty<DestinationSpec>();
 
-        IBatchSource<ReportRecord> source = sourceProvider.Create(config.Source, schema, services);
+        // Resolve every registration up front (fail fast on a missing provider/factory) before
+        // instantiating the source, which may open connections. A ref-based source (ADR D42) is
+        // deliberately NOT instantiated here — RefBatchSource resolves and creates the real
+        // underlying source itself, fresh on every run (never baked into the compiled report).
+        IBatchSource<ReportRecord> source = config.Source.Ref is not null
+            ? ResolveRefSource(services, config.Source, schema)
+            : ResolveSource(services, config.Source.Type!).Create(config.Source, schema, services);
 
         ReportBuilder<ReportRecord> builder = new ReportBuilder<ReportRecord>(config.Name)
             .From(source)
-            .Columns(columns);
+            .Columns(columns)
+            .WithSourceRef(config.Source.Ref);
 
         if (config.PageSize is int pageSize)
             builder.WithPageSize(pageSize);
@@ -141,6 +145,8 @@ public static class ReportConfigCompiler
             throw new ConfigurationException("Report configuration has no name.");
         if (config.Source is null)
             throw new ConfigurationException($"Report '{config.Name}' has no source.");
+        if (config.Source.Ref is null && string.IsNullOrWhiteSpace(config.Source.Type))
+            throw new ConfigurationException($"Report '{config.Name}' source has neither a 'type' nor a 'ref'.");
         if (config.Columns is null || config.Columns.Count == 0)
             throw new ConfigurationException($"Report '{config.Name}' has no columns.");
         if (config.Outputs is null || config.Outputs.Count == 0)
@@ -188,12 +194,47 @@ public static class ReportConfigCompiler
             $"No sectioned writer factory is registered for format '{format}'. Register an ISectionedWriterFactory with that Format.");
     }
 
-    private static IConfigSourceProvider ResolveSource(IServiceProvider services, string type)
+    // Internal (not private): RefBatchSource re-resolves the provider on every run, from the same
+    // registrations, rather than duplicating this lookup (ADR D42).
+    internal static IConfigSourceProvider ResolveSource(IServiceProvider services, string type)
     {
         IConfigSourceProvider? provider = services.GetServices<IConfigSourceProvider>()
             .FirstOrDefault(p => string.Equals(p.Type, type, StringComparison.OrdinalIgnoreCase));
         return provider ?? throw new ConfigurationException(
             $"No source provider is registered for type '{type}'. Register an IConfigSourceProvider with that Type.");
+    }
+
+    /// <summary>
+    /// Resolves a ref-based source (ADR D42) into an <see cref="IBatchSource{ReportRecord}"/> that
+    /// re-resolves the definition through <see cref="ISourceRegistry"/> on every run — this method
+    /// only validates existence and type compatibility now (fail fast at compile time); the actual
+    /// definition properties are never baked into the returned source.
+    /// </summary>
+    private static IBatchSource<ReportRecord> ResolveRefSource(IServiceProvider services, SourceConfig source, ReportSchema schema)
+    {
+        string refName = source.Ref!;
+        ISourceRegistry? registry = services.GetService<ISourceRegistry>();
+        if (registry is null)
+        {
+            throw new ConfigurationException(
+                $"Report source references '{refName}' but no source registry is configured on this host. " +
+                "Register one with AddSourceRegistry()/AddInMemorySourceRegistry().");
+        }
+
+        SourceDefinition? definition = registry.ResolveAsync(refName, CancellationToken.None).GetAwaiter().GetResult();
+        if (definition is null)
+            throw new ConfigurationException($"No source named '{refName}' is registered.");
+
+        if (source.Type is not null && !string.Equals(source.Type, definition.Type, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ConfigurationException(
+                $"Source '{refName}' is registered as type '{definition.Type}', but the report declares type '{source.Type}'.");
+        }
+
+        string effectiveType = source.Type ?? definition.Type;
+        ResolveSource(services, effectiveType); // fail fast when no provider is registered for the type
+
+        return new RefBatchSource(refName, effectiveType, source.Properties, registry, services, schema);
     }
 
     private static IWriterFactory ResolveWriter(IServiceProvider services, string format)
