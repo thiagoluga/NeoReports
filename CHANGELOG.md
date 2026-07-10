@@ -28,6 +28,13 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   sparkline cards return on the job pages, driven entirely by this endpoint (no fabricated
   fallback content, per D36): Timeline on `JobRunning`/`JobCompleted`/`JobFailed`, Retries on
   `JobRunning`/`JobFailed`, the sparkline on `JobRunning`/`JobCompleted`.
+- `NeoReports.AspNetCore` — `GET /system/memory` (ADR D39): process-level working set / GC heap /
+  GC committed bytes, plus a count of currently running jobs. Deliberately process-wide, never
+  per-job — a single worker process runs multiple jobs, so "memory used by this job" can't be
+  measured honestly; run a job alone and watch this screen to estimate its footprint. One reading
+  per request, no background sampling or time series. `NeoReports.UI` — a new Memory page
+  (`/system/memory`, linked from the top nav) with auto-refresh and a running-jobs table composed
+  client-side from `GET /jobs?status=Running`.
 
 ## [1.2.0] - 2026-07-03
 

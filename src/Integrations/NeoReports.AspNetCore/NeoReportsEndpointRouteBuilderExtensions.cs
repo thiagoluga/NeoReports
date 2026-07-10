@@ -34,6 +34,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
     /// <item><c>GET  {prefix}/jobs/{id}/download</c> — download the finished result</item>
     /// <item><c>GET  {prefix}/jobs/{id}/artifacts</c> — list finished output files (name/mime/size, never the on-disk path)</item>
     /// <item><c>GET  {prefix}/jobs/{id}/events</c> — structured per-job lifecycle events (ADR D38); <c>[]</c> when no event store is registered</item>
+    /// <item><c>GET  {prefix}/system/memory</c> — process-level memory reading + running-job count (ADR D39)</item>
     /// </list>
     /// Authorization is inherited from the host; set <see cref="NeoReportsEndpointOptions.RequireAuthorization"/>
     /// to apply <c>RequireAuthorization</c> to the group.
@@ -74,6 +75,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         group.MapGet("/jobs/{id}/download", DownloadAsync);
         group.MapGet("/jobs/{id}/artifacts", GetJobArtifactsAsync);
         group.MapGet("/jobs/{id}/events", GetJobEventsAsync);
+        group.MapGet("/system/memory", GetMemoryAsync);
 
         return group;
     }
@@ -486,5 +488,29 @@ public static class NeoReportsEndpointRouteBuilderExtensions
             .ToArray();
 
         return Results.Ok(views);
+    }
+
+    private static async Task<IResult> GetMemoryAsync(HttpContext http, CancellationToken cancellationToken)
+    {
+        // Optional: hosts that never register a job stack (typed-only, no AddNeoReportsInMemoryJobs
+        // / AddNeoReportsHangfireJobs) have no IJobStore — RunningJobs is simply 0, not an error.
+        IJobStore? jobStore = http.RequestServices.GetService<IJobStore>();
+        var runningJobs = 0;
+        if (jobStore is not null)
+        {
+            IReadOnlyList<ReportJob> running = await jobStore.ListAsync(
+                new JobQuery { Status = ReportJobStatus.Running, Limit = 1000 }, cancellationToken).ConfigureAwait(false);
+            IReadOnlyList<ReportJob> retrying = await jobStore.ListAsync(
+                new JobQuery { Status = ReportJobStatus.Retrying, Limit = 1000 }, cancellationToken).ConfigureAwait(false);
+            runningJobs = running.Count + retrying.Count;
+        }
+
+        // One reading per request — no background poller, no time series (D39, CLAUDE.md's "no
+        // general metrics dashboard").
+        GCMemoryInfo gc = GC.GetGCMemoryInfo();
+        var view = new MemoryView(
+            Environment.WorkingSet, gc.HeapSizeBytes, gc.TotalCommittedBytes, DateTimeOffset.UtcNow, runningJobs);
+
+        return Results.Ok(view);
     }
 }

@@ -524,10 +524,18 @@ returning UI card has an honest empty/unavailable state (D36) — no fabricated 
   Timeline events (started → page-completed → outputs-finalized → uploaded → completed) render
   correctly on `JobCompleted`, the "not enough data" honest state shows with 1 page-completed
   event, and the sparkline renders real points with 2+.
-- [ ] **E4 — Memory screen (D39).** `GET /api/system/memory` (working set, GC heap/committed,
+- [x] **E4 — Memory screen (D39).** `GET /api/system/memory` (working set, GC heap/committed,
   measured-at, running-jobs count); UI Memory page with auto-refresh + running-jobs table composed
   client-side from `GET /jobs?status=Running`; process-wide copy per D39. No per-job memory,
-  no time series.
+  no time series. ✅ solution builds 0 warnings; 3 new AspNetCore integration tests
+  (shape/sanity, running-jobs count reflects a started job, host without a job store still 200
+  with 0 — `RemoveAll<IJobStore>()` after normal registration, since a fully bare host breaks
+  minimal-API metadata inference for the whole `MapNeoReports` group per the D2 lesson);
+  browser-verified via `samples/09-web-ui-live` (real working-set reading, honest "No jobs
+  running" empty state, "Memory" nav item). Caught and fixed a Blazor "unclosed element" crash
+  during verification: the honest-empty-state branch must be `@if/else`, not an early `return`
+  inside an unclosed wrapping `<div>` (unlike the Job pages' pattern, which returns before any
+  wrapping div opens).
 - [ ] **E5 — Partial artifacts for failed and cancelled jobs (D40).** `IPartialArtifactStore` +
   file store (own directory, TTL prune, opt-in DI); runner captures on Failed **and Cancelled**
   (best-effort finalize, files renamed `{name}.partial.{ext}`); `GET /jobs/{id}/partial-artifacts`

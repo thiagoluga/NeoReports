@@ -1,0 +1,125 @@
+@page "/system/memory"
+@using NeoReports.UI.Models
+@using NeoReports.UI.Services
+@inject NavigationManager Nav
+@inject INeoReportsApiClient Api
+@implements IDisposable
+
+<div class="page">
+    <div class="page-head">
+        <div class="title">
+            <h1>Memory</h1>
+            <div class="sub">Process-level reading · auto-refreshes every 3s</div>
+        </div>
+    </div>
+
+    @if (!_isLive)
+    {
+        <Card>
+            <EmptyState Icon="report-off" Title="Engine unreachable">
+                <ChildContent>Memory can't be read until the engine API is reachable.</ChildContent>
+            </EmptyState>
+        </Card>
+    }
+    else
+    {
+        @* GET /api/system/memory (ADR D39) — always the whole host process, never a single job: a
+           single worker runs multiple jobs, so "memory used by this job" can't be measured
+           honestly. To estimate one job's footprint, run it alone and watch this screen. *@
+        <div class="grid-4">
+            <MetricCard Icon="cpu" Label="Working set" Value="@FormatBytes(_memory?.WorkingSetBytes)" Sub="OS-reported process memory" />
+            <MetricCard Icon="stack-2" Label="GC heap" Value="@FormatBytes(_memory?.GcHeapSizeBytes)" Sub="as of the last collection" />
+            <MetricCard Icon="server-2" Label="GC committed" Value="@FormatBytes(_memory?.GcCommittedBytes)" Sub="as of the last collection" />
+            <MetricCard Icon="clock" Label="Measured at" Value="@(_memory?.MeasuredAt.ToLocalTime().ToString("HH:mm:ss") ?? "—")" Sub="this request only · no history" />
+        </div>
+
+        <Banner Variant="info" Icon="info-circle">
+            <b>Whole-process reading</b>
+            <span style="font-size:12px">Memory is measured for the entire host process (including this UI, when co-hosted with the engine). To estimate a single job's footprint, run it alone and watch this screen.</span>
+        </Banner>
+
+        <Card Title="Running jobs" Sub="@RunningJobsSub">
+            @if (_runningJobs.Count == 0)
+            {
+                <EmptyState Icon="report-off" Title="No jobs running" />
+            }
+            else
+            {
+                <DataGrid Columns="3" Class="compact">
+                    <Head>
+                        <tr><th>Report</th><th>Status</th><th>Started</th></tr>
+                    </Head>
+                    <Body>
+                        @foreach (var j in _runningJobs)
+                        {
+                            <tr class="clickable" @onclick="@(() => Nav.NavigateTo($"jobs/{j.Id}"))">
+                                <td>@j.ReportName</td>
+                                <td><JobStatusBadge Status="JobStatus.Running" LabelOverride="@j.Status" /></td>
+                                <td class="mono">@(j.StartedAt?.ToLocalTime().ToString("HH:mm:ss") ?? "—")</td>
+                            </tr>
+                        }
+                    </Body>
+                </DataGrid>
+            }
+        </Card>
+    }
+</div>
+
+@code {
+    private ApiMemory? _memory;
+    private IReadOnlyList<ApiJobView> _runningJobs = Array.Empty<ApiJobView>();
+    private bool _isLive;
+    private System.Threading.Timer? _pollTimer;
+
+    private string RunningJobsSub => _runningJobs.Count == 0 ? "—" : $"{_runningJobs.Count} in progress";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await PollAsync();
+        _pollTimer = new System.Threading.Timer(async _ => await InvokeAsync(PollAsync), null, 3000, 3000);
+    }
+
+    private async Task PollAsync()
+    {
+        var memory = await Api.TryGetMemoryAsync();
+        if (memory is null)
+        {
+            _isLive = false;
+            StateHasChanged();
+            return;
+        }
+
+        _isLive = true;
+        _memory = memory;
+
+        // GET /jobs?status=Running composed client-side — no duplicated list endpoint for this.
+        var running = await Api.TryListJobsAsync(status: "Running", limit: 200);
+        var retrying = await Api.TryListJobsAsync(status: "Retrying", limit: 200);
+        _runningJobs = (running ?? Array.Empty<ApiJobView>()).Concat(retrying ?? Array.Empty<ApiJobView>()).ToArray();
+
+        StateHasChanged();
+    }
+
+    private static string FormatBytes(long? bytes)
+    {
+        if (bytes is not { } b)
+            return "—";
+
+        double value = b;
+        string[] units = { "B", "KB", "MB", "GB" };
+        var unit = 0;
+        while (value >= 1024 && unit < units.Length - 1)
+        {
+            value /= 1024;
+            unit++;
+        }
+
+        return $"{value:0.#} {units[unit]}";
+    }
+
+    public void Dispose()
+    {
+        _pollTimer?.Dispose();
+        _pollTimer = null;
+    }
+}
