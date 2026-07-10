@@ -27,7 +27,8 @@ public sealed class CompiledReport
         RetryOptions retry,
         IFailureStrategy failureStrategy,
         AbortThresholdConfig? abortThresholds = null,
-        ScheduleConfig? schedule = null)
+        ScheduleConfig? schedule = null,
+        string? sourceRef = null)
     {
         Name = name;
         Schema = schema;
@@ -41,6 +42,7 @@ public sealed class CompiledReport
         FailureStrategy = failureStrategy;
         AbortThresholds = abortThresholds;
         Schedule = schedule;
+        SourceRef = sourceRef;
 
         OutputFormats = outputs.Select(o => o.Factory.Format).ToArray();
         DestinationTypes = destinations.Select(d => d.Factory.Type).ToArray();
@@ -99,4 +101,13 @@ public sealed class CompiledReport
     /// declaration, never the override.
     /// </summary>
     public ScheduleConfig? Schedule { get; }
+
+    /// <summary>
+    /// The name of the registered source (ADR D42) this report reads from, or <c>null</c> when the
+    /// source is declared inline. Populated by the dynamic path's <c>SourceConfig.Ref</c> (F2) and
+    /// the typed path's by-name authoring (F5, <c>Source.SqlNamed</c>). "Used in N reports" for a
+    /// source is always the count of registered reports whose <see cref="SourceRef"/> matches its
+    /// name — no separate usage store exists; the number is always derivable truth.
+    /// </summary>
+    public string? SourceRef { get; }
 }

@@ -588,10 +588,21 @@ Scope authorized in **D42** (2026-07); **MIT** (maintainer call). Blueprint:
 re-litigation. Independent of Epic E; expected to start after it. GET responses never return
 source `Properties` — this is where the actual secrets live.
 
-- [ ] **F1 — Core: `SourceDefinition` + `ISourceRegistryStore`/file store + `ISourceRegistry`.**
+- [x] **F1 — Core: `SourceDefinition` + `ISourceRegistryStore`/file store + `ISourceRegistry`.**
   One JSON per source (same atomic-write + name-regex discipline as `FileReportConfigStore`);
   resolve substitutes `${VAR}` **per call**; read-through cache invalidated on save/delete;
-  `CompiledReport.SourceRef` for computed (never tracked) reference counts.
+  `CompiledReport.SourceRef` for computed (never tracked) reference counts. Implementation note:
+  the resolution service class is named `SourceRegistryService`, not `SourceRegistry` — a class
+  named the same as its own containing namespace (`NeoReports.Core.SourceRegistry`) doesn't
+  compile from sibling namespaces (C#'s enclosing-namespace lookup binds the bare name to the
+  namespace first, `CS0118`). Extracted `PrimitiveObjectConverter` out of `JsonReportConfigParser`
+  into a shared, now-bidirectional (read **and** write) converter, reused by the new file store —
+  avoids duplicating the property-bag JSON shape and gives the store real serialization instead of
+  the parser's read-only stub. ✅ solution builds 0 warnings; 26 new Core tests (file/in-memory
+  store roundtrip + replace + delete + list + corrupt-file-skip + invalid-name, every primitive
+  property kind roundtrips through JSON, registry resolve substitutes per call and reflects a
+  changed env var on the very next call without re-saving, cache invalidated on save/delete, list
+  stays unsubstituted, DI registration).
 - [ ] **F2 — Compiler + dynamic path: `SourceConfig.Ref`** (Abstractions, additive). Compile-time
   existence/type checks; **run-time** definition resolution + merge (definition base, report
   overlay, then substitution) so source edits apply on the next run without recompiles;
