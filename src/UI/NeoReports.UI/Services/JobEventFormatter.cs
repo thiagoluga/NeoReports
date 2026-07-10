@@ -42,20 +42,24 @@ public static class JobEventFormatter
     {
         ArgumentNullException.ThrowIfNull(events);
 
-        var points = new List<RatePoint>();
-        foreach (ApiJobEvent e in events.Where(e => e.Type == "page-completed"))
-        {
-            if (e.Data is null)
-                continue;
-            if (!double.TryParse(Get(e.Data, "elapsedMs"), out var elapsedMs))
-                continue;
-            if (!long.TryParse(Get(e.Data, "recordsWritten"), out var written))
-                continue;
+        return events
+            .Where(e => e.Type == "page-completed")
+            .Select(TryParseRatePoint)
+            .Where(p => p is not null)
+            .Select(p => p!)
+            .ToArray();
+    }
 
-            points.Add(new RatePoint(elapsedMs, written));
-        }
+    private static RatePoint? TryParseRatePoint(ApiJobEvent e)
+    {
+        if (e.Data is null)
+            return null;
+        if (!double.TryParse(Get(e.Data, "elapsedMs"), out var elapsedMs))
+            return null;
+        if (!long.TryParse(Get(e.Data, "recordsWritten"), out var written))
+            return null;
 
-        return points;
+        return new RatePoint(elapsedMs, written);
     }
 
     /// <summary>Rows/second between each consecutive pair of <paramref name="series"/> points — the
