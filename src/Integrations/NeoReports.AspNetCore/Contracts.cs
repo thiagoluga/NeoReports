@@ -160,3 +160,40 @@ public sealed record JobView(
     public static JobView From(ReportJob job) => new(
         job.Id, job.ReportName, job.Status, job.CreatedAt, job.StartedAt, job.CompletedAt, job.Error, job.Stats);
 }
+
+/// <summary>
+/// Full view of a registered source (ADR D42) — never carries <c>Properties</c>, the D33
+/// property-bag rule at its most literal, since that is precisely where secrets live.
+/// </summary>
+/// <param name="Name">The source name.</param>
+/// <param name="Type">Provider type id (e.g. "sql").</param>
+/// <param name="Description">Optional free-text description.</param>
+/// <param name="ReferencedByCount">Number of registered reports whose source resolves to this one — always derivable, never separately tracked.</param>
+/// <param name="LastHealthStatus">"healthy" or "unhealthy", or <c>null</c> when never checked.</param>
+/// <param name="LastHealthError">Failure detail from the last check, when unhealthy.</param>
+/// <param name="LastHealthLatencyMs">Latency of the last check, in milliseconds.</param>
+/// <param name="LastCheckedAt">When the last check ran (UTC), or <c>null</c> when never checked.</param>
+public sealed record SourceView(
+    string Name,
+    string Type,
+    string? Description,
+    int ReferencedByCount,
+    string? LastHealthStatus,
+    string? LastHealthError,
+    double? LastHealthLatencyMs,
+    DateTimeOffset? LastCheckedAt);
+
+/// <summary>Request body for <c>POST /sources</c> and <c>PUT /sources/{name}</c> (full replace).</summary>
+/// <param name="Name">The source name (for POST; for PUT, must match the URL segment or the request is rejected).</param>
+/// <param name="Type">Provider type id (e.g. "sql").</param>
+/// <param name="Properties">Provider-specific settings, e.g. connection string as <c>${VAR}</c>. Write-only — never returned by any GET.</param>
+/// <param name="Description">Optional free-text description.</param>
+public sealed record SourceRequest(
+    string Name, string Type, IReadOnlyDictionary<string, object?>? Properties = null, string? Description = null);
+
+/// <summary>Response for <c>POST /sources/{name}/health</c> — the result of a check that just ran.</summary>
+/// <param name="Healthy"><c>true</c> when the check succeeded.</param>
+/// <param name="Error">Failure detail, when <paramref name="Healthy"/> is <c>false</c>.</param>
+/// <param name="LatencyMs">How long the check took, in milliseconds.</param>
+/// <param name="CheckedAt">When the check ran (UTC).</param>
+public sealed record SourceHealthResponse(bool Healthy, string? Error, double LatencyMs, DateTimeOffset CheckedAt);

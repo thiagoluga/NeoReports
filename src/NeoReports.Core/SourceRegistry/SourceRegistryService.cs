@@ -34,6 +34,19 @@ public sealed class SourceRegistryService : ISourceRegistry
         _store.ListAsync(cancellationToken);
 
     /// <inheritdoc />
+    public async Task<SourceDefinition?> GetAsync(string name, CancellationToken cancellationToken)
+    {
+        if (_cache.TryGetValue(name, out SourceDefinition? cached))
+            return cached;
+
+        SourceDefinition? raw = await _store.GetAsync(name, cancellationToken).ConfigureAwait(false);
+        if (raw is not null)
+            _cache[name] = raw;
+
+        return raw;
+    }
+
+    /// <inheritdoc />
     public async Task<SourceDefinition?> ResolveAsync(string name, CancellationToken cancellationToken)
     {
         if (!_cache.TryGetValue(name, out SourceDefinition? raw))

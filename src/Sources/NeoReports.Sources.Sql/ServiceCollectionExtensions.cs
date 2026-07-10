@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NeoReports.Abstractions;
+using NeoReports.Core.SourceRegistry;
 
 namespace NeoReports.Sources.Sql;
 
@@ -16,6 +17,7 @@ public static class ServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigSourceProvider, SqlConfigSourceProvider>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<ISourceHealthCheck, SqlSourceHealthCheck>());
         return services;
     }
 }
