@@ -75,11 +75,10 @@
         </ChildContent>
     </Card>
 
-    @* Resilience — Max attempts/Backoff/Base delay/Jitter/On failure, sent as resilience.* in
-       POST /api/reports (Epic D / D34). Per-exception-type retry filtering and threshold-based
-       abort escalation (FailureStrategyBuilder.AbortIf, a predicate) have no config-document
-       equivalent — same reason dynamic filters are JsonLogic, not arbitrary code — so those
-       controls were removed rather than shown as decoration (D36). *@
+    @* Resilience — Max attempts/Backoff/Base delay/Jitter/On failure/Abort-when, sent as
+       resilience.* in POST /api/reports (Epic D / D34, abort-when per D37). Per-exception-type
+       retry filtering has no config-document equivalent (Polly retries any exception uniformly)
+       and stays rejected (D37) — that control was removed rather than shown as decoration (D36). *@
     <Card Title="Resilience" Sub="Retry, backoff and abort policy">
         <div>
             <div class="cgr"><span class="lbl">Max attempts</span><div class="ctl"><span class="input num"><input class="mono" type="number" min="1" @bind="Wizard.RetryMaxAttempts" @bind:event="oninput" /></span><span class="hint">counted per page, not per job</span></div></div>
@@ -95,6 +94,26 @@
                     <option value="skip-and-log">skip-and-log</option>
                 </select>
             </div></div>
+            @if (Wizard.FailureStrategy == "skip-and-log")
+            {
+                <div class="cgr"><span class="lbl">Abort when</span><div class="ctl col" style="align-items:flex-start;gap:6px">
+                    <div style="display:flex;align-items:center;gap:8px">
+                        <Switch @bind-Value="Wizard.AbortOnConsecutiveFailures" />
+                        <span class="input num"><input class="mono" type="number" min="1" @bind="Wizard.AbortConsecutiveFailures" @bind:event="oninput" disabled="@(!Wizard.AbortOnConsecutiveFailures)" style="width:70px" /></span>
+                        <span class="hint">consecutive failures</span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px">
+                        <Switch @bind-Value="Wizard.AbortOnTotalFailures" />
+                        <span class="input num"><input class="mono" type="number" min="1" @bind="Wizard.AbortTotalFailures" @bind:event="oninput" disabled="@(!Wizard.AbortOnTotalFailures)" style="width:70px" /></span>
+                        <span class="hint">total failures</span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px">
+                        <Switch @bind-Value="Wizard.AbortOnFailureRate" />
+                        <span class="input num"><input class="mono" type="number" min="1" max="100" step="1" @bind="Wizard.AbortFailureRatePercent" @bind:event="oninput" disabled="@(!Wizard.AbortOnFailureRate)" style="width:70px" /></span>
+                        <span class="hint">% failure rate</span>
+                    </div>
+                </div></div>
+            }
         </div>
     </Card>
 

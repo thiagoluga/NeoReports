@@ -133,6 +133,48 @@ public class BuilderConfigMapperTests
     }
 
     [Fact]
+    public void AbortWhen_is_omitted_when_failure_strategy_is_abort()
+    {
+        var state = FullState();
+        state.FailureStrategy = "abort";
+        state.AbortOnConsecutiveFailures = true;
+        state.AbortConsecutiveFailures = 3;
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        doc.RootElement.GetProperty("resilience").TryGetProperty("abortWhen", out _).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void AbortWhen_is_omitted_when_no_threshold_switch_is_on()
+    {
+        var state = FullState();
+        state.FailureStrategy = "skip-and-log";
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        doc.RootElement.GetProperty("resilience").TryGetProperty("abortWhen", out _).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void AbortWhen_serializes_only_the_enabled_thresholds()
+    {
+        var state = FullState();
+        state.FailureStrategy = "skip-and-log";
+        state.AbortOnConsecutiveFailures = true;
+        state.AbortConsecutiveFailures = 3;
+        state.AbortOnFailureRate = true;
+        state.AbortFailureRatePercent = 25;
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        JsonElement abortWhen = doc.RootElement.GetProperty("resilience").GetProperty("abortWhen");
+        abortWhen.GetProperty("consecutiveFailures").GetInt32().ShouldBe(3);
+        abortWhen.GetProperty("failureRate").GetDouble().ShouldBe(0.25);
+        abortWhen.TryGetProperty("totalFailures", out _).ShouldBeFalse();
+    }
+
+    [Fact]
     public void Report_name_passes_through_unchanged()
     {
         var state = FullState();

@@ -25,7 +25,8 @@ public sealed class CompiledReport
         IReadOnlyList<CompiledSectionedOutput> sectionedOutputs,
         IReadOnlyList<DestinationSpec> destinations,
         RetryOptions retry,
-        IFailureStrategy failureStrategy)
+        IFailureStrategy failureStrategy,
+        AbortThresholdConfig? abortThresholds = null)
     {
         Name = name;
         Schema = schema;
@@ -37,6 +38,7 @@ public sealed class CompiledReport
         Destinations = destinations;
         Retry = retry;
         FailureStrategy = failureStrategy;
+        AbortThresholds = abortThresholds;
 
         OutputFormats = outputs.Select(o => o.Factory.Format).ToArray();
         DestinationTypes = destinations.Select(d => d.Factory.Type).ToArray();
@@ -80,4 +82,10 @@ public sealed class CompiledReport
 
     /// <summary>Strategy applied after a batch exhausts its retries.</summary>
     public IFailureStrategy FailureStrategy { get; }
+
+    /// <summary>
+    /// The escalation thresholds configured via <c>FailureStrategyBuilder.AbortIf(AbortThresholdConfig)</c>,
+    /// or <c>null</c> when none were set, or a raw predicate was used instead (not introspectable — ADR D37).
+    /// </summary>
+    public AbortThresholdConfig? AbortThresholds { get; }
 }

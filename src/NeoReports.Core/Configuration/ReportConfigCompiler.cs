@@ -107,16 +107,26 @@ public static class ReportConfigCompiler
             });
         }
 
-        if (resilience.OnFailure is not null)
+        bool isSkipAndLog = string.Equals(resilience.OnFailure, "skip-and-log", StringComparison.OrdinalIgnoreCase);
+        if (resilience.AbortWhen is not null && !isSkipAndLog)
+        {
+            throw new ConfigurationException(
+                "resilience.abortWhen requires resilience.onFailure to be 'skip-and-log' — there is nothing to escalate from when the strategy already aborts.");
+        }
+
+        if (resilience.OnFailure is not null || resilience.AbortWhen is not null)
         {
             builder.OnFailure(f =>
             {
-                if (string.Equals(resilience.OnFailure, "abort", StringComparison.OrdinalIgnoreCase))
+                if (resilience.OnFailure is null || string.Equals(resilience.OnFailure, "abort", StringComparison.OrdinalIgnoreCase))
                     f.AbortReport();
-                else if (string.Equals(resilience.OnFailure, "skip-and-log", StringComparison.OrdinalIgnoreCase))
+                else if (isSkipAndLog)
                     f.SkipBatchAndLog();
                 else
                     throw new ConfigurationException($"Unknown resilience.onFailure value '{resilience.OnFailure}'. Use 'abort' or 'skip-and-log'.");
+
+                if (resilience.AbortWhen is { } thresholds)
+                    f.AbortIf(thresholds);
             });
         }
     }
