@@ -9,13 +9,15 @@ internal static class ResiliencePipelineFactory
 {
     /// <summary>Builds a resilience pipeline for batch reads. Cancellation is never retried.</summary>
     /// <param name="options">The declarative retry options.</param>
-    public static ResiliencePipeline Build(RetryOptions options)
+    /// <param name="onRetry">Optional hook invoked on every retry attempt (ADR D38 job-event emission);
+    /// awaited before the next attempt starts. Never affects retry behavior itself.</param>
+    public static ResiliencePipeline Build(RetryOptions options, Func<int, TimeSpan, Exception?, ValueTask>? onRetry = null)
     {
         var builder = new ResiliencePipelineBuilder();
 
         if (options.Attempts > 1)
         {
-            builder.AddRetry(new RetryStrategyOptions
+            var retry = new RetryStrategyOptions
             {
                 MaxRetryAttempts = options.Attempts - 1,
                 BackoffType = options.Backoff == RetryBackoff.Exponential
@@ -25,7 +27,12 @@ internal static class ResiliencePipelineFactory
                 UseJitter = options.UseJitter,
                 ShouldHandle = args => new ValueTask<bool>(
                     args.Outcome.Exception is not null and not OperationCanceledException)
-            });
+            };
+
+            if (onRetry is not null)
+                retry.OnRetry = args => onRetry(args.AttemptNumber, args.RetryDelay, args.Outcome.Exception);
+
+            builder.AddRetry(retry);
         }
 
         return builder.Build();

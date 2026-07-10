@@ -498,41 +498,62 @@ interface gains a member — new contracts live in Core (D20 pattern); GET respo
 property bags; telemetry/capture is fire-and-forget and never changes a run's outcome; every
 returning UI card has an honest empty/unavailable state (D36) — no fabricated fallback content.
 
-- [ ] **E1 — Abort thresholds as config (D37).** `AbortThresholdConfig` +
+- [x] **E1 — Abort thresholds as config (D37).** `AbortThresholdConfig` +
   `ResilienceConfig.AbortWhen` (Abstractions, additive; skip-and-log only, OR semantics);
   compiler → the same `AbortIf` the fluent path uses; data-based `AbortIf` overload on
   `FailureStrategyBuilder` + `CompiledReport.AbortThresholds` for introspection;
   `ReportDetailView` threshold fields; Builder "Abort when" switches return. The "Retry on
   errors" pills stay removed — per-exception retry filtering **rejected** (D37, reopens D6).
-- [ ] **E2 — Job event log: Core store + engine emission (D38).** `JobEvent` + `IJobEventStore`
+  ✅ solution builds 0 warnings; new Core/AspNetCore/UI tests (validation, compiler round-trip,
+  API round-trip, UI serialization/rendering); browser-verified via `samples/09-web-ui-live`.
+  PR [#114](https://github.com/thiagoluga/NeoReports/pull/114).
+- [x] **E2 — Job event log: Core store + engine emission (D38).** `JobEvent` + `IJobEventStore`
   (+ InMemory/JSONL file stores; configurable per-job cap with `events-truncated` marker +
   optional TTL retention); **opt-in** `AddJobEvents()`; `ReportRunner` emits the closed lifecycle
   vocabulary; `ResiliencePipelineFactory` gains the optional `OnRetry` hook. No HTTP yet.
   Unregistered store ⇒ byte-identical behavior (regression-guarded).
-- [ ] **E3 — `GET /jobs/{id}/events` + UI telemetry (D38).** Endpoint (type filter, paging,
+  ✅ solution builds 0 warnings; 25 new Core tests (stores, DI, full-lifecycle emission ordering/
+  counters, retry/skip/abort events, a throwing store never fails the run) + 3 new Jobs tests
+  (cancelled/completed lifecycle, no-registration is a no-op); all pre-existing tests unaffected.
+- [x] **E3 — `GET /jobs/{id}/events` + UI telemetry (D38).** Endpoint (type filter, paging,
   404/`[]` semantics, `JobView` untouched per D5); Timeline card (Running/Completed/Failed),
   Retries card (`?type=retry`), processing-rate sparkline derived from `page-completed` events —
   no second sampling mechanism. Honest states for store-absent/truncated/no-retries.
-  **Depends on:** E2.
-- [ ] **E4 — Memory screen (D39).** `GET /api/system/memory` (working set, GC heap/committed,
+  **Depends on:** E2. ✅ solution builds 0 warnings; 8 new AspNetCore integration tests + 7 new
+  UI unit tests (`JobEventFormatter`); browser-verified via `samples/09-web-ui-live`: real
+  Timeline events (started → page-completed → outputs-finalized → uploaded → completed) render
+  correctly on `JobCompleted`, the "not enough data" honest state shows with 1 page-completed
+  event, and the sparkline renders real points with 2+.
+- [x] **E4 — Memory screen (D39).** `GET /api/system/memory` (working set, GC heap/committed,
   measured-at, running-jobs count); UI Memory page with auto-refresh + running-jobs table composed
   client-side from `GET /jobs?status=Running`; process-wide copy per D39. No per-job memory,
-  no time series.
+  no time series. ✅ solution builds 0 warnings; 3 new AspNetCore integration tests
+  (shape/sanity, running-jobs count reflects a started job, host without a job store still 200
+  with 0 — `RemoveAll<IJobStore>()` after normal registration, since a fully bare host breaks
+  minimal-API metadata inference for the whole `MapNeoReports` group per the D2 lesson);
+  browser-verified via `samples/09-web-ui-live` (real working-set reading, honest "No jobs
+  running" empty state, "Memory" nav item). Caught and fixed a Blazor "unclosed element" crash
+  during verification: the honest-empty-state branch must be `@if/else`, not an early `return`
+  inside an unclosed wrapping `<div>` (unlike the Job pages' pattern, which returns before any
+  wrapping div opens).
 - [x] **E5 — Partial artifacts for failed and cancelled jobs (D40).** `IPartialArtifactStore` +
   file store (own directory, TTL prune, opt-in DI); runner captures on Failed **and Cancelled**
   (best-effort finalize, files renamed `{name}.partial.{ext}`); `GET /jobs/{id}/partial-artifacts`
   + its own `/download` (completed artifacts surface never changed); JobFailed partial-output card
   with warning banner. One honest empty state, not two — the wire can't distinguish "no store
   registered" from "registered but nothing captured" (both `[]`), same resolution as E3's job
-  events. ✅ solution builds 0 warnings; 5 new Core tests (aborted run captures exactly the
-  fully-written batches renamed `.partial`, `CompletedPartial` runs never capture and still
-  publish, cancelled run captures, no-store-registered and throwing-store are both no-ops for the
-  run's own outcome) + 6 new AspNetCore integration tests (404/empty-for-completed/captured-for-
-  failed/download-streams/no-store-is-empty/completed-artifacts-never-includes-partials). Found
+  events. ✅ solution builds 0 warnings; 16 new Core tests (5 covering capture behavior — aborted
+  run captures exactly the fully-written batches renamed `.partial`, `CompletedPartial` runs never
+  capture and still publish, cancelled run captures, no-store-registered and throwing-store are
+  both no-ops for the run's own outcome — + 11 for `FileSystemPartialArtifactStore` itself) + 7
+  new AspNetCore integration tests (404/empty-for-completed/captured-for-failed/download-streams/
+  no-store-is-empty/completed-artifacts-never-includes-partials/multi-file-zip-download). Found
   and fixed a real bug during testing: `PartialArtifactOptions.Directory`'s blueprint-specified
   relative default (`./neoreports-partials`) breaks `Results.File(string, ...)`, which resolves a
   relative path against the ASP.NET **web root**, not the process working directory — changed the
   default to an absolute temp-folder path, matching `FileSystemArtifactStore`'s existing pattern.
+  Extracted a shared `FileSystemArtifactLayout` helper to dedupe the on-disk mechanics between
+  `FileSystemArtifactStore` and `FileSystemPartialArtifactStore` (SonarCloud duplication gate).
 - [ ] **E6 — Scheduling (D41, supersedes D35).** `ScheduleConfig` on `ReportConfig` (Abstractions,
   additive; **UTC-only cron**, UI renders next run in viewer-local time) + builder `.Schedule()`;
   `IRecurringReportScheduler` (Core) implemented by Hangfire (`neoreports:{name}` ids, per-firing

@@ -1,7 +1,10 @@
+using System.Diagnostics;
+using System.Globalization;
 using Microsoft.Extensions.Logging;
 using NeoReports.Abstractions;
 using NeoReports.Core.Artifacts;
 using NeoReports.Core.Building;
+using NeoReports.Core.Events;
 using NeoReports.Core.Registry;
 using NeoReports.Core.Sections;
 
@@ -64,7 +67,6 @@ public sealed class ReportRunner : IReportRunner
         ArgumentNullException.ThrowIfNull(report);
         ArgumentNullException.ThrowIfNull(execution);
 
-        var resilience = ResiliencePipelineFactory.Build(report.Retry);
         var tempDir = Path.Combine(Path.GetTempPath(), "neoreports", execution.JobId);
         Directory.CreateDirectory(tempDir);
 
@@ -77,6 +79,28 @@ public sealed class ReportRunner : IReportRunner
         int consecutiveFailures = 0, totalFailures = 0;
         var status = ReportRunStatus.Completed;
         string? error = null;
+        string? cursor = null;
+        var pageNumber = 0;
+        var stopwatch = Stopwatch.StartNew();
+
+        var jobEventStore = services.GetService(typeof(IJobEventStore)) as IJobEventStore;
+        var events = await JobEventEmitter.CreateAsync(jobEventStore, execution.JobId, execution.Logger, cancellationToken)
+            .ConfigureAwait(false);
+        await events.EmitAsync(events.IsRestart ? JobEventTypes.RunRestarted : JobEventTypes.RunStarted, null, null, cancellationToken)
+            .ConfigureAwait(false);
+
+        // The retry hook only ever emits an event (ADR D38, ground rule 3: telemetry must never
+        // change a run's outcome) — ShouldHandle/backoff/jitter above are untouched.
+        var resilience = ResiliencePipelineFactory.Build(report.Retry, async (attempt, delay, ex) =>
+        {
+            await events.EmitAsync(JobEventTypes.Retry, ex?.Message, new Dictionary<string, string>
+            {
+                ["page"] = pageNumber.ToString(CultureInfo.InvariantCulture),
+                ["attempt"] = attempt.ToString(CultureInfo.InvariantCulture),
+                ["delayMs"] = delay.TotalMilliseconds.ToString("0", CultureInfo.InvariantCulture),
+                ["exceptionType"] = ex?.GetType().Name ?? "Unknown",
+            }, cancellationToken).ConfigureAwait(false);
+        });
 
         // Best-effort capture of whatever was already written when a run fails or is cancelled
         // (ADR D40) — never at the report's real configured destinations (protects D2/D15's
@@ -174,9 +198,6 @@ public sealed class ReportRunner : IReportRunner
                 sectioned.Add(new RunningSectioned(writer, stream, path, fileName, writer.MimeType, sectionedSpec.Sections.Count));
             }
 
-            string? cursor = null;
-            var pageNumber = 0;
-
             while (true)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -233,6 +254,14 @@ public sealed class ReportRunner : IReportRunner
 
                     recordsWritten += batch.WrittenCount;
                     consecutiveFailures = 0;
+
+                    await events.EmitAsync(JobEventTypes.PageCompleted, null, new Dictionary<string, string>
+                    {
+                        ["page"] = pageNumber.ToString(CultureInfo.InvariantCulture),
+                        ["recordsRead"] = recordsRead.ToString(CultureInfo.InvariantCulture),
+                        ["recordsWritten"] = recordsWritten.ToString(CultureInfo.InvariantCulture),
+                        ["elapsedMs"] = stopwatch.ElapsedMilliseconds.ToString(CultureInfo.InvariantCulture),
+                    }, cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -252,6 +281,12 @@ public sealed class ReportRunner : IReportRunner
 
                     skipped++;
                     status = ReportRunStatus.CompletedPartial;
+
+                    await events.EmitAsync(JobEventTypes.BatchSkipped, null, new Dictionary<string, string>
+                    {
+                        ["page"] = pageNumber.ToString(CultureInfo.InvariantCulture),
+                        ["reason"] = decision.Reason ?? "",
+                    }, cancellationToken).ConfigureAwait(false);
                 }
 
                 if (!batch.HasMore)
@@ -272,6 +307,12 @@ public sealed class ReportRunner : IReportRunner
                     output.Closed = true;
                     output.SizeBytes = new FileInfo(output.Path).Length;
                     bytesWritten += output.SizeBytes;
+
+                    await events.EmitAsync(JobEventTypes.OutputsFinalized, null, new Dictionary<string, string>
+                    {
+                        ["fileName"] = output.FileName,
+                        ["sizeBytes"] = output.SizeBytes.ToString(CultureInfo.InvariantCulture),
+                    }, cancellationToken).ConfigureAwait(false);
                 }
 
                 foreach (RunningSectioned output in sectioned)
@@ -283,6 +324,12 @@ public sealed class ReportRunner : IReportRunner
                     output.Closed = true;
                     output.SizeBytes = new FileInfo(output.Path).Length;
                     bytesWritten += output.SizeBytes;
+
+                    await events.EmitAsync(JobEventTypes.OutputsFinalized, null, new Dictionary<string, string>
+                    {
+                        ["fileName"] = output.FileName,
+                        ["sizeBytes"] = output.SizeBytes.ToString(CultureInfo.InvariantCulture),
+                    }, cancellationToken).ConfigureAwait(false);
                 }
 
                 var finishedFiles = new List<IFinishedFile>(outputs.Count + sectioned.Count);
@@ -300,6 +347,12 @@ public sealed class ReportRunner : IReportRunner
                         uploads.Add(await destination.UploadAsync(
                             file, new DestinationContext(execution, destSpec.Options), cancellationToken)
                             .ConfigureAwait(false));
+
+                        await events.EmitAsync(JobEventTypes.UploadCompleted, null, new Dictionary<string, string>
+                        {
+                            ["destinationType"] = destSpec.Factory.Type,
+                            ["fileName"] = finished.FileName,
+                        }, cancellationToken).ConfigureAwait(false);
                     }
                 }
 
@@ -321,6 +374,12 @@ public sealed class ReportRunner : IReportRunner
                 // contains exactly the fully-written batches).
                 await CapturePartialArtifactsAsync().ConfigureAwait(false);
             }
+
+            await events.EmitAsync(
+                status == ReportRunStatus.Failed ? JobEventTypes.RunFailed : JobEventTypes.RunCompleted,
+                status == ReportRunStatus.Failed ? error : null,
+                null,
+                cancellationToken).ConfigureAwait(false);
 
             var stats = new JobStats(recordsRead, recordsWritten, bytesWritten, retries, batches);
             return new ReportRunResult(status, stats, skipped, error, uploads);

@@ -85,6 +85,30 @@
         }
     </Card>
 
+    @* Timeline + Retries — GET /api/jobs/{id}/events (ADR D38); [] when no event store is
+       registered on the host, same wire shape as "no events yet" — one honest state either way. *@
+    <Card Title="Timeline" Sub="@(_events.Count == 0 ? "—" : $"{_events.Count} event(s)")">
+        @if (_events.Count == 0)
+        {
+            <span class="muted" style="font-size:12px">No events recorded — the event log may not be enabled on this host.</span>
+        }
+        else
+        {
+            <Timeline Rows="@_events.Select(JobEventFormatter.ToTimelineRow).ToArray()" />
+        }
+    </Card>
+
+    <Card Title="Retries this job" Sub="@(_retryEvents.Count == 0 ? "—" : $"{_retryEvents.Count} retry(ies)")">
+        @if (_retryEvents.Count == 0)
+        {
+            <span class="muted" style="font-size:12px">No retries so far.</span>
+        }
+        else
+        {
+            <Timeline Rows="@_retryEvents.Select(JobEventFormatter.ToTimelineRow).ToArray()" Expanded="true" />
+        }
+    </Card>
+
     @* Partial output — GET /api/jobs/{id}/partial-artifacts (ADR D40). Best-effort output staged
        before the run stopped; never at the report's real configured destinations. The wire can't
        distinguish "no partial-artifact store registered on this host" from "registered, but
@@ -118,6 +142,8 @@
 @code {
     [Parameter] public string? Id { get; set; }
     private ApiJobView? _job;
+    private IReadOnlyList<ApiJobEvent> _events = Array.Empty<ApiJobEvent>();
+    private IReadOnlyList<ApiJobEvent> _retryEvents = Array.Empty<ApiJobEvent>();
     private IReadOnlyList<ApiArtifact> _partials = Array.Empty<ApiArtifact>();
 
     private TimeSpan? Duration => _job?.StartedAt is { } s && _job.CompletedAt is { } c ? c - s : null;
@@ -136,7 +162,16 @@
 
         _job = await Api.TryGetJobAsync(Id);
         if (_job is not null)
+        {
+            var events = await Api.TryGetJobEventsAsync(Id);
+            if (events is not null)
+            {
+                _events = events;
+                _retryEvents = events.Where(e => e.Type == "retry").ToArray();
+            }
+
             _partials = await Api.TryGetPartialArtifactsAsync(Id) ?? Array.Empty<ApiArtifact>();
+        }
     }
 
     private void DownloadPartial()

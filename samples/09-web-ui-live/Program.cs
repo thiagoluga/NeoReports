@@ -36,6 +36,7 @@ builder.Services.AddSingleton<IDestinationFactory>(
     new LocalDestinationFactory("./out/{name}-{date:yyyy-MM-dd}.{ext}"));              // destination "local"
 builder.Services.AddNeoReportsInMemoryJobs();
 builder.Services.AddNeoReportsArtifacts();
+builder.Services.AddInMemoryJobEvents(); // ADR D38 — powers the job Timeline/Retries/rate cards
 // --- end engine wiring ---
 
 var app = builder.Build();
