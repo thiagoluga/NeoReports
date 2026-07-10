@@ -69,10 +69,17 @@ public sealed record ApiReportDetail(
     double RetryBaseDelaySeconds,
     bool RetryUseJitter,
     string Origin,
-    bool Deletable);
+    bool Deletable,
+    int? AbortAfterConsecutiveFailures = null,
+    int? AbortAfterTotalFailures = null,
+    double? AbortAtFailureRate = null);
 
 /// <summary>A finished output file of a completed job, as returned by <c>GET /api/jobs/{id}/artifacts</c>.</summary>
 public sealed record ApiArtifact(string FileName, string MimeType, long SizeBytes);
+
+/// <summary>One structured lifecycle event of a job run, as returned by <c>GET /api/jobs/{id}/events</c> (ADR D38).</summary>
+public sealed record ApiJobEvent(
+    int Sequence, DateTimeOffset At, string Type, string? Message, IReadOnlyDictionary<string, string>? Data);
 
 /// <summary>Process-level memory reading, as returned by <c>GET /api/system/memory</c> (ADR D39).</summary>
 public sealed record ApiMemory(
@@ -136,6 +143,19 @@ public interface INeoReportsApiClient
     /// isn't reachable. An empty (non-null) list means the job exists but isn't complete yet.
     /// </summary>
     Task<IReadOnlyList<ApiArtifact>?> TryGetJobArtifactsAsync(string jobId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lists a job's recorded lifecycle events (ADR D38), or <c>null</c> if the job doesn't exist or
+    /// the engine API isn't reachable. An empty (non-null) list means the job exists but either has
+    /// no events yet, or no event store is registered on the host (indistinguishable from the wire —
+    /// callers show a single honest "no events" state either way).
+    /// </summary>
+    /// <param name="jobId">The job id.</param>
+    /// <param name="type">Optional exact-match filter on the event type.</param>
+    /// <param name="limit">Maximum number of events to return.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<IReadOnlyList<ApiJobEvent>?> TryGetJobEventsAsync(
+        string jobId, string? type = null, int? limit = null, CancellationToken cancellationToken = default);
 
     /// <summary>Reads the current process-level memory reading (ADR D39), or <c>null</c> if the engine API isn't reachable.</summary>
     Task<ApiMemory?> TryGetMemoryAsync(CancellationToken cancellationToken = default);
@@ -383,6 +403,33 @@ internal sealed class NeoReportsApiClient(
         catch (Exception ex) when (IsTransient(ex))
         {
             logger.LogWarning(ex, "GET {ApiBase}jobs/{JobId}/artifacts unavailable; falling back to sample data.", Sanitize(apiBase.ToString()), Sanitize(jobId));
+            return null;
+        }
+    }
+
+    public async Task<IReadOnlyList<ApiJobEvent>?> TryGetJobEventsAsync(
+        string jobId, string? type = null, int? limit = null, CancellationToken cancellationToken = default)
+    {
+        var apiBase = ApiBase;
+        var query = new List<string>();
+        if (type is not null)
+            query.Add($"type={Uri.EscapeDataString(type)}");
+        if (limit is int l)
+            query.Add($"limit={l}");
+        var queryString = query.Count > 0 ? "?" + string.Join('&', query) : "";
+
+        try
+        {
+            using var response = await http.GetAsync(
+                new Uri(apiBase, $"jobs/{Uri.EscapeDataString(jobId)}/events{queryString}"), cancellationToken).ConfigureAwait(false);
+            if (response.StatusCode == HttpStatusCode.NotFound)
+                return null;
+            response.EnsureSuccessStatusCode();
+            return await response.Content.ReadFromJsonAsync<IReadOnlyList<ApiJobEvent>>(Json, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsTransient(ex))
+        {
+            logger.LogWarning(ex, "GET {ApiBase}jobs/{JobId}/events unavailable; falling back to sample data.", Sanitize(apiBase.ToString()), Sanitize(jobId));
             return null;
         }
     }

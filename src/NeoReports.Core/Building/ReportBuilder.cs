@@ -266,7 +266,8 @@ public sealed class ReportBuilder<TRow>
             sectionedOutputs,
             _destinations.ToArray(),
             _retry,
-            _failure.Build());
+            _failure.Build(),
+            _failure.AbortThresholds);
     }
 
     private (ReportSchema Schema, OutputProjection<TRow> Projection) ResolveView(OutputView<TRow>? view, string what)

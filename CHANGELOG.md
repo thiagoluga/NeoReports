@@ -9,6 +9,25 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 ## [Unreleased]
 
 ### Added
+- `NeoReports.Abstractions` — `AbortThresholdConfig` (`ConsecutiveFailures`/`TotalFailures`/`FailureRate`)
+  and a trailing optional `ResilienceConfig.AbortWhen`, letting the dynamic path express
+  threshold-based abort escalation as data (ADR D37). `FailureStrategyBuilder` gains a data-based
+  `AbortIf(AbortThresholdConfig)` overload (introspectable via the new public `AbortThresholds`,
+  alongside the existing predicate overload which stays non-introspectable); `CompiledReport`
+  exposes it, `GET /reports/{name}` returns it, and the Builder's "Abort when" switches and the
+  Report detail resilience summary are wired to it. Legal only alongside `onFailure: skip-and-log`.
+- `NeoReports.Core` — a job event log (ADR D38): `IJobEventStore` (`InMemoryJobEventStore` /
+  `FileJobEventStore`, one JSONL file per job) records a closed vocabulary of structured, per-job
+  lifecycle events (started/restarted, page progress, retries, skipped batches, finalized outputs,
+  uploads, terminal status) with a configurable per-job cap and optional retention. Opt-in via
+  `AddJobEvents()`/`AddInMemoryJobEvents()` — a host that never calls either sees zero behavioral
+  change. `ResiliencePipelineFactory` gains an optional retry hook used to emit `retry` events.
+- `NeoReports.AspNetCore` — `GET /jobs/{id}/events` (ADR D38): lists a job's recorded lifecycle
+  events (`type`/`limit`/`offset` filters), `[]` when no event store is registered or the job has
+  none yet, 404 for an unknown job. `NeoReports.UI` — the Timeline, Retries, and processing-rate
+  sparkline cards return on the job pages, driven entirely by this endpoint (no fabricated
+  fallback content, per D36): Timeline on `JobRunning`/`JobCompleted`/`JobFailed`, Retries on
+  `JobRunning`/`JobFailed`, the sparkline on `JobRunning`/`JobCompleted`.
 - `NeoReports.AspNetCore` — `GET /system/memory` (ADR D39): process-level working set / GC heap /
   GC committed bytes, plus a count of currently running jobs. Deliberately process-wide, never
   per-job — a single worker process runs multiple jobs, so "memory used by this job" can't be

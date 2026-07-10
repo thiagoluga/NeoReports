@@ -498,22 +498,32 @@ interface gains a member — new contracts live in Core (D20 pattern); GET respo
 property bags; telemetry/capture is fire-and-forget and never changes a run's outcome; every
 returning UI card has an honest empty/unavailable state (D36) — no fabricated fallback content.
 
-- [ ] **E1 — Abort thresholds as config (D37).** `AbortThresholdConfig` +
+- [x] **E1 — Abort thresholds as config (D37).** `AbortThresholdConfig` +
   `ResilienceConfig.AbortWhen` (Abstractions, additive; skip-and-log only, OR semantics);
   compiler → the same `AbortIf` the fluent path uses; data-based `AbortIf` overload on
   `FailureStrategyBuilder` + `CompiledReport.AbortThresholds` for introspection;
   `ReportDetailView` threshold fields; Builder "Abort when" switches return. The "Retry on
   errors" pills stay removed — per-exception retry filtering **rejected** (D37, reopens D6).
-- [ ] **E2 — Job event log: Core store + engine emission (D38).** `JobEvent` + `IJobEventStore`
+  ✅ solution builds 0 warnings; new Core/AspNetCore/UI tests (validation, compiler round-trip,
+  API round-trip, UI serialization/rendering); browser-verified via `samples/09-web-ui-live`.
+  PR [#114](https://github.com/thiagoluga/NeoReports/pull/114).
+- [x] **E2 — Job event log: Core store + engine emission (D38).** `JobEvent` + `IJobEventStore`
   (+ InMemory/JSONL file stores; configurable per-job cap with `events-truncated` marker +
   optional TTL retention); **opt-in** `AddJobEvents()`; `ReportRunner` emits the closed lifecycle
   vocabulary; `ResiliencePipelineFactory` gains the optional `OnRetry` hook. No HTTP yet.
   Unregistered store ⇒ byte-identical behavior (regression-guarded).
-- [ ] **E3 — `GET /jobs/{id}/events` + UI telemetry (D38).** Endpoint (type filter, paging,
+  ✅ solution builds 0 warnings; 25 new Core tests (stores, DI, full-lifecycle emission ordering/
+  counters, retry/skip/abort events, a throwing store never fails the run) + 3 new Jobs tests
+  (cancelled/completed lifecycle, no-registration is a no-op); all pre-existing tests unaffected.
+- [x] **E3 — `GET /jobs/{id}/events` + UI telemetry (D38).** Endpoint (type filter, paging,
   404/`[]` semantics, `JobView` untouched per D5); Timeline card (Running/Completed/Failed),
   Retries card (`?type=retry`), processing-rate sparkline derived from `page-completed` events —
   no second sampling mechanism. Honest states for store-absent/truncated/no-retries.
-  **Depends on:** E2.
+  **Depends on:** E2. ✅ solution builds 0 warnings; 8 new AspNetCore integration tests + 7 new
+  UI unit tests (`JobEventFormatter`); browser-verified via `samples/09-web-ui-live`: real
+  Timeline events (started → page-completed → outputs-finalized → uploaded → completed) render
+  correctly on `JobCompleted`, the "not enough data" honest state shows with 1 page-completed
+  event, and the sparkline renders real points with 2+.
 - [x] **E4 — Memory screen (D39).** `GET /api/system/memory` (working set, GC heap/committed,
   measured-at, running-jobs count); UI Memory page with auto-refresh + running-jobs table composed
   client-side from `GET /jobs?status=Running`; process-wide copy per D39. No per-job memory,
