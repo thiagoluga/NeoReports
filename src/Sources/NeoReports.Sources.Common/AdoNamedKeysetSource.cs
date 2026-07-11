@@ -1,26 +1,39 @@
+using System.Data.Common;
 using NeoReports.Abstractions;
 using NeoReports.Core.SourceRegistry;
 
-namespace NeoReports.Sources.Sql;
+namespace NeoReports.Sources.Common;
 
 /// <summary>
-/// SQL Server batch source that resolves its connection by name through the source registry
-/// (ADR D42, <see cref="Source.SqlNamed"/>) instead of a fixed connection string. Per the ground
-/// rule shared with the dynamic path's <c>RefBatchSource</c>, resolution happens fresh at the
-/// start of every run — never baked into the source at construction — using
-/// <see cref="BatchContext.Cursor"/> being <c>null</c> as the "first page of a run" signal.
+/// Provider-agnostic batch source that resolves its connection by name through the source
+/// registry (ADR D42/D43) instead of a fixed connection string, shared by every relational
+/// provider's <c>Source.&lt;Provider&gt;Named(...)</c> entry point. Resolution happens fresh at
+/// the start of every run — never baked in at construction — using
+/// <see cref="BatchContext.Cursor"/> being <c>null</c> as the "first page of a run" signal, the
+/// same mechanism the dynamic path's <c>RefBatchSource</c> and F5's <c>NamedSqlKeysetSource</c>
+/// use.
 /// </summary>
 /// <typeparam name="T">The row type produced.</typeparam>
-internal sealed class NamedSqlKeysetSource<T> : IBatchSource<T>, INamedSourceResolver
+public sealed class AdoNamedKeysetSource<T> : IBatchSource<T>, INamedSourceResolver
 {
     private readonly string _sourceName;
     private readonly string _sql;
     private readonly string _keyColumn;
     private readonly int _pageSize;
+    private readonly Func<string, DbConnection> _connectionFactory;
     private IServiceProvider? _services;
-    private SqlKeysetSource<T>? _resolved;
+    private AdoKeysetSource<T>? _resolved;
 
-    public NamedSqlKeysetSource(string sourceName, string sql, string keyColumn, int pageSize, ReportSchema schema)
+    /// <summary>Creates the source.</summary>
+    /// <param name="sourceName">Name of a source registered via <see cref="ISourceRegistry"/>.</param>
+    /// <param name="sql">Query with a <c>@cursor</c> parameter and an ORDER BY on the key column.</param>
+    /// <param name="keyColumn">Name of the keyset column in the result set.</param>
+    /// <param name="pageSize">Maximum rows per page.</param>
+    /// <param name="schema">The output schema this source declares.</param>
+    /// <param name="connectionFactory">Given the resolved connection string, creates a new, unopened connection.</param>
+    public AdoNamedKeysetSource(
+        string sourceName, string sql, string keyColumn, int pageSize, ReportSchema schema,
+        Func<string, DbConnection> connectionFactory)
     {
         _sourceName = sourceName ?? throw new ArgumentNullException(nameof(sourceName));
         _sql = sql ?? throw new ArgumentNullException(nameof(sql));
@@ -28,6 +41,7 @@ internal sealed class NamedSqlKeysetSource<T> : IBatchSource<T>, INamedSourceRes
         ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1);
         _pageSize = pageSize;
         Schema = schema ?? throw new ArgumentNullException(nameof(schema));
+        _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
     }
 
     /// <inheritdoc />
@@ -53,14 +67,13 @@ internal sealed class NamedSqlKeysetSource<T> : IBatchSource<T>, INamedSourceRes
         return await _resolved.ReadBatchAsync(context, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<SqlKeysetSource<T>> ResolveAsync(CancellationToken cancellationToken)
+    private async Task<AdoKeysetSource<T>> ResolveAsync(CancellationToken cancellationToken)
     {
         if (_services is null)
             throw new ConfigurationException($"Source '{_sourceName}' was read before the run's services were attached (internal pipeline error).");
 
         var registry = _services.GetService(typeof(ISourceRegistry)) as ISourceRegistry
-            ?? throw new ConfigurationException(
-                $"Source.SqlNamed(\"{_sourceName}\", ...) requires a source registry, but none is configured on this host.");
+            ?? throw new ConfigurationException($"This named source requires a source registry, but none is configured on this host.");
 
         SourceDefinition? definition = await registry.ResolveAsync(_sourceName, cancellationToken).ConfigureAwait(false)
             ?? throw new ConfigurationException($"Source '{_sourceName}' is not registered.");
@@ -73,6 +86,6 @@ internal sealed class NamedSqlKeysetSource<T> : IBatchSource<T>, INamedSourceRes
             throw new ConfigurationException($"Source '{_sourceName}' has no 'connectionString' property.");
         }
 
-        return new SqlKeysetSource<T>(connectionString, _sql, _keyColumn, _pageSize, Schema);
+        return new AdoKeysetSource<T>(() => _connectionFactory(connectionString), _sql, _keyColumn, _pageSize, Schema);
     }
 }

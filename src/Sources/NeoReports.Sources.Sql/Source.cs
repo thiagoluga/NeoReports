@@ -1,5 +1,7 @@
 using System.Linq.Expressions;
+using Microsoft.Data.SqlClient;
 using NeoReports.Abstractions;
+using NeoReports.Sources.Common;
 
 namespace NeoReports.Sources.Sql;
 
@@ -53,11 +55,11 @@ public sealed class SqlNamedSourceBuilder
     public IBatchSource<T> Keyset<T, TKey>(Expression<Func<T, TKey>> keySelector, int pageSize = 1000)
     {
         ArgumentNullException.ThrowIfNull(keySelector);
-        var keyColumn = SqlSourceBuilder.GetMemberName(keySelector);
+        var keyColumn = MemberSelector.GetMemberName(keySelector);
 
         var schema = new ReportSchema(new[] { new ReportColumn(keyColumn, ColumnType.String) });
 
-        return new NamedSqlKeysetSource<T>(_sourceName, _sql, keyColumn, pageSize, schema);
+        return new AdoNamedKeysetSource<T>(_sourceName, _sql, keyColumn, pageSize, schema, cs => new SqlConnection(cs));
     }
 }
 
@@ -84,25 +86,12 @@ public sealed class SqlSourceBuilder
     public IBatchSource<T> Keyset<T, TKey>(Expression<Func<T, TKey>> keySelector, int pageSize = 1000)
     {
         ArgumentNullException.ThrowIfNull(keySelector);
-        var keyColumn = GetMemberName(keySelector);
+        var keyColumn = MemberSelector.GetMemberName(keySelector);
 
         // The source's declared schema is not consumed by the pipeline (projection uses the
         // builder's columns), so a minimal placeholder is sufficient here.
         var schema = new ReportSchema(new[] { new ReportColumn(keyColumn, ColumnType.String) });
 
         return new SqlKeysetSource<T>(_connectionString, _sql, keyColumn, pageSize, schema);
-    }
-
-    internal static string GetMemberName<T, TKey>(Expression<Func<T, TKey>> selector)
-    {
-        var body = selector.Body;
-        if (body is UnaryExpression { NodeType: ExpressionType.Convert or ExpressionType.ConvertChecked } unary)
-            body = unary.Operand;
-
-        if (body is MemberExpression { Member.Name: { } name })
-            return name;
-
-        throw new ArgumentException(
-            "Keyset selector must be a simple member access (e.g. v => v.Id).", nameof(selector));
     }
 }

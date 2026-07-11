@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Sources\NeoReports.Sources.Postgres\NeoReports.Sources.Postgres.csproj" />
+    <ProjectReference Include="..\..\src\Sources\NeoReports.Sources.Common\NeoReports.Sources.Common.csproj" />
+    <ProjectReference Include="..\..\src\NeoReports.Core\NeoReports.Core.csproj" />
+    <ProjectReference Include="..\..\src\Formats\NeoReports.Formats.Csv\NeoReports.Formats.Csv.csproj" />
+    <ProjectReference Include="..\..\src\Destinations\NeoReports.Destinations.Local\NeoReports.Destinations.Local.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Shouldly" />
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="Xunit.SkippableFact" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+  </ItemGroup>
+
+</Project>

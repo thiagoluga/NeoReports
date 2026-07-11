@@ -9,6 +9,23 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 ## [Unreleased]
 
 ### Added
+- `NeoReports.Sources.Postgres` — a PostgreSQL source (Npgsql), matching `NeoReports.Sources.Sql`'s
+  shape exactly: `Source.Postgres(...)`/`Source.PostgresNamed(...)` (typed), `type: "postgres"`
+  (dynamic path), `PostgresSourceHealthCheck`, `AddPostgresConfigSource()` (D43). Built on a new
+  shared package, `NeoReports.Sources.Common`, which extracts `SqlKeysetSource<T>`'s engine into a
+  provider-agnostic `AdoKeysetSource<T>` (parametrized by `Func<DbConnection>` instead of a
+  hardcoded `SqlConnection`) plus `AdoNamedKeysetSource<T>`, `AdoSourceHealth.PingAsync`, and the
+  property-bag/member-selector helpers every relational provider needs — reused by every future
+  provider package (MySQL, Oracle) without duplicating the ADO.NET plumbing three more times.
+  `NeoReports.Sources.Sql`'s public `SqlKeysetSource<T>` itself stays untouched (already-published
+  since v1.2.0 — no need to risk a break for zero behavioral gain), but its internal glue
+  (`SqlConfigSourceProvider`'s property parsing, `SqlSourceHealthCheck`'s ping body, the
+  member-selector helper) now calls the same shared helpers instead of duplicating them, closing
+  the duplication Sonar's quality gate flagged. Along the way, `AddParameter` now sets an explicit `DbType.String`
+  on null-valued parameters — Postgres (unlike SQL Server) can't infer a parameter's type from a
+  null CLR value alone and rejects the query outright; harmless for every other provider. Note for
+  report authors: Postgres doesn't implicitly convert the cursor parameter to the key column's
+  type the way SQL Server does — the keyset query needs an explicit `@cursor::type` cast.
 - `NeoReports.Abstractions` — `SourceConfig` gains a trailing optional `Ref` (ADR D42): a report's
   source can now reference a registered source definition by name instead of inlining a
   connection. `Type` becomes nullable — required for an inline source, optional (taken from the

@@ -1,21 +1,21 @@
 using NeoReports.Abstractions;
 using NeoReports.Sources.Common;
+using Npgsql;
 
-namespace NeoReports.Sources.Sql;
+namespace NeoReports.Sources.Postgres;
 
 /// <summary>
-/// Config-driven SQL source for the dynamic path (<c>type: "sql"</c>). Reads its settings from the
-/// source <c>properties</c> (<c>connectionString</c>, <c>sql</c>, <c>key</c>, optional
-/// <c>pageSize</c>) and produces an <see cref="IBatchSource{T}"/> of positional
-/// <see cref="ReportRecord"/>s. Each row is materialized by reading the result-set column whose name
-/// matches each schema column (case-insensitive), reusing the v1 keyset paging engine.
+/// Config-driven PostgreSQL source for the dynamic path (<c>type: "postgres"</c>). Reads its
+/// settings from the source <c>properties</c> (<c>connectionString</c>, <c>sql</c>, <c>key</c>,
+/// optional <c>pageSize</c>) and produces an <see cref="IBatchSource{T}"/> of positional
+/// <see cref="ReportRecord"/>s.
 /// </summary>
-public sealed class SqlConfigSourceProvider : IConfigSourceProvider
+public sealed class PostgresConfigSourceProvider : IConfigSourceProvider
 {
-    private const string Label = "SQL";
+    private const string Label = "PostgreSQL";
 
     /// <inheritdoc />
-    public string Type => "sql";
+    public string Type => "postgres";
 
     /// <inheritdoc />
     public IBatchSource<ReportRecord> Create(SourceConfig source, ReportSchema schema, IServiceProvider services)
@@ -29,8 +29,8 @@ public sealed class SqlConfigSourceProvider : IConfigSourceProvider
         string key = AdoConfigProperties.RequireString(properties, "key", Label);
         int pageSize = AdoConfigProperties.OptionalInt(properties, "pageSize", Label) ?? 1000;
 
-        return new SqlKeysetSource<ReportRecord>(
-            connectionString, sql, key, pageSize, schema,
+        return new AdoKeysetSource<ReportRecord>(
+            () => new NpgsqlConnection(connectionString), sql, key, pageSize, schema,
             parameters: null,
             materialize: (reader, ordinals) => AdoConfigProperties.MaterializeReportRecord(reader, ordinals, schema));
     }

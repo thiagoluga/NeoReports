@@ -2,8 +2,8 @@
 
   <PropertyGroup>
     <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
-    <Description>SQL Server source with keyset pagination for NeoReports.</Description>
-    <PackageTags>reports;reporting;source;sql;sqlserver</PackageTags>
+    <Description>PostgreSQL source with keyset pagination for NeoReports.</Description>
+    <PackageTags>reports;reporting;source;postgres;postgresql;npgsql</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>
@@ -13,7 +13,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="Npgsql" />
   </ItemGroup>
 
 </Project>

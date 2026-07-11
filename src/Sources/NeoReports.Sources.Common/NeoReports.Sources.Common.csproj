@@ -2,18 +2,13 @@
 
   <PropertyGroup>
     <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
-    <Description>SQL Server source with keyset pagination for NeoReports.</Description>
-    <PackageTags>reports;reporting;source;sql;sqlserver</PackageTags>
+    <Description>Shared ADO.NET keyset-pagination engine reused by NeoReports' relational source packages.</Description>
+    <PackageTags>reports;reporting;source;ado;sql</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\NeoReports.Abstractions\NeoReports.Abstractions.csproj" />
     <ProjectReference Include="..\..\NeoReports.Core\NeoReports.Core.csproj" />
-    <ProjectReference Include="..\NeoReports.Sources.Common\NeoReports.Sources.Common.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Microsoft.Data.SqlClient" />
   </ItemGroup>
 
 </Project>
