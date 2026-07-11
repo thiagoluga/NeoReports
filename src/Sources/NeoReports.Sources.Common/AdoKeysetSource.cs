@@ -114,7 +114,7 @@ public sealed class AdoKeysetSource<T> : IBatchSource<T>
         }
 
         var hasMore = records.Count == _pageSize && lastKey is not null;
-        var nextCursor = hasMore && lastKey is not null ? EncodeCursor(lastKey) : null;
+        var nextCursor = hasMore ? EncodeCursor(lastKey!) : null;
         return new BatchResult<T>(records, nextCursor, hasMore);
     }
 
