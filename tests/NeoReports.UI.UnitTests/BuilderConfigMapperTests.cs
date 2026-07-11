@@ -208,6 +208,48 @@ public class BuilderConfigMapperTests
     }
 
     [Fact]
+    public void SourceRef_serializes_a_ref_field_and_omits_type_and_connection_string()
+    {
+        var state = FullState();
+        state.SourceRef = "sales-db";
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        JsonElement source = doc.RootElement.GetProperty("source");
+        source.GetProperty("ref").GetString().ShouldBe("sales-db");
+        source.TryGetProperty("type", out _).ShouldBeFalse();
+        source.GetProperty("properties").TryGetProperty("connectionString", out _).ShouldBeFalse();
+
+        // Query/key stay report-local overlay properties even for a ref-based source.
+        source.GetProperty("properties").GetProperty("sql").GetString().ShouldBe(state.SqlQuery);
+        source.GetProperty("properties").GetProperty("key").GetString().ShouldBe(state.KeyColumn);
+    }
+
+    [Fact]
+    public void Blank_SourceRef_omits_the_ref_field_and_uses_the_inline_type()
+    {
+        var state = FullState();
+        state.SourceRef = "";
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        JsonElement source = doc.RootElement.GetProperty("source");
+        source.TryGetProperty("ref", out _).ShouldBeFalse();
+        source.GetProperty("type").GetString().ShouldBe("sql");
+    }
+
+    [Fact]
+    public void SourceRef_is_trimmed()
+    {
+        var state = FullState();
+        state.SourceRef = "  sales-db  ";
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        doc.RootElement.GetProperty("source").GetProperty("ref").GetString().ShouldBe("sales-db");
+    }
+
+    [Fact]
     public void Report_name_passes_through_unchanged()
     {
         var state = FullState();

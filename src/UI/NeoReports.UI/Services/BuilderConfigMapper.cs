@@ -35,7 +35,9 @@ public static class BuilderConfigMapper
             ["sql"] = state.SqlQuery,
             ["key"] = state.KeyColumn,
         };
-        if (!string.IsNullOrWhiteSpace(state.ConnectionStringVariable))
+
+        bool usesRef = !string.IsNullOrWhiteSpace(state.SourceRef);
+        if (!usesRef && !string.IsNullOrWhiteSpace(state.ConnectionStringVariable))
             sourceProperties["connectionString"] = $"${{{state.ConnectionStringVariable}}}";
 
         var outputs = state.Formats
@@ -61,7 +63,9 @@ public static class BuilderConfigMapper
 
         var document = new ConfigDocument(
             Name: state.ReportName,
-            Source: new SourceDocument(state.SourceType, sourceProperties),
+            Source: usesRef
+                ? new SourceDocument(Type: null, sourceProperties, Ref: state.SourceRef.Trim())
+                : new SourceDocument(state.SourceType, sourceProperties, Ref: null),
             Columns: columns,
             Outputs: outputs,
             Destinations: destinations,
@@ -103,7 +107,7 @@ public static class BuilderConfigMapper
         ResilienceDocument Resilience,
         ScheduleDocument? Schedule);
 
-    private sealed record SourceDocument(string Type, IReadOnlyDictionary<string, object?> Properties);
+    private sealed record SourceDocument(string? Type, IReadOnlyDictionary<string, object?> Properties, string? Ref);
 
     private sealed record ColumnDocument(string Name, string Type);
 

@@ -38,6 +38,7 @@ builder.Services.AddNeoReportsInMemoryJobs();
 builder.Services.AddNeoReportsArtifacts();
 builder.Services.AddInMemoryJobEvents(); // ADR D38 — powers the job Timeline/Retries/rate cards
 builder.Services.AddInMemoryScheduling(); // ADR D41 — recurring runs; overrides + schedules die with the process
+builder.Services.AddInMemorySourceRegistry(); // ADR D42 — named sources; die with the process
 // --- end engine wiring ---
 
 var app = builder.Build();

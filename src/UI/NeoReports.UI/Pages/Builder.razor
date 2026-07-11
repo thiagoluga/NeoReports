@@ -23,19 +23,46 @@
     }
     else
     {
-        <Card Title="Engine source type" Sub="What POST /api/reports actually reads from">
-            <ChildContent>
-            <div class="field">
-                <span class="label-sm">Type</span>
-                <select class="input mono" style="width:100%;max-width:280px" @bind="Wizard.SourceType">
-                    @foreach (var type in _engineSources)
+        @* Registered sources (ADR D42) — reference one by name instead of an inline connection.
+           Only shown when the host has at least one; otherwise the inline picker below is the only path. *@
+        @if (_registeredSources.Count > 0)
+        {
+            <Card Title="Use a registered source" Sub="Reference a named source instead of an inline connection">
+                <ChildContent>
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+                    <SelectableCard Selected="@(string.IsNullOrEmpty(Wizard.SourceRef))" OnClick="@(() => Wizard.SourceRef = "")">
+                        <CatTile Kind="gray" Icon="plug-connected" />
+                        <div class="name">Enter connection manually</div>
+                        <div class="conn">Inline type + connection string variable, below</div>
+                    </SelectableCard>
+                    @foreach (var source in _registeredSources)
                     {
-                        <option value="@type">@type</option>
+                        <SelectableCard Selected="@(Wizard.SourceRef == source.Name)" OnClick="@(() => SelectSourceRef(source))">
+                            <div class="name">@source.Name <span class="type-pill">@source.Type</span></div>
+                            <div class="conn">@(string.IsNullOrWhiteSpace(source.Description) ? "No description" : source.Description)</div>
+                        </SelectableCard>
                     }
-                </select>
-            </div>
-            </ChildContent>
-        </Card>
+                </div>
+                </ChildContent>
+            </Card>
+        }
+
+        @if (string.IsNullOrEmpty(Wizard.SourceRef))
+        {
+            <Card Title="Engine source type" Sub="What POST /api/reports actually reads from">
+                <ChildContent>
+                <div class="field">
+                    <span class="label-sm">Type</span>
+                    <select class="input mono" style="width:100%;max-width:280px" @bind="Wizard.SourceType">
+                        @foreach (var type in _engineSources)
+                        {
+                            <option value="@type">@type</option>
+                        }
+                    </select>
+                </div>
+                </ChildContent>
+            </Card>
+        }
     }
 
     <div class="wizard-footer">
@@ -49,6 +76,7 @@
 @code {
     private readonly string[] Steps = { "Source", "Columns", "Format", "Destination", "Review" };
     private IReadOnlyList<string> _engineSources = Array.Empty<string>();
+    private IReadOnlyList<ApiSourceView> _registeredSources = Array.Empty<ApiSourceView>();
 
     protected override async Task OnInitializedAsync()
     {
@@ -60,6 +88,16 @@
         _engineSources = capabilities!.Sources;
         if (!_engineSources.Contains(Wizard.SourceType))
             Wizard.SourceType = _engineSources.Contains("sql") ? "sql" : _engineSources[0];
+
+        _registeredSources = await Api.TryListSourcesAsync() ?? Array.Empty<ApiSourceView>();
+        if (!string.IsNullOrEmpty(Wizard.SourceRef) && _registeredSources.All(s => s.Name != Wizard.SourceRef))
+            Wizard.SourceRef = "";
+    }
+
+    private void SelectSourceRef(ApiSourceView source)
+    {
+        Wizard.SourceRef = source.Name;
+        Wizard.SourceType = source.Type;
     }
 
     private void Continue() => Nav.NavigateTo("builder/configure");

@@ -81,11 +81,10 @@
     </Card>
 
     @* Recent files — real filenames/sizes from the completed jobs above, via
-       GET /api/jobs/{id}/artifacts (Epic D / D6, follow-up). The "Sources" card
-       (usage-frequency ranking) and the fake "Destinations" upload list were removed — no
-       source registry, usage tracking, or per-destination delivery confirmation exists in the
-       engine (D36); see docs/ui-removed-mock-content.md. *@
-    <div>
+       GET /api/jobs/{id}/artifacts (Epic D / D6, follow-up). The fake "Destinations" upload list
+       was removed — no per-destination delivery confirmation exists in the engine (D36); see
+       docs/ui-removed-mock-content.md. *@
+    <div class="grid-2">
         <Card Title="Recent files" Sub="From completed jobs">
             <Action><Button Variant="link" OnClick="@(() => Nav.NavigateTo("reports"))">View reports →</Button></Action>
             <ChildContent>
@@ -110,6 +109,27 @@
             }
             </ChildContent>
         </Card>
+
+        @* Most referenced sources — GET /api/sources (ADR D42), ranked by the real
+           ReferencedByCount. Hidden entirely on an empty registry (no source registered
+           anywhere yet) rather than showing an empty card — consistent with D9's sources
+           section rendering only when data exists. *@
+        @if (_mostReferencedSources.Count > 0)
+        {
+            <Card Title="Most referenced sources" Sub="By registered report count">
+                <Action><Button Variant="link" OnClick="@(() => Nav.NavigateTo("sources"))">View sources →</Button></Action>
+                <ChildContent>
+                @foreach (var s in _mostReferencedSources)
+                {
+                    <div class="list-row">
+                        <CatTile Kind="teal" Icon="database" Sm="true" />
+                        <div class="col" style="gap:0"><span class="name mono">@s.Name</span><span class="sub">@s.Type</span></div>
+                        <span class="right">@s.ReferencedByCount report(s)</span>
+                    </div>
+                }
+                </ChildContent>
+            </Card>
+        }
     </div>
 </div>
 
@@ -129,6 +149,7 @@
     private IReadOnlyList<DashboardJobRow> _recentJobs = Array.Empty<DashboardJobRow>();
     private DashboardMetrics _metrics = DashboardMetrics.Unavailable;
     private IReadOnlyList<DashboardFileRow> _recentFiles = Array.Empty<DashboardFileRow>();
+    private IReadOnlyList<ApiSourceView> _mostReferencedSources = Array.Empty<ApiSourceView>();
 
     private static string JobRoute(DashboardJobRow r) => r.Status switch
     {
@@ -180,6 +201,14 @@
         _metrics = ComputeMetrics(todaysJobs ?? recent);
 
         _recentFiles = await LoadRecentFilesAsync(recent);
+
+        IReadOnlyList<ApiSourceView>? sources = await Api.TryListSourcesAsync();
+        _mostReferencedSources = (sources ?? Array.Empty<ApiSourceView>())
+            .Where(s => s.ReferencedByCount > 0)
+            .OrderByDescending(s => s.ReferencedByCount)
+            .ThenBy(s => s.Name, StringComparer.Ordinal)
+            .Take(5)
+            .ToArray();
     }
 
     // GET /api/jobs/{id}/artifacts for a handful of the most recently completed jobs — the job

@@ -89,6 +89,65 @@ public sealed record ApiMemory(
     long WorkingSetBytes, long GcHeapSizeBytes, long GcCommittedBytes, DateTimeOffset MeasuredAt, int RunningJobs);
 
 /// <summary>
+/// A registered source (ADR D42), as returned by <c>GET /api/sources[/{name}]</c>. Never carries
+/// its property bag — write-only, since that's precisely where secrets live (D33).
+/// </summary>
+public sealed record ApiSourceView(
+    string Name,
+    string Type,
+    string? Description,
+    int ReferencedByCount,
+    string? LastHealthStatus,
+    string? LastHealthError,
+    double? LastHealthLatencyMs,
+    DateTimeOffset? LastCheckedAt);
+
+/// <summary>Outcome of a <c>POST</c>/<c>PUT /api/sources</c> call.</summary>
+public enum ApiSourceSaveOutcome
+{
+    /// <summary>201/200 — the source was created or replaced.</summary>
+    Saved,
+
+    /// <summary>409 — a source with that name already exists (create only).</summary>
+    NameTaken,
+
+    /// <summary>400 — the request was rejected (bad name, unknown provider type, name mismatch).</summary>
+    Invalid,
+
+    /// <summary>404 — no source exists under that name (replace only).</summary>
+    NotFound,
+
+    /// <summary>The engine wasn't reachable, or returned an unexpected status.</summary>
+    Unavailable,
+}
+
+/// <summary>Result of <see cref="INeoReportsApiClient.TryCreateSourceAsync"/>/<see cref="INeoReportsApiClient.TryReplaceSourceAsync"/>.</summary>
+public sealed record ApiSourceSaveResult(ApiSourceSaveOutcome Outcome, string? Error);
+
+/// <summary>Outcome of a <c>DELETE /api/sources/{name}</c> call.</summary>
+public enum ApiSourceDeleteOutcome
+{
+    /// <summary>204 — the source was removed.</summary>
+    Deleted,
+
+    /// <summary>409 — still referenced by at least one registered report.</summary>
+    Referenced,
+
+    /// <summary>404 — no source exists under that name.</summary>
+    NotFound,
+
+    /// <summary>The engine wasn't reachable, or returned an unexpected status.</summary>
+    Unavailable,
+}
+
+/// <summary>Result of <see cref="INeoReportsApiClient.TryDeleteSourceAsync"/>. <see cref="Error"/> carries the
+/// engine's own message (e.g. naming the referencing report count) for <see cref="ApiSourceDeleteOutcome.Referenced"/>.</summary>
+public sealed record ApiSourceDeleteResult(ApiSourceDeleteOutcome Outcome, string? Error);
+
+/// <summary>Result of a health check that just ran, as returned by <c>POST /api/sources/{name}/health</c>.</summary>
+public sealed record ApiSourceHealth(bool Healthy, string? Error, double LatencyMs, DateTimeOffset CheckedAt);
+
+/// <summary>
 /// Reads and drives NeoReports engine jobs/reports over its HTTP API (<c>MapNeoReports</c>). Every
 /// call is best-effort: on a network error, timeout, or unexpected shape it logs and returns a
 /// "not available" result so pages can fall back to sample data instead of failing.
@@ -191,6 +250,34 @@ public interface INeoReportsApiClient
     /// <param name="name">The report name.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task<bool> TryClearScheduleAsync(string name, CancellationToken cancellationToken = default);
+
+    /// <summary>Lists registered sources (ADR D42), or <c>null</c> if the engine API isn't reachable.
+    /// An empty (non-null) list means either no sources are registered or no registry is configured
+    /// on this host — indistinguishable over the wire, so callers show one honest empty state either way.</summary>
+    Task<IReadOnlyList<ApiSourceView>?> TryListSourcesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Reads one registered source's metadata (never its properties), or <c>null</c> if it doesn't exist or the API isn't reachable.</summary>
+    Task<ApiSourceView?> TryGetSourceAsync(string name, CancellationToken cancellationToken = default);
+
+    /// <summary>Registers a new source definition.</summary>
+    Task<ApiSourceSaveResult> TryCreateSourceAsync(
+        string name, string type, IReadOnlyDictionary<string, object?>? properties, string? description,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Fully replaces an existing source definition's type/properties/description.</summary>
+    Task<ApiSourceSaveResult> TryReplaceSourceAsync(
+        string name, string type, IReadOnlyDictionary<string, object?>? properties, string? description,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Removes a source definition. Blocked (409) while any registered report still references it.</summary>
+    Task<ApiSourceDeleteResult> TryDeleteSourceAsync(string name, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Runs an on-demand health check for a registered source (ADR D42), or <c>null</c> if the
+    /// engine API isn't reachable, the source doesn't exist (404), or no health check is
+    /// registered for its type (422).
+    /// </summary>
+    Task<ApiSourceHealth?> TryCheckSourceHealthAsync(string name, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Locates the NeoReports engine API the UI calls.</summary>
@@ -535,6 +622,128 @@ internal sealed class NeoReportsApiClient(
         }
     }
 
+    public async Task<IReadOnlyList<ApiSourceView>?> TryListSourcesAsync(CancellationToken cancellationToken = default)
+    {
+        var apiBase = ApiBase;
+        try
+        {
+            return await http.GetFromJsonAsync<IReadOnlyList<ApiSourceView>>(
+                new Uri(apiBase, "sources"), Json, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsTransient(ex))
+        {
+            logger.LogWarning(ex, "GET {ApiBase}sources unavailable.", Sanitize(apiBase.ToString()));
+            return null;
+        }
+    }
+
+    public async Task<ApiSourceView?> TryGetSourceAsync(string name, CancellationToken cancellationToken = default)
+    {
+        var apiBase = ApiBase;
+        try
+        {
+            using var response = await http.GetAsync(
+                new Uri(apiBase, $"sources/{Uri.EscapeDataString(name)}"), cancellationToken).ConfigureAwait(false);
+            if (response.StatusCode == HttpStatusCode.NotFound)
+                return null;
+            response.EnsureSuccessStatusCode();
+            return await response.Content.ReadFromJsonAsync<ApiSourceView>(Json, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsTransient(ex))
+        {
+            logger.LogWarning(ex, "GET {ApiBase}sources/{Name} unavailable.", Sanitize(apiBase.ToString()), Sanitize(name));
+            return null;
+        }
+    }
+
+    public Task<ApiSourceSaveResult> TryCreateSourceAsync(
+        string name, string type, IReadOnlyDictionary<string, object?>? properties, string? description,
+        CancellationToken cancellationToken = default) =>
+        SaveSourceAsync(HttpMethod.Post, "sources", name, type, properties, description, cancellationToken);
+
+    public Task<ApiSourceSaveResult> TryReplaceSourceAsync(
+        string name, string type, IReadOnlyDictionary<string, object?>? properties, string? description,
+        CancellationToken cancellationToken = default) =>
+        SaveSourceAsync(HttpMethod.Put, $"sources/{Uri.EscapeDataString(name)}", name, type, properties, description, cancellationToken);
+
+    private async Task<ApiSourceSaveResult> SaveSourceAsync(
+        HttpMethod method, string path, string name, string type, IReadOnlyDictionary<string, object?>? properties,
+        string? description, CancellationToken cancellationToken)
+    {
+        var apiBase = ApiBase;
+        try
+        {
+            using var request = new HttpRequestMessage(method, new Uri(apiBase, path))
+            {
+                Content = JsonContent.Create(new SourceRequestBody(name, type, properties, description), options: Json),
+            };
+            using var response = await http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+
+            if (response.StatusCode is HttpStatusCode.Created or HttpStatusCode.OK)
+                return new ApiSourceSaveResult(ApiSourceSaveOutcome.Saved, null);
+
+            string? error = await TryReadErrorAsync(response, cancellationToken).ConfigureAwait(false);
+            ApiSourceSaveOutcome outcome = response.StatusCode switch
+            {
+                HttpStatusCode.Conflict => ApiSourceSaveOutcome.NameTaken,
+                HttpStatusCode.BadRequest => ApiSourceSaveOutcome.Invalid,
+                HttpStatusCode.NotFound => ApiSourceSaveOutcome.NotFound,
+                _ => ApiSourceSaveOutcome.Unavailable,
+            };
+            return new ApiSourceSaveResult(outcome, error);
+        }
+        catch (Exception ex) when (IsTransient(ex))
+        {
+            logger.LogWarning(ex, "{Method} {ApiBase}{Path} failed.", method, Sanitize(apiBase.ToString()), Sanitize(path));
+            return new ApiSourceSaveResult(ApiSourceSaveOutcome.Unavailable, null);
+        }
+    }
+
+    public async Task<ApiSourceDeleteResult> TryDeleteSourceAsync(string name, CancellationToken cancellationToken = default)
+    {
+        var apiBase = ApiBase;
+        try
+        {
+            using var response = await http.DeleteAsync(
+                new Uri(apiBase, $"sources/{Uri.EscapeDataString(name)}"), cancellationToken).ConfigureAwait(false);
+
+            if (response.StatusCode == HttpStatusCode.NoContent)
+                return new ApiSourceDeleteResult(ApiSourceDeleteOutcome.Deleted, null);
+
+            string? error = await TryReadErrorAsync(response, cancellationToken).ConfigureAwait(false);
+            ApiSourceDeleteOutcome outcome = response.StatusCode switch
+            {
+                HttpStatusCode.Conflict => ApiSourceDeleteOutcome.Referenced,
+                HttpStatusCode.NotFound => ApiSourceDeleteOutcome.NotFound,
+                _ => ApiSourceDeleteOutcome.Unavailable,
+            };
+            return new ApiSourceDeleteResult(outcome, error);
+        }
+        catch (Exception ex) when (IsTransient(ex))
+        {
+            logger.LogWarning(ex, "DELETE {ApiBase}sources/{Name} failed.", Sanitize(apiBase.ToString()), Sanitize(name));
+            return new ApiSourceDeleteResult(ApiSourceDeleteOutcome.Unavailable, null);
+        }
+    }
+
+    public async Task<ApiSourceHealth?> TryCheckSourceHealthAsync(string name, CancellationToken cancellationToken = default)
+    {
+        var apiBase = ApiBase;
+        try
+        {
+            using var response = await http.PostAsync(
+                new Uri(apiBase, $"sources/{Uri.EscapeDataString(name)}/health"), content: null, cancellationToken).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+                return null;
+            return await response.Content.ReadFromJsonAsync<ApiSourceHealth>(Json, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsTransient(ex))
+        {
+            logger.LogWarning(ex, "POST {ApiBase}sources/{Name}/health failed.", Sanitize(apiBase.ToString()), Sanitize(name));
+            return null;
+        }
+    }
+
     private static async Task<string?> TryReadErrorAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         try
@@ -556,4 +765,7 @@ internal sealed class NeoReportsApiClient(
     private static string Sanitize(string value) => value.Replace('\r', '_').Replace('\n', '_');
 
     private sealed record RunRequestBody(object? Parameters);
+
+    private sealed record SourceRequestBody(
+        string Name, string Type, IReadOnlyDictionary<string, object?>? Properties, string? Description);
 }

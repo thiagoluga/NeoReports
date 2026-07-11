@@ -631,11 +631,14 @@ source `Properties` — this is where the actual secrets live.
   allowed, health 200/404/422, GET reflects cached health after a check, no `properties` key
   anywhere) + 3 new Core tests for `GetAsync` + 3 new `Sources.Sql` Testcontainers tests for
   `SqlSourceHealthCheck` (healthy/missing-property/unreachable).
-- [ ] **F4 — UI: sources screens on the registry.** Registered-sources grid returns (name/type/
+- [x] **F4 — UI: sources screens on the registry.** Registered-sources grid returns (name/type/
   description/ref-count/last-health + "Check now"); health strip aggregates only real results
   ("N never checked" is a state, not a gap); add/edit forms with write-only properties + `${VAR}`
   hint; Builder "use a registered source" picker (`source.ref`); Dashboard "Most referenced
-  sources" card. Source explorer stays out (own ADR still required).
+  sources" card. Source explorer stays out (own ADR still required). Verified live end-to-end in
+  the browser (samples/09-web-ui-live): create → health-check honest-422 → two-click delete;
+  Builder picker sets the ref and hides the inline connection field through review. 3 new
+  `BuilderConfigMapperTests` for the ref-serialization shape.
 - [ ] **F5 — Typed path: `Source.SqlNamed("sales-db", sql)`.** Per-run registry resolution wired
   at compile time (sources have no DI on the read path); populates `SourceRef`; E2E proof:
   swapping the definition's connection string between runs redirects the next run.
