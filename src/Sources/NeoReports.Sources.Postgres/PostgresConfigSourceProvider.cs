@@ -12,26 +12,10 @@ namespace NeoReports.Sources.Postgres;
 /// </summary>
 public sealed class PostgresConfigSourceProvider : IConfigSourceProvider
 {
-    private const string Label = "PostgreSQL";
-
     /// <inheritdoc />
     public string Type => "postgres";
 
     /// <inheritdoc />
-    public IBatchSource<ReportRecord> Create(SourceConfig source, ReportSchema schema, IServiceProvider services)
-    {
-        ArgumentNullException.ThrowIfNull(source);
-        ArgumentNullException.ThrowIfNull(schema);
-
-        IReadOnlyDictionary<string, object?>? properties = source.Properties;
-        string connectionString = AdoConfigProperties.RequireString(properties, "connectionString", Label);
-        string sql = AdoConfigProperties.RequireString(properties, "sql", Label);
-        string key = AdoConfigProperties.RequireString(properties, "key", Label);
-        int pageSize = AdoConfigProperties.OptionalInt(properties, "pageSize", Label) ?? 1000;
-
-        return new AdoKeysetSource<ReportRecord>(
-            () => new NpgsqlConnection(connectionString), sql, key, pageSize, schema,
-            parameters: null,
-            materialize: (reader, ordinals) => AdoConfigProperties.MaterializeReportRecord(reader, ordinals, schema));
-    }
+    public IBatchSource<ReportRecord> Create(SourceConfig source, ReportSchema schema, IServiceProvider services) =>
+        AdoConfigProperties.CreateAdoConfigSource(cs => new NpgsqlConnection(cs), source, schema, "PostgreSQL");
 }

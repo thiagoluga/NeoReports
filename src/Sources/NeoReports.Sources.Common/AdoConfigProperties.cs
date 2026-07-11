@@ -62,4 +62,33 @@ public static class AdoConfigProperties
 
         return new ReportRecord(schema, values);
     }
+
+    /// <summary>
+    /// The full body of a relational provider's <c>IConfigSourceProvider.Create</c> — reads
+    /// <c>connectionString</c>/<c>sql</c>/<c>key</c>/<c>pageSize</c> from
+    /// <paramref name="source"/>'s properties and produces an <see cref="AdoKeysetSource{T}"/> of
+    /// positional <see cref="ReportRecord"/>s, shared so every provider's own <c>Create</c> is a
+    /// one-line call.
+    /// </summary>
+    /// <param name="connectionFactory">Given the resolved connection string, creates a new, unopened connection.</param>
+    /// <param name="source">The dynamic-path source config being compiled.</param>
+    /// <param name="schema">The report's declared output schema.</param>
+    /// <param name="sourceTypeLabel">Human-readable provider name for error messages (e.g. "MySQL").</param>
+    public static IBatchSource<ReportRecord> CreateAdoConfigSource(
+        Func<string, DbConnection> connectionFactory, SourceConfig source, ReportSchema schema, string sourceTypeLabel)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(schema);
+
+        IReadOnlyDictionary<string, object?>? properties = source.Properties;
+        string connectionString = RequireString(properties, "connectionString", sourceTypeLabel);
+        string sql = RequireString(properties, "sql", sourceTypeLabel);
+        string key = RequireString(properties, "key", sourceTypeLabel);
+        int pageSize = OptionalInt(properties, "pageSize", sourceTypeLabel) ?? 1000;
+
+        return new AdoKeysetSource<ReportRecord>(
+            () => connectionFactory(connectionString), sql, key, pageSize, schema,
+            parameters: null,
+            materialize: (reader, ordinals) => MaterializeReportRecord(reader, ordinals, schema));
+    }
 }
