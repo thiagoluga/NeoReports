@@ -9,6 +9,12 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 ## [Unreleased]
 
 ### Added
+- `NeoReports.Sources.MySql` — a MySQL/MariaDB source (MySqlConnector), same shape as
+  `NeoReports.Sources.Postgres` on the shared `NeoReports.Sources.Common` ADO.NET engine (D43):
+  `Source.MySql(...)`/`Source.MySqlNamed(...)` (typed), `type: "mysql"` (dynamic path),
+  `MySqlSourceHealthCheck`, `AddMySqlConfigSource()`. Unlike Postgres, MySQL needed no
+  provider-specific fixes to the shared engine — `AdoKeysetSource`'s existing `DbType.String`
+  null-parameter handling and implicit string-to-numeric comparison both worked unmodified.
 - `NeoReports.Sources.Postgres` — a PostgreSQL source (Npgsql), matching `NeoReports.Sources.Sql`'s
   shape exactly: `Source.Postgres(...)`/`Source.PostgresNamed(...)` (typed), `type: "postgres"`
   (dynamic path), `PostgresSourceHealthCheck`, `AddPostgresConfigSource()` (D43). Built on a new

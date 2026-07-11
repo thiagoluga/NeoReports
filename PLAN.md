@@ -668,8 +668,15 @@ Requested directly by the maintainer (2026-07). Blueprint: `docs/epic-g-more-sou
   parameter-to-column type coercion, unlike SQL Server) — both fixed/documented, `AdoKeysetSource`
   now sets the DbType explicitly for every provider. 6 new Postgres integration tests (keyset
   paging, typed materialization, health check x3, named-source connection swap).
-- [ ] **G2 — MySQL/MariaDB.** `NeoReports.Sources.MySql` (MySqlConnector), same shape as G1 on the
-  shared engine. Testcontainers.MySql integration tests. **Depends on:** G1.
+- [x] **G2 — MySQL/MariaDB.** `NeoReports.Sources.MySql` (MySqlConnector), same shape as G1 on the
+  shared engine. Testcontainers.MySql integration tests. **Depends on:** G1. No shared-engine
+  changes needed — MySQL tolerated the existing null-parameter `DbType.String` handling and
+  implicit string/numeric comparison in the keyset query without modification, unlike Postgres.
+  One test-only wrinkle: the Testcontainers MySQL app user has no cross-database privileges, so
+  the named-source connection-swap test's second database is created/seeded via an explicit root
+  connection (root password set on the container, not exposed by the library). 9 new integration
+  tests (keyset paging, typed materialization, health check x3, named-source connection swap,
+  dynamic-config E2E + validation + DI registration).
 - [ ] **G3 — Oracle.** `NeoReports.Sources.Oracle` (Oracle.ManagedDataAccess.Core), same shape.
   Watch bind-variable syntax (`:name` vs `@name`). Testcontainers.Oracle integration tests.
   **Depends on:** G1.
