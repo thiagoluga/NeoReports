@@ -1,7 +1,7 @@
 using System.Data.Common;
-using Npgsql;
 using NeoReports.Abstractions;
 using NeoReports.Sources.Common;
+using Npgsql;
 
 namespace NeoReports.Sources.Postgres;
 

@@ -1,7 +1,7 @@
-using Npgsql;
 using Microsoft.Extensions.Logging.Abstractions;
 using NeoReports.Abstractions;
 using NeoReports.Core.SourceRegistry;
+using Npgsql;
 using Shouldly;
 using Xunit;
 

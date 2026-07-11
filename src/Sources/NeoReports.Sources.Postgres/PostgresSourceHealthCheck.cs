@@ -1,6 +1,6 @@
-using Npgsql;
 using NeoReports.Core.SourceRegistry;
 using NeoReports.Sources.Common;
+using Npgsql;
 
 namespace NeoReports.Sources.Postgres;
 
