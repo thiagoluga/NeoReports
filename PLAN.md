@@ -649,3 +649,36 @@ source `Properties` — this is where the actual secrets live.
   called per run — including a second run) + 2 new `Sources.Sql` Testcontainers tests (connection
   swap between two databases in the same container redirects the next run; unregistered name
   throws).
+
+## Epic G — More sources + report preview (D43/D44/D45)
+
+Requested directly by the maintainer (2026-07). Blueprint: `docs/epic-g-more-sources.md`.
+
+- [x] **G1 — `NeoReports.Sources.Common` + PostgreSQL.** Extract `SqlKeysetSource<T>`'s engine into
+  a provider-agnostic `AdoKeysetSource<T>` (`Func<DbConnection>` instead of hardcoded
+  `SqlConnection`) + shared `RecordMaterializer<T>`; `Sources.Sql` itself untouched (avoids
+  breaking its already-published public API). `NeoReports.Sources.Postgres` (Npgsql):
+  `Source.Postgres`/`.PostgresNamed`, `PostgresConfigSourceProvider`, `PostgresSourceHealthCheck`,
+  `AddPostgresConfigSource()`. Testcontainers.PostgreSql integration tests. Found along the way:
+  Postgres needs an explicit `DbType.String` on null parameters (Npgsql can't infer type from a
+  null CLR value) and an explicit `@cursor::type` cast in the keyset query (no implicit
+  parameter-to-column type coercion, unlike SQL Server) — both fixed/documented, `AdoKeysetSource`
+  now sets the DbType explicitly for every provider. 6 new Postgres integration tests (keyset
+  paging, typed materialization, health check x3, named-source connection swap).
+- [ ] **G2 — MySQL/MariaDB.** `NeoReports.Sources.MySql` (MySqlConnector), same shape as G1 on the
+  shared engine. Testcontainers.MySql integration tests. **Depends on:** G1.
+- [ ] **G3 — Oracle.** `NeoReports.Sources.Oracle` (Oracle.ManagedDataAccess.Core), same shape.
+  Watch bind-variable syntax (`:name` vs `@name`). Testcontainers.Oracle integration tests.
+  **Depends on:** G1.
+- [ ] **G4 — MongoDB.** `NeoReports.Sources.MongoDb` (MongoDB.Driver) — own pagination design (no
+  shared engine with G1-G3): keyset via `Find(key > cursor).Sort(key).Limit(pageSize)`. No filter
+  translation in this pass (D45) — preview runs unfiltered with an honest note. Testcontainers.MongoDb
+  integration tests.
+- [ ] **G5 — Core + AspNetCore: report preview endpoint.** `POST /reports/{name}/preview` (bounded
+  page, no output writing, no job record); `PreviewFilter`/`PreviewFilterOperator` (Core, not
+  Abstractions) + `IFilterTranslator` seam implemented once in `Sources.Common` for the SQL family;
+  `RunReportRequest` gains additive `Filters` (ephemeral, never persisted). Typed reports:
+  preview-only, 400 on non-empty filters. **Depends on:** G1 (`IFilterTranslator` lives in
+  `Sources.Common`).
+- [ ] **G6 — UI: report preview screen.** Paginated grid, filter editor (hidden/honest-note when
+  unsupported), "Run with these filters". **Depends on:** G5.
