@@ -33,21 +33,15 @@ public sealed class AdoKeysetSource<T> : IBatchSource<T>
     /// <param name="keyColumn">Name of the keyset column in the result set.</param>
     /// <param name="pageSize">Maximum rows per page.</param>
     /// <param name="schema">The output schema this source declares.</param>
-    /// <param name="parameters">Static parameters bound on every page (besides the cursor).</param>
-    /// <param name="parameterPrefix">Bind-variable prefix the provider expects (<c>@</c> for SQL
-    /// Server/Postgres/MySQL, <c>:</c> for Oracle).</param>
-    /// <param name="configureCommand">Optional hook run on each page's command right after
-    /// creation — e.g. Oracle needs <c>((OracleCommand)command).BindByName = true</c>.</param>
+    /// <param name="options">Provider-specific extension knobs; defaults suit SQL Server/Postgres/MySQL.</param>
     public AdoKeysetSource(
         Func<DbConnection> connectionFactory,
         string sql,
         string keyColumn,
         int pageSize,
         ReportSchema schema,
-        IReadOnlyDictionary<string, object?>? parameters = null,
-        string parameterPrefix = "@",
-        Action<DbCommand>? configureCommand = null)
-        : this(connectionFactory, sql, keyColumn, pageSize, schema, parameters, materialize: null, parameterPrefix, configureCommand)
+        AdoProviderOptions? options = null)
+        : this(connectionFactory, sql, keyColumn, pageSize, schema, materialize: null, options)
     {
     }
 
@@ -62,10 +56,8 @@ public sealed class AdoKeysetSource<T> : IBatchSource<T>
         string keyColumn,
         int pageSize,
         ReportSchema schema,
-        IReadOnlyDictionary<string, object?>? parameters,
         Func<DbDataReader, IReadOnlyDictionary<string, int>, T>? materialize,
-        string parameterPrefix = "@",
-        Action<DbCommand>? configureCommand = null)
+        AdoProviderOptions? options = null)
     {
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
         _sql = sql ?? throw new ArgumentNullException(nameof(sql));
@@ -73,10 +65,11 @@ public sealed class AdoKeysetSource<T> : IBatchSource<T>
         ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1);
         _pageSize = pageSize;
         Schema = schema ?? throw new ArgumentNullException(nameof(schema));
-        _parameters = parameters ?? new Dictionary<string, object?>();
+        options ??= new AdoProviderOptions();
+        _parameters = options.Parameters ?? new Dictionary<string, object?>();
         _materialize = materialize ?? new RecordMaterializer<T>().Materialize;
-        _parameterPrefix = string.IsNullOrEmpty(parameterPrefix) ? "@" : parameterPrefix;
-        _configureCommand = configureCommand;
+        _parameterPrefix = string.IsNullOrEmpty(options.ParameterPrefix) ? "@" : options.ParameterPrefix;
+        _configureCommand = options.ConfigureCommand;
     }
 
     /// <inheritdoc />
@@ -95,9 +88,9 @@ public sealed class AdoKeysetSource<T> : IBatchSource<T>
         _configureCommand?.Invoke(command);
 
         // Merge run-time parameters from the execution with the source's static parameters.
-        foreach (var kvp in _parameters)
+        foreach (KeyValuePair<string, object?> kvp in _parameters)
             AddParameter(command, kvp.Key, kvp.Value, _parameterPrefix);
-        foreach (var kvp in context.Execution.Parameters)
+        foreach (KeyValuePair<string, object?> kvp in context.Execution.Parameters)
             AddParameter(command, kvp.Key, kvp.Value, _parameterPrefix);
 
         AddParameter(command, "cursor", DecodeCursor(context.Cursor), _parameterPrefix);
@@ -115,7 +108,7 @@ public sealed class AdoKeysetSource<T> : IBatchSource<T>
             CommandBehavior.SingleResult, cancellationToken)
             .ConfigureAwait(false);
 
-        var ordinals = BuildOrdinalMap(reader);
+        Dictionary<string, int> ordinals = BuildOrdinalMap(reader);
         var keyOrdinal = ordinals.TryGetValue(_keyColumn, out var ko) ? ko : -1;
 
         while (read < _pageSize && await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -131,7 +124,7 @@ public sealed class AdoKeysetSource<T> : IBatchSource<T>
         return new BatchResult<T>(records, nextCursor, hasMore);
     }
 
-    private static IReadOnlyDictionary<string, int> BuildOrdinalMap(DbDataReader reader)
+    private static Dictionary<string, int> BuildOrdinalMap(DbDataReader reader)
     {
         var map = new Dictionary<string, int>(reader.FieldCount, StringComparer.OrdinalIgnoreCase);
         for (var i = 0; i < reader.FieldCount; i++)
@@ -153,7 +146,7 @@ public sealed class AdoKeysetSource<T> : IBatchSource<T>
                 return;
         }
 
-        var parameter = command.CreateParameter();
+        DbParameter parameter = command.CreateParameter();
         parameter.ParameterName = token;
         if (value is null)
         {
@@ -178,7 +171,7 @@ public sealed class AdoKeysetSource<T> : IBatchSource<T>
     /// <c>null</c>; the query is expected to treat a null cursor as "from the beginning"
     /// (e.g. <c>(@cursor IS NULL OR Id &gt; @cursor)</c>).
     /// </summary>
-    private static object? DecodeCursor(string? cursor) => cursor;
+    private static string? DecodeCursor(string? cursor) => cursor;
 
     private static string EncodeCursor(string lastKey) => lastKey;
 }

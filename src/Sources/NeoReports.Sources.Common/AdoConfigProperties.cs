@@ -93,8 +93,7 @@ public static class AdoConfigProperties
 
         return new AdoKeysetSource<ReportRecord>(
             () => connectionFactory(connectionString), sql, key, pageSize, schema,
-            parameters: null,
             materialize: (reader, ordinals) => MaterializeReportRecord(reader, ordinals, schema),
-            parameterPrefix, configureCommand);
+            new AdoProviderOptions { ParameterPrefix = parameterPrefix, ConfigureCommand = configureCommand });
     }
 }

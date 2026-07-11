@@ -33,13 +33,10 @@ public sealed class AdoNamedKeysetSource<T> : IBatchSource<T>, INamedSourceResol
     /// <param name="pageSize">Maximum rows per page.</param>
     /// <param name="schema">The output schema this source declares.</param>
     /// <param name="connectionFactory">Given the resolved connection string, creates a new, unopened connection.</param>
-    /// <param name="parameterPrefix">Bind-variable prefix the provider expects (<c>@</c> for SQL
-    /// Server/Postgres/MySQL, <c>:</c> for Oracle).</param>
-    /// <param name="configureCommand">Optional hook run on each page's command right after
-    /// creation — e.g. Oracle needs <c>((OracleCommand)command).BindByName = true</c>.</param>
+    /// <param name="options">Provider-specific extension knobs; defaults suit SQL Server/Postgres/MySQL.</param>
     public AdoNamedKeysetSource(
         string sourceName, string sql, string keyColumn, int pageSize, ReportSchema schema,
-        Func<string, DbConnection> connectionFactory, string parameterPrefix = "@", Action<DbCommand>? configureCommand = null)
+        Func<string, DbConnection> connectionFactory, AdoProviderOptions? options = null)
     {
         _sourceName = sourceName ?? throw new ArgumentNullException(nameof(sourceName));
         _sql = sql ?? throw new ArgumentNullException(nameof(sql));
@@ -48,8 +45,9 @@ public sealed class AdoNamedKeysetSource<T> : IBatchSource<T>, INamedSourceResol
         _pageSize = pageSize;
         Schema = schema ?? throw new ArgumentNullException(nameof(schema));
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
-        _parameterPrefix = parameterPrefix;
-        _configureCommand = configureCommand;
+        options ??= new AdoProviderOptions();
+        _parameterPrefix = options.ParameterPrefix;
+        _configureCommand = options.ConfigureCommand;
     }
 
     /// <inheritdoc />
@@ -80,7 +78,7 @@ public sealed class AdoNamedKeysetSource<T> : IBatchSource<T>, INamedSourceResol
         if (_services is null)
             throw new ConfigurationException($"Source '{_sourceName}' was read before the run's services were attached (internal pipeline error).");
 
-        var registry = _services.GetService(typeof(ISourceRegistry)) as ISourceRegistry
+        ISourceRegistry registry = _services.GetService(typeof(ISourceRegistry)) as ISourceRegistry
             ?? throw new ConfigurationException($"This named source requires a source registry, but none is configured on this host.");
 
         SourceDefinition? definition = await registry.ResolveAsync(_sourceName, cancellationToken).ConfigureAwait(false)
@@ -96,6 +94,6 @@ public sealed class AdoNamedKeysetSource<T> : IBatchSource<T>, INamedSourceResol
 
         return new AdoKeysetSource<T>(
             () => _connectionFactory(connectionString), _sql, _keyColumn, _pageSize, Schema,
-            parameters: null, parameterPrefix: _parameterPrefix, configureCommand: _configureCommand);
+            new AdoProviderOptions { ParameterPrefix = _parameterPrefix, ConfigureCommand = _configureCommand });
     }
 }

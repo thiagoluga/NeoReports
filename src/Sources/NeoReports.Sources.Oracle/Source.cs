@@ -65,7 +65,7 @@ public sealed class OracleSourceBuilder
 
         return new AdoKeysetSource<T>(
             () => new OracleConnection(_connectionString), _sql, keyColumn, pageSize, schema,
-            parameters: null, parameterPrefix: ":", configureCommand: Source.ConfigureCommand);
+            new AdoProviderOptions { ParameterPrefix = ":", ConfigureCommand = Source.ConfigureCommand });
     }
 }
 
@@ -97,6 +97,6 @@ public sealed class OracleNamedSourceBuilder
 
         return new AdoNamedKeysetSource<T>(
             _sourceName, _sql, keyColumn, pageSize, schema, cs => new OracleConnection(cs),
-            parameterPrefix: ":", configureCommand: Source.ConfigureCommand);
+            new AdoProviderOptions { ParameterPrefix = ":", ConfigureCommand = Source.ConfigureCommand });
     }
 }
