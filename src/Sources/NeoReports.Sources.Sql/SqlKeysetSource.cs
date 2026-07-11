@@ -53,7 +53,8 @@ public sealed class SqlKeysetSource<T> : IBatchSource<T>
     {
         ArgumentNullException.ThrowIfNull(connectionString);
         _inner = new AdoKeysetSource<T>(
-            () => new SqlConnection(connectionString), sql, keyColumn, pageSize, schema, parameters, materialize);
+            () => new SqlConnection(connectionString), sql, keyColumn, pageSize, schema, materialize,
+            new AdoProviderOptions { Parameters = parameters });
     }
 
     /// <inheritdoc />

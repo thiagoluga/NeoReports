@@ -677,9 +677,20 @@ Requested directly by the maintainer (2026-07). Blueprint: `docs/epic-g-more-sou
   connection (root password set on the container, not exposed by the library). 9 new integration
   tests (keyset paging, typed materialization, health check x3, named-source connection swap,
   dynamic-config E2E + validation + DI registration).
-- [ ] **G3 — Oracle.** `NeoReports.Sources.Oracle` (Oracle.ManagedDataAccess.Core), same shape.
-  Watch bind-variable syntax (`:name` vs `@name`). Testcontainers.Oracle integration tests.
-  **Depends on:** G1.
+- [x] **G3 — Oracle.** `NeoReports.Sources.Oracle` (Oracle.ManagedDataAccess.Core), same shape as
+  G1/G2 on the shared engine. **Depends on:** G1. Needed two new optional extension points on
+  `AdoKeysetSource`/`AdoNamedKeysetSource`/`AdoConfigProperties.CreateAdoConfigSource` (default
+  values keep every existing provider unaffected): a configurable `parameterPrefix` (`:name`, not
+  `@name`) and a `configureCommand` hook (ODP.NET requires `OracleCommand.BindByName = true`,
+  positional binding otherwise). Found along the way: Oracle rejects `DATE` as a bare column
+  identifier in DDL/DML (`ORA-00904`) — the test fixture's column is `SaleDate`, aliased back to
+  `"Date"` in SELECT; sqlplus doesn't fail a seed script on a bad statement by default, so the
+  Testcontainers seed script needs `WHENEVER SQLERROR EXIT SQL.SQLCODE` or failures pass silently.
+  9 new integration tests (keyset paging, typed materialization, health check x3, named-source
+  connection swap across two schemas — Oracle has no lightweight "create another database" —
+  dynamic-config E2E + validation + DI registration), sharing one Testcontainers Oracle container
+  across the whole assembly via a collection fixture (Oracle's container startup is much slower
+  than SQL Server/Postgres/MySQL, unlike those providers' per-class fixtures).
 - [ ] **G4 — MongoDB.** `NeoReports.Sources.MongoDb` (MongoDB.Driver) — own pagination design (no
   shared engine with G1-G3): keyset via `Find(key > cursor).Sort(key).Limit(pageSize)`. No filter
   translation in this pass (D45) — preview runs unfiltered with an honest note. Testcontainers.MongoDb
