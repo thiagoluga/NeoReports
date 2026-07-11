@@ -19,6 +19,17 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   properties overlay, `${VAR}` substituted last), so rotating a connection string or deleting the
   source takes effect on the very next run without recompiling anything. `CompiledReport.SourceRef`
   is now populated for ref-based reports. Inline sources (`Ref` omitted) are entirely unaffected.
+- `NeoReports.UI` — sources screens wired to the registry (ADR D42): the Sources page gains a
+  "Registered sources" section (grid, real health strip aggregating only actual results, add/edit
+  forms with write-only properties and a `${VAR}` hint, "Check now", two-click delete blocked
+  while any report references the source). Builder step 1 gains a "Use a registered source"
+  picker (`SelectableCard` grid from `GET /sources`) that sets `source.ref` and hides the inline
+  connection-string field through steps 2 and 5; `BuilderState` gains `SourceRef`,
+  `BuilderConfigMapper`'s `SourceDocument.Type` becomes nullable with a new `Ref`. Dashboard gains
+  a "Most referenced sources" card ranked by the real `ReferencedByCount`, hidden entirely on an
+  empty registry rather than shown empty (consistent with D9). No fabricated content anywhere —
+  the pre-D42 decorative source catalog and its "Most used" card (removed under D36) are now
+  legitimately real.
 - `NeoReports.AspNetCore` — source registry CRUD and on-demand health endpoints (ADR D42):
   `GET/POST/PUT/DELETE /sources[/{name}]` and `POST /sources/{name}/health`. `SourceView` (the
   read model) never carries `properties` — the D33 property-bag rule at its most literal, since

@@ -14,13 +14,21 @@
         </div>
     </div>
 
-    @* Recap — reflects the real engine source type/connection variable picked in step 1,
-       not the decorative source card (that catalog has no engine equivalent). *@
+    @* Recap — reflects the real engine source type/connection variable (or registered source
+       reference, ADR D42) picked in step 1, not the decorative source card. *@
     <div class="recap">
         <CatTile Kind="teal" Icon="database" />
         <div style="min-width:0">
-            <div class="r-name">@Wizard.SourceType <span class="muted" style="font-weight:400;font-size:12px">· engine source type</span></div>
-            <div class="r-meta">@(string.IsNullOrWhiteSpace(Wizard.ConnectionStringVariable) ? "no connection string variable set" : $"${{{Wizard.ConnectionStringVariable}}}")</div>
+            @if (!string.IsNullOrEmpty(Wizard.SourceRef))
+            {
+                <div class="r-name">@Wizard.SourceRef <span class="muted" style="font-weight:400;font-size:12px">· registered source (@Wizard.SourceType)</span></div>
+                <div class="r-meta">connection resolved from the registry on every run</div>
+            }
+            else
+            {
+                <div class="r-name">@Wizard.SourceType <span class="muted" style="font-weight:400;font-size:12px">· engine source type</span></div>
+                <div class="r-meta">@(string.IsNullOrWhiteSpace(Wizard.ConnectionStringVariable) ? "no connection string variable set" : $"${{{Wizard.ConnectionStringVariable}}}")</div>
+            }
         </div>
         <button class="btn link" @onclick="@(() => Nav.NavigateTo("builder"))">Change →</button>
     </div>
@@ -35,7 +43,14 @@
         <div class="col" style="gap:12px">
             <div class="grid-2">
                 <div class="field"><span class="label-sm">Report name</span><span class="input mono"><input class="mono" @bind="Wizard.ReportName" @bind:event="oninput" placeholder="monthly-sales" style="width:100%" /></span></div>
-                <div class="field"><span class="label-sm">Connection string variable</span><span class="input mono"><span class="mono muted" style="font-size:11px">${</span><input class="mono" @bind="Wizard.ConnectionStringVariable" @bind:event="oninput" placeholder="SALES_DB" style="flex:1" /><span class="mono muted" style="font-size:11px">}</span></span></div>
+                @if (string.IsNullOrEmpty(Wizard.SourceRef))
+                {
+                    <div class="field"><span class="label-sm">Connection string variable</span><span class="input mono"><span class="mono muted" style="font-size:11px">${</span><input class="mono" @bind="Wizard.ConnectionStringVariable" @bind:event="oninput" placeholder="SALES_DB" style="flex:1" /><span class="mono muted" style="font-size:11px">}</span></span></div>
+                }
+                else
+                {
+                    <div class="field"><span class="label-sm">Connection</span><span class="muted" style="font-size:12px;align-self:center">resolved from <span class="mono">@Wizard.SourceRef</span> on every run</span></div>
+                }
             </div>
             <div class="field">
                 <span class="label-sm">SQL query</span>

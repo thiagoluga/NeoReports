@@ -11,12 +11,22 @@ public sealed class BuilderState
     /// <summary>Unique report name; also the URL identifier once saved.</summary>
     public string ReportName { get; set; } = "";
 
-    /// <summary>Source type id (e.g. "sql"), matched against a capability the host has registered.</summary>
+    /// <summary>Source type id (e.g. "sql"), matched against a capability the host has registered.
+    /// Ignored (and not sent) when <see cref="SourceRef"/> is set — the type then comes from the
+    /// registered source definition (ADR D42).</summary>
     public string SourceType { get; set; } = "sql";
 
     /// <summary>
+    /// Name of a registered source (ADR D42) to reference via <c>source.ref</c> instead of an
+    /// inline connection; empty means the inline path (<see cref="SourceType"/> +
+    /// <see cref="ConnectionStringVariable"/>). Query/key/page-size stay report-local either way.
+    /// </summary>
+    public string SourceRef { get; set; } = "";
+
+    /// <summary>
     /// Name of an environment variable holding the connection string — never the raw secret
-    /// itself. Serialized as <c>${NAME}</c>, resolved by the engine at compile time.
+    /// itself. Serialized as <c>${NAME}</c>, resolved by the engine at compile time. Not used
+    /// when <see cref="SourceRef"/> is set.
     /// </summary>
     public string ConnectionStringVariable { get; set; } = "";
 
@@ -92,6 +102,7 @@ public sealed class BuilderState
 
         ReportName = "";
         SourceType = "sql";
+        SourceRef = "";
         ConnectionStringVariable = "";
         SqlQuery = "";
         KeyColumn = "Id";

@@ -10,10 +10,7 @@
         </div>
     </div>
 
-    @* GET /api/capabilities (Epic D / D9) — the engine only reports registered provider *types*
-       (e.g. "sql"), not named source instances with health/latency; there's no source registry
-       to show beyond that. A decorative catalog of fake named sources previously stood in for
-       one — removed (D36); see docs/ui-removed-mock-content.md. *@
+    @* GET /api/capabilities (Epic D / D9) — the engine's registered provider *types* (e.g. "sql"). *@
     @if (_engineSourceTypes.Count > 0)
     {
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
@@ -37,14 +34,324 @@
             <ChildContent>The engine has no <span class="mono">IConfigSourceProvider</span> registered, or it's unreachable.</ChildContent>
         </EmptyState>
     }
+
+    @* Registered sources — GET/POST/PUT/DELETE /api/sources, POST /api/sources/{name}/health (ADR D42).
+       Named, persisted source instances distinct from the provider types above; properties are
+       write-only and never round-tripped (D33). *@
+    <Card Title="Registered sources" Sub="Named source instances, referenced by name from reports">
+        <Action>
+            @if (_sources is { Count: > 0 })
+            {
+                <Button Variant="outline" Size="sm" Icon="plus" OnClick="OpenAddForm">Add source</Button>
+            }
+        </Action>
+        <ChildContent>
+        @if (_sources is null)
+        {
+            <span class="muted" style="font-size:12px">Engine unreachable.</span>
+        }
+        else
+        {
+            @if (_sources.Count > 0)
+            {
+                <div class="mono muted" style="font-size:11px;margin-bottom:10px">
+                    @HealthyCount healthy · @UnhealthyCount unhealthy · @NeverCheckedCount never checked
+                </div>
+            }
+
+            @if (_formOpen)
+            {
+                <div class="src-card" style="margin-bottom:12px">
+                    <div class="sc-head">
+                        <CatTile Kind="teal" Icon="@(_editing ? "pencil" : "plus")" />
+                        <div class="info">
+                            <div class="title-row"><span class="title">@(_editing ? $"Edit {_formName}" : "Add a source")</span></div>
+                            <span class="conn">@(_editing ? "Properties are write-only; re-enter them to change the source." : "Registers a new named source (ADR D42)")</span>
+                        </div>
+                    </div>
+                    <div class="sc-body" style="grid-template-columns:1fr">
+                        <div class="grid-2">
+                            <div class="field">
+                                <span class="label-sm">Name</span>
+                                <span class="input mono">
+                                    <input class="mono" @bind="_formName" @bind:event="oninput" disabled="@_editing" placeholder="sales-db" style="width:100%" />
+                                </span>
+                            </div>
+                            <div class="field">
+                                <span class="label-sm">Type</span>
+                                <select class="input mono" style="width:100%" @bind="_formType">
+                                    @foreach (var type in _engineSourceTypes)
+                                    {
+                                        <option value="@type">@type</option>
+                                    }
+                                </select>
+                            </div>
+                        </div>
+                        <div class="field" style="margin-top:8px">
+                            <span class="label-sm">Description</span>
+                            <span class="input"><input @bind="_formDescription" @bind:event="oninput" placeholder="Optional" style="width:100%" /></span>
+                        </div>
+                        <div class="field" style="margin-top:8px">
+                            <span class="label-sm">Properties <span class="muted" style="font-weight:400">— use <span class="mono">${VAR}</span> for secrets</span></span>
+                            @foreach (var row in _formProperties)
+                            {
+                                <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+                                    <span class="input mono" style="flex:1"><input class="mono" @bind="row.Key" @bind:event="oninput" placeholder="connectionString" /></span>
+                                    <span class="input mono" style="flex:2"><input class="mono" @bind="row.Value" @bind:event="oninput" placeholder="${SALES_DB}" /></span>
+                                    <button class="btn icon-only outline" @onclick="@(() => _formProperties.Remove(row))"><i class="ti ti-trash"></i></button>
+                                </div>
+                            }
+                            <div style="margin-top:6px">
+                                <Button Variant="outline" Size="sm" Icon="plus" OnClick="@(() => _formProperties.Add(new PropertyRow()))">Add property</Button>
+                            </div>
+                        </div>
+                        @if (_formError is not null)
+                        {
+                            <div style="margin-top:10px">
+                                <Banner Variant="danger" Icon="alert-triangle"><span style="font-size:12px">@_formError</span></Banner>
+                            </div>
+                        }
+                        <div style="display:flex;gap:8px;margin-top:12px">
+                            <Button Variant="primary" Loading="_saving" OnClick="SaveFormAsync">@(_editing ? "Save changes" : "Register source")</Button>
+                            <Button Variant="outline" OnClick="CloseForm">Cancel</Button>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            @if (_sources.Count == 0)
+            {
+                <EmptyState Icon="database-off" Title="No sources registered yet">
+                    <ChildContent>Register a named source so reports can reference it by name instead of an inline connection.</ChildContent>
+                    <Action><Button Variant="primary" Icon="plus" OnClick="OpenAddForm">Add source</Button></Action>
+                </EmptyState>
+            }
+            else
+            {
+                <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px">
+                    @foreach (var source in _sources)
+                    {
+                        <div class="src-card">
+                            <div class="sc-head">
+                                <CatTile Kind="teal" Icon="database" />
+                                <div class="info">
+                                    <div class="title-row">
+                                        <span class="title mono">@source.Name</span>
+                                        <Chip Kind="token">@source.Type</Chip>
+                                    </div>
+                                    <span class="conn">@(string.IsNullOrWhiteSpace(source.Description) ? "No description" : source.Description)</span>
+                                </div>
+                                <div class="actions">
+                                    <Button Variant="outline" Size="sm" Loading="_checkingHealth.Contains(source.Name)" OnClick="@(() => CheckHealthAsync(source.Name))">Check now</Button>
+                                    <button class="btn icon-only outline" @onclick="@(() => OpenEditForm(source))"><i class="ti ti-pencil"></i></button>
+                                </div>
+                            </div>
+                            <div class="sc-body">
+                                <div class="cell">
+                                    <span class="k">Referenced by</span>
+                                    <span class="v">@source.ReferencedByCount config report(s)</span>
+                                </div>
+                                <div class="cell">
+                                    <span class="k">Health</span>
+                                    <span class="v">
+                                        @if (source.LastHealthStatus == "healthy")
+                                        {
+                                            <Badge Variant="success" Icon="check">Healthy</Badge>
+                                        }
+                                        else if (source.LastHealthStatus == "unhealthy")
+                                        {
+                                            <Badge Variant="danger" Icon="alert-triangle">Unhealthy</Badge>
+                                        }
+                                        else
+                                        {
+                                            <Badge Variant="gray" Icon="help-circle">Never checked</Badge>
+                                        }
+                                    </span>
+                                </div>
+                                <div class="cell">
+                                    <span class="k">Latency</span>
+                                    <span class="v">@(source.LastHealthLatencyMs is { } ms ? $"{ms:0}ms" : "—")</span>
+                                </div>
+                                <div class="cell">
+                                    <span class="k">Checked</span>
+                                    <span class="v">@(source.LastCheckedAt is { } at ? at.ToLocalTime().ToString("MMM d · HH:mm") : "never")</span>
+                                </div>
+                            </div>
+                            @if (source.LastHealthStatus == "unhealthy" && source.LastHealthError is not null)
+                            {
+                                <div style="padding:0 14px 10px"><span class="muted" style="font-size:11px">@source.LastHealthError</span></div>
+                            }
+                            @if (_healthErrors.TryGetValue(source.Name, out var healthError))
+                            {
+                                <div style="padding:0 14px 10px">
+                                    <Banner Variant="danger" Icon="alert-triangle"><span style="font-size:12px">@healthError</span></Banner>
+                                </div>
+                            }
+                            @if (_deleteErrors.TryGetValue(source.Name, out var deleteError))
+                            {
+                                <div style="padding:0 14px 10px">
+                                    <Banner Variant="danger" Icon="alert-triangle"><span style="font-size:12px">@deleteError</span></Banner>
+                                </div>
+                            }
+                            <div style="padding:0 14px 12px">
+                                <Button Variant="danger" Size="sm" Loading="_deleting.Contains(source.Name)" OnClick="@(() => DeleteAsync(source.Name))">
+                                    @(_confirmingDelete.Contains(source.Name) ? "Confirm delete" : "Delete")
+                                </Button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        }
+        </ChildContent>
+    </Card>
 </div>
 
 @code {
+    private sealed class PropertyRow
+    {
+        public string Key { get; set; } = "";
+        public string Value { get; set; } = "";
+    }
+
     private IReadOnlyList<string> _engineSourceTypes = Array.Empty<string>();
+    private IReadOnlyList<ApiSourceView>? _sources;
+
+    private bool _formOpen;
+    private bool _editing;
+    private string _formName = "";
+    private string _formType = "";
+    private string _formDescription = "";
+    private List<PropertyRow> _formProperties = new();
+    private string? _formError;
+    private bool _saving;
+
+    private readonly HashSet<string> _checkingHealth = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _confirmingDelete = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _deleting = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _deleteErrors = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _healthErrors = new(StringComparer.Ordinal);
+
+    private int HealthyCount => _sources?.Count(s => s.LastHealthStatus == "healthy") ?? 0;
+    private int UnhealthyCount => _sources?.Count(s => s.LastHealthStatus == "unhealthy") ?? 0;
+    private int NeverCheckedCount => _sources?.Count(s => s.LastHealthStatus is null) ?? 0;
 
     protected override async Task OnInitializedAsync()
     {
         ApiCapabilities? capabilities = await Api.TryGetCapabilitiesAsync();
         _engineSourceTypes = capabilities?.Sources ?? Array.Empty<string>();
+        await ReloadSourcesAsync();
+    }
+
+    private async Task ReloadSourcesAsync() => _sources = await Api.TryListSourcesAsync();
+
+    private void OpenAddForm()
+    {
+        _formOpen = true;
+        _editing = false;
+        _formName = "";
+        _formType = _engineSourceTypes.Contains("sql") ? "sql" : _engineSourceTypes.FirstOrDefault() ?? "";
+        _formDescription = "";
+        _formProperties = new List<PropertyRow> { new() };
+        _formError = null;
+    }
+
+    private void OpenEditForm(ApiSourceView source)
+    {
+        _formOpen = true;
+        _editing = true;
+        _formName = source.Name;
+        _formType = source.Type;
+        _formDescription = source.Description ?? "";
+        _formProperties = new List<PropertyRow> { new() };
+        _formError = null;
+    }
+
+    private void CloseForm() => _formOpen = false;
+
+    private async Task SaveFormAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_formName) || string.IsNullOrWhiteSpace(_formType))
+        {
+            _formError = "Name and type are required.";
+            return;
+        }
+
+        Dictionary<string, object?>? properties = _formProperties
+            .Where(r => !string.IsNullOrWhiteSpace(r.Key))
+            .ToDictionary(r => r.Key.Trim(), object? (r) => r.Value, StringComparer.Ordinal);
+        if (properties is { Count: 0 })
+            properties = null;
+
+        _saving = true;
+        _formError = null;
+        try
+        {
+            ApiSourceSaveResult result = _editing
+                ? await Api.TryReplaceSourceAsync(_formName.Trim(), _formType, properties, NullIfBlank(_formDescription))
+                : await Api.TryCreateSourceAsync(_formName.Trim(), _formType, properties, NullIfBlank(_formDescription));
+
+            if (result.Outcome == ApiSourceSaveOutcome.Saved)
+            {
+                _formOpen = false;
+                await ReloadSourcesAsync();
+            }
+            else
+            {
+                _formError = result.Error ?? result.Outcome switch
+                {
+                    ApiSourceSaveOutcome.NameTaken => "A source with that name already exists.",
+                    ApiSourceSaveOutcome.NotFound => "That source no longer exists.",
+                    ApiSourceSaveOutcome.Invalid => "The engine rejected the request.",
+                    _ => "Could not reach the engine.",
+                };
+            }
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private static string? NullIfBlank(string value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private async Task CheckHealthAsync(string name)
+    {
+        _checkingHealth.Add(name);
+        _healthErrors.Remove(name);
+        try
+        {
+            ApiSourceHealth? result = await Api.TryCheckSourceHealthAsync(name);
+            if (result is null)
+                _healthErrors[name] = "Could not run the health check (unknown source, unsupported type, or the engine is unreachable).";
+            else
+                await ReloadSourcesAsync();
+        }
+        finally
+        {
+            _checkingHealth.Remove(name);
+        }
+    }
+
+    private async Task DeleteAsync(string name)
+    {
+        if (_confirmingDelete.Add(name))
+            return;
+
+        _confirmingDelete.Remove(name);
+        _deleting.Add(name);
+        _deleteErrors.Remove(name);
+        try
+        {
+            ApiSourceDeleteResult result = await Api.TryDeleteSourceAsync(name);
+            if (result.Outcome == ApiSourceDeleteOutcome.Deleted)
+                await ReloadSourcesAsync();
+            else
+                _deleteErrors[name] = result.Error ?? "The engine rejected the delete request.";
+        }
+        finally
+        {
+            _deleting.Remove(name);
+        }
     }
 }
