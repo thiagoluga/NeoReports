@@ -7,13 +7,13 @@ namespace NeoReports.Sources.Common;
 
 /// <summary>
 /// Provider-agnostic batch source using keyset pagination over any ADO.NET provider (D43): the
-/// query must expose a <c>@cursor</c> parameter for the key column and order by that key; each
-/// page reads up to <c>pageSize</c> rows where the key is greater than the previous page's last
-/// key. A fresh connection is opened and closed per page; the cursor is the opaque, serializable
-/// last-key value (<c>string?</c>). Reused by every relational provider package (Postgres, MySQL,
-/// Oracle) — <c>NeoReports.Sources.Sql</c> (SQL Server) predates this extraction and is left on
-/// its own, functionally identical, implementation to avoid an unnecessary break of its
-/// already-published public API (D43).
+/// query must expose a cursor parameter for the key column (named per <see cref="_parameterPrefix"/>,
+/// <c>@cursor</c> by default) and order by that key; each page reads up to <c>pageSize</c> rows
+/// where the key is greater than the previous page's last key. A fresh connection is opened and
+/// closed per page; the cursor is the opaque, serializable last-key value (<c>string?</c>).
+/// Reused by every relational provider package (Postgres, MySQL, Oracle) — <c>NeoReports.Sources.Sql</c>
+/// (SQL Server) predates this extraction and is left on its own, functionally identical,
+/// implementation to avoid an unnecessary break of its already-published public API (D43).
 /// </summary>
 /// <typeparam name="T">The row type produced.</typeparam>
 public sealed class AdoKeysetSource<T> : IBatchSource<T>
@@ -24,22 +24,30 @@ public sealed class AdoKeysetSource<T> : IBatchSource<T>
     private readonly int _pageSize;
     private readonly IReadOnlyDictionary<string, object?> _parameters;
     private readonly Func<DbDataReader, IReadOnlyDictionary<string, int>, T> _materialize;
+    private readonly string _parameterPrefix;
+    private readonly Action<DbCommand>? _configureCommand;
 
     /// <summary>Creates the source.</summary>
     /// <param name="connectionFactory">Creates a new, unopened connection for each page.</param>
-    /// <param name="sql">Query with a <c>@cursor</c> parameter and an ORDER BY on the key column.</param>
+    /// <param name="sql">Query with a cursor parameter and an ORDER BY on the key column.</param>
     /// <param name="keyColumn">Name of the keyset column in the result set.</param>
     /// <param name="pageSize">Maximum rows per page.</param>
     /// <param name="schema">The output schema this source declares.</param>
-    /// <param name="parameters">Static parameters bound on every page (besides <c>@cursor</c>).</param>
+    /// <param name="parameters">Static parameters bound on every page (besides the cursor).</param>
+    /// <param name="parameterPrefix">Bind-variable prefix the provider expects (<c>@</c> for SQL
+    /// Server/Postgres/MySQL, <c>:</c> for Oracle).</param>
+    /// <param name="configureCommand">Optional hook run on each page's command right after
+    /// creation — e.g. Oracle needs <c>((OracleCommand)command).BindByName = true</c>.</param>
     public AdoKeysetSource(
         Func<DbConnection> connectionFactory,
         string sql,
         string keyColumn,
         int pageSize,
         ReportSchema schema,
-        IReadOnlyDictionary<string, object?>? parameters = null)
-        : this(connectionFactory, sql, keyColumn, pageSize, schema, parameters, materialize: null)
+        IReadOnlyDictionary<string, object?>? parameters = null,
+        string parameterPrefix = "@",
+        Action<DbCommand>? configureCommand = null)
+        : this(connectionFactory, sql, keyColumn, pageSize, schema, parameters, materialize: null, parameterPrefix, configureCommand)
     {
     }
 
@@ -55,7 +63,9 @@ public sealed class AdoKeysetSource<T> : IBatchSource<T>
         int pageSize,
         ReportSchema schema,
         IReadOnlyDictionary<string, object?>? parameters,
-        Func<DbDataReader, IReadOnlyDictionary<string, int>, T>? materialize)
+        Func<DbDataReader, IReadOnlyDictionary<string, int>, T>? materialize,
+        string parameterPrefix = "@",
+        Action<DbCommand>? configureCommand = null)
     {
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
         _sql = sql ?? throw new ArgumentNullException(nameof(sql));
@@ -65,6 +75,8 @@ public sealed class AdoKeysetSource<T> : IBatchSource<T>
         Schema = schema ?? throw new ArgumentNullException(nameof(schema));
         _parameters = parameters ?? new Dictionary<string, object?>();
         _materialize = materialize ?? new RecordMaterializer<T>().Materialize;
+        _parameterPrefix = string.IsNullOrEmpty(parameterPrefix) ? "@" : parameterPrefix;
+        _configureCommand = configureCommand;
     }
 
     /// <inheritdoc />
@@ -80,17 +92,18 @@ public sealed class AdoKeysetSource<T> : IBatchSource<T>
 
         await using DbCommand command = connection.CreateCommand();
         command.CommandText = _sql;
+        _configureCommand?.Invoke(command);
 
         // Merge run-time parameters from the execution with the source's static parameters.
         foreach (var kvp in _parameters)
-            AddParameter(command, kvp.Key, kvp.Value);
+            AddParameter(command, kvp.Key, kvp.Value, _parameterPrefix);
         foreach (var kvp in context.Execution.Parameters)
-            AddParameter(command, kvp.Key, kvp.Value);
+            AddParameter(command, kvp.Key, kvp.Value, _parameterPrefix);
 
-        AddParameter(command, "cursor", DecodeCursor(context.Cursor));
+        AddParameter(command, "cursor", DecodeCursor(context.Cursor), _parameterPrefix);
 
-        // Cap rows per page without requiring TOP/OFFSET/LIMIT in the user's SQL.
-        AddParameter(command, "pageSize", _pageSize);
+        // Cap rows per page without requiring TOP/OFFSET/LIMIT/ROWNUM in the user's SQL.
+        AddParameter(command, "pageSize", _pageSize, _parameterPrefix);
 
         var records = new List<T>(_pageSize);
         string? lastKey = null;
@@ -126,10 +139,10 @@ public sealed class AdoKeysetSource<T> : IBatchSource<T>
         return map;
     }
 
-    private static void AddParameter(DbCommand command, string name, object? value)
+    private static void AddParameter(DbCommand command, string name, object? value, string parameterPrefix)
     {
         // Skip if the query doesn't reference this parameter, to avoid "too many parameters".
-        var token = "@" + name;
+        var token = parameterPrefix + name;
         if (command.CommandText.IndexOf(token, StringComparison.OrdinalIgnoreCase) < 0)
             return;
 
@@ -162,7 +175,7 @@ public sealed class AdoKeysetSource<T> : IBatchSource<T>
 
     /// <summary>
     /// The cursor is the opaque string form of the last key value. On the first page it is
-    /// <c>null</c>; the query is expected to treat a null <c>@cursor</c> as "from the beginning"
+    /// <c>null</c>; the query is expected to treat a null cursor as "from the beginning"
     /// (e.g. <c>(@cursor IS NULL OR Id &gt; @cursor)</c>).
     /// </summary>
     private static object? DecodeCursor(string? cursor) => cursor;

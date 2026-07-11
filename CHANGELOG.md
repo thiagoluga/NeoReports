@@ -9,6 +9,18 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 ## [Unreleased]
 
 ### Added
+- `NeoReports.Sources.Oracle` — an Oracle source (Oracle.ManagedDataAccess.Core), same shape as
+  `NeoReports.Sources.Postgres`/`NeoReports.Sources.MySql` on the shared `NeoReports.Sources.Common`
+  ADO.NET engine (D43): `Source.Oracle(...)`/`Source.OracleNamed(...)` (typed), `type: "oracle"`
+  (dynamic path), `OracleSourceHealthCheck` (pings with `SELECT 1 FROM DUAL` — Oracle has no
+  FROM-less `SELECT`), `AddOracleConfigSource()`. Oracle's ODP.NET needed two new extension points
+  on `AdoKeysetSource`/`AdoNamedKeysetSource`/`AdoConfigProperties.CreateAdoConfigSource` (both
+  optional, default-backward-compatible for every existing provider): a configurable
+  `parameterPrefix` (Oracle bind variables use `:name`, not `@name`) and an optional
+  `configureCommand` hook (ODP.NET binds parameters positionally by default — every Oracle command
+  sets `OracleCommand.BindByName = true`). Note for report authors: Oracle rejects a handful of
+  type-name keywords (notably `DATE`) as a bare column identifier in DDL/DML — alias such columns
+  in the SELECT list, e.g. `SELECT ..., SaleDate AS "Date" FROM ...`.
 - `NeoReports.Sources.MySql` — a MySQL/MariaDB source (MySqlConnector), same shape as
   `NeoReports.Sources.Postgres` on the shared `NeoReports.Sources.Common` ADO.NET engine (D43):
   `Source.MySql(...)`/`Source.MySqlNamed(...)` (typed), `type: "mysql"` (dynamic path),

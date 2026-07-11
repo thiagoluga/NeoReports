@@ -21,19 +21,25 @@ public sealed class AdoNamedKeysetSource<T> : IBatchSource<T>, INamedSourceResol
     private readonly string _keyColumn;
     private readonly int _pageSize;
     private readonly Func<string, DbConnection> _connectionFactory;
+    private readonly string _parameterPrefix;
+    private readonly Action<DbCommand>? _configureCommand;
     private IServiceProvider? _services;
     private AdoKeysetSource<T>? _resolved;
 
     /// <summary>Creates the source.</summary>
     /// <param name="sourceName">Name of a source registered via <see cref="ISourceRegistry"/>.</param>
-    /// <param name="sql">Query with a <c>@cursor</c> parameter and an ORDER BY on the key column.</param>
+    /// <param name="sql">Query with a cursor parameter and an ORDER BY on the key column.</param>
     /// <param name="keyColumn">Name of the keyset column in the result set.</param>
     /// <param name="pageSize">Maximum rows per page.</param>
     /// <param name="schema">The output schema this source declares.</param>
     /// <param name="connectionFactory">Given the resolved connection string, creates a new, unopened connection.</param>
+    /// <param name="parameterPrefix">Bind-variable prefix the provider expects (<c>@</c> for SQL
+    /// Server/Postgres/MySQL, <c>:</c> for Oracle).</param>
+    /// <param name="configureCommand">Optional hook run on each page's command right after
+    /// creation — e.g. Oracle needs <c>((OracleCommand)command).BindByName = true</c>.</param>
     public AdoNamedKeysetSource(
         string sourceName, string sql, string keyColumn, int pageSize, ReportSchema schema,
-        Func<string, DbConnection> connectionFactory)
+        Func<string, DbConnection> connectionFactory, string parameterPrefix = "@", Action<DbCommand>? configureCommand = null)
     {
         _sourceName = sourceName ?? throw new ArgumentNullException(nameof(sourceName));
         _sql = sql ?? throw new ArgumentNullException(nameof(sql));
@@ -42,6 +48,8 @@ public sealed class AdoNamedKeysetSource<T> : IBatchSource<T>, INamedSourceResol
         _pageSize = pageSize;
         Schema = schema ?? throw new ArgumentNullException(nameof(schema));
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
+        _parameterPrefix = parameterPrefix;
+        _configureCommand = configureCommand;
     }
 
     /// <inheritdoc />
@@ -86,6 +94,8 @@ public sealed class AdoNamedKeysetSource<T> : IBatchSource<T>, INamedSourceResol
             throw new ConfigurationException($"Source '{_sourceName}' has no 'connectionString' property.");
         }
 
-        return new AdoKeysetSource<T>(() => _connectionFactory(connectionString), _sql, _keyColumn, _pageSize, Schema);
+        return new AdoKeysetSource<T>(
+            () => _connectionFactory(connectionString), _sql, _keyColumn, _pageSize, Schema,
+            parameters: null, parameterPrefix: _parameterPrefix, configureCommand: _configureCommand);
     }
 }

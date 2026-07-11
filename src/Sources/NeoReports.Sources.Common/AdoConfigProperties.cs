@@ -74,8 +74,13 @@ public static class AdoConfigProperties
     /// <param name="source">The dynamic-path source config being compiled.</param>
     /// <param name="schema">The report's declared output schema.</param>
     /// <param name="sourceTypeLabel">Human-readable provider name for error messages (e.g. "MySQL").</param>
+    /// <param name="parameterPrefix">Bind-variable prefix the provider expects (<c>@</c> for SQL
+    /// Server/Postgres/MySQL, <c>:</c> for Oracle).</param>
+    /// <param name="configureCommand">Optional hook run on each page's command right after
+    /// creation — e.g. Oracle needs <c>((OracleCommand)command).BindByName = true</c>.</param>
     public static IBatchSource<ReportRecord> CreateAdoConfigSource(
-        Func<string, DbConnection> connectionFactory, SourceConfig source, ReportSchema schema, string sourceTypeLabel)
+        Func<string, DbConnection> connectionFactory, SourceConfig source, ReportSchema schema, string sourceTypeLabel,
+        string parameterPrefix = "@", Action<DbCommand>? configureCommand = null)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(schema);
@@ -89,6 +94,7 @@ public static class AdoConfigProperties
         return new AdoKeysetSource<ReportRecord>(
             () => connectionFactory(connectionString), sql, key, pageSize, schema,
             parameters: null,
-            materialize: (reader, ordinals) => MaterializeReportRecord(reader, ordinals, schema));
+            materialize: (reader, ordinals) => MaterializeReportRecord(reader, ordinals, schema),
+            parameterPrefix, configureCommand);
     }
 }

@@ -19,6 +19,7 @@
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="5.2.2" />
     <PackageVersion Include="Npgsql" Version="9.0.5" />
     <PackageVersion Include="MySqlConnector" Version="2.6.1" />
+    <PackageVersion Include="Oracle.ManagedDataAccess.Core" Version="23.26.200" />
     <PackageVersion Include="ClosedXML" Version="0.105.0" />
     <PackageVersion Include="AWSSDK.S3" Version="4.0.100.2" />
 
@@ -40,6 +41,7 @@
     <PackageVersion Include="Testcontainers.MsSql" Version="4.13.0" />
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.13.0" />
     <PackageVersion Include="Testcontainers.MySql" Version="4.13.0" />
+    <PackageVersion Include="Testcontainers.Oracle" Version="4.13.0" />
     <PackageVersion Include="Xunit.SkippableFact" Version="1.5.61" />
     <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="8.0.11" />
 
