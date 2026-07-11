@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Globalization;
 using System.Text.Json;
 using NeoReports.Abstractions;
@@ -41,5 +42,24 @@ public static class AdoConfigProperties
             _ => throw new ConfigurationException(
                 $"The {sourceTypeLabel} source property '{key}' must be an integer (was {value.GetType().Name})."),
         };
+    }
+
+    /// <summary>
+    /// Materializes a positional <see cref="ReportRecord"/> by reading, for each schema column,
+    /// the result-set column whose name matches it (case-insensitive) — the dynamic path's
+    /// row-shape, shared across every relational <c>IConfigSourceProvider</c>.
+    /// </summary>
+    public static ReportRecord MaterializeReportRecord(
+        DbDataReader reader, IReadOnlyDictionary<string, int> ordinalByName, ReportSchema schema)
+    {
+        var values = new object?[schema.Count];
+        for (var i = 0; i < schema.Count; i++)
+        {
+            values[i] = ordinalByName.TryGetValue(schema.Columns[i].Name, out int ordinal) && !reader.IsDBNull(ordinal)
+                ? reader.GetValue(ordinal)
+                : null;
+        }
+
+        return new ReportRecord(schema, values);
     }
 }

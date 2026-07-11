@@ -48,4 +48,30 @@ public static class AdoSourceHealth
             return new SourceHealthResult(Healthy: false, Error: ex.Message, stopwatch.Elapsed);
         }
     }
+
+    /// <summary>
+    /// Reads <c>connectionString</c> from <paramref name="definition"/>'s properties and, if
+    /// present, pings it — the full body of a relational provider's <c>ISourceHealthCheck</c>.
+    /// </summary>
+    /// <param name="definition">The source definition being checked.</param>
+    /// <param name="connectionFactory">Given the connection string, creates a new, unopened connection.</param>
+    /// <param name="timeout">Maximum time allowed for the whole check.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="pingSql">The query to run; must not require a result to be meaningful.</param>
+    public static Task<SourceHealthResult> CheckConnectionStringAsync(
+        SourceDefinition definition, Func<string, DbConnection> connectionFactory, TimeSpan timeout,
+        CancellationToken cancellationToken, string pingSql = "SELECT 1")
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+
+        if (definition.Properties is not { } properties
+            || !properties.TryGetValue("connectionString", out var value)
+            || value is not string connectionString
+            || string.IsNullOrWhiteSpace(connectionString))
+        {
+            return Task.FromResult(new SourceHealthResult(Healthy: false, Error: "Source has no 'connectionString' property.", Latency: TimeSpan.Zero));
+        }
+
+        return PingAsync(() => connectionFactory(connectionString), timeout, cancellationToken, pingSql);
+    }
 }

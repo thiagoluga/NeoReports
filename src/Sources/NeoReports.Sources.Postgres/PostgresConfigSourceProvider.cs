@@ -1,4 +1,3 @@
-using System.Data.Common;
 using NeoReports.Abstractions;
 using NeoReports.Sources.Common;
 using Npgsql;
@@ -33,20 +32,6 @@ public sealed class PostgresConfigSourceProvider : IConfigSourceProvider
         return new AdoKeysetSource<ReportRecord>(
             () => new NpgsqlConnection(connectionString), sql, key, pageSize, schema,
             parameters: null,
-            materialize: (reader, ordinals) => Materialize(reader, ordinals, schema));
-    }
-
-    private static ReportRecord Materialize(
-        DbDataReader reader, IReadOnlyDictionary<string, int> ordinalByName, ReportSchema schema)
-    {
-        var values = new object?[schema.Count];
-        for (var i = 0; i < schema.Count; i++)
-        {
-            values[i] = ordinalByName.TryGetValue(schema.Columns[i].Name, out int ordinal) && !reader.IsDBNull(ordinal)
-                ? reader.GetValue(ordinal)
-                : null;
-        }
-
-        return new ReportRecord(schema, values);
+            materialize: (reader, ordinals) => AdoConfigProperties.MaterializeReportRecord(reader, ordinals, schema));
     }
 }

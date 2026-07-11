@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using Microsoft.Data.SqlClient;
 using NeoReports.Abstractions;
 using NeoReports.Sources.Common;
 
@@ -58,7 +59,7 @@ public sealed class SqlNamedSourceBuilder
 
         var schema = new ReportSchema(new[] { new ReportColumn(keyColumn, ColumnType.String) });
 
-        return new NamedSqlKeysetSource<T>(_sourceName, _sql, keyColumn, pageSize, schema);
+        return new AdoNamedKeysetSource<T>(_sourceName, _sql, keyColumn, pageSize, schema, cs => new SqlConnection(cs));
     }
 }
 

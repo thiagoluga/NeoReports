@@ -17,18 +17,6 @@ public sealed class PostgresSourceHealthCheck : ISourceHealthCheck
     public string Type => "postgres";
 
     /// <inheritdoc />
-    public Task<SourceHealthResult> CheckAsync(SourceDefinition definition, IServiceProvider services, CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(definition);
-
-        if (definition.Properties is not { } properties
-            || !properties.TryGetValue("connectionString", out var value)
-            || value is not string connectionString
-            || string.IsNullOrWhiteSpace(connectionString))
-        {
-            return Task.FromResult(new SourceHealthResult(Healthy: false, Error: "Source has no 'connectionString' property.", Latency: TimeSpan.Zero));
-        }
-
-        return AdoSourceHealth.PingAsync(() => new NpgsqlConnection(connectionString), Timeout, cancellationToken);
-    }
+    public Task<SourceHealthResult> CheckAsync(SourceDefinition definition, IServiceProvider services, CancellationToken cancellationToken) =>
+        AdoSourceHealth.CheckConnectionStringAsync(definition, cs => new NpgsqlConnection(cs), Timeout, cancellationToken);
 }
