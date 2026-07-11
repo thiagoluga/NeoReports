@@ -1,7 +1,6 @@
-using System.Diagnostics;
 using Microsoft.Data.SqlClient;
-using NeoReports.Abstractions;
 using NeoReports.Core.SourceRegistry;
+using NeoReports.Sources.Common;
 
 namespace NeoReports.Sources.Sql;
 
@@ -18,7 +17,7 @@ public sealed class SqlSourceHealthCheck : ISourceHealthCheck
     public string Type => "sql";
 
     /// <inheritdoc />
-    public async Task<SourceHealthResult> CheckAsync(SourceDefinition definition, IServiceProvider services, CancellationToken cancellationToken)
+    public Task<SourceHealthResult> CheckAsync(SourceDefinition definition, IServiceProvider services, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(definition);
 
@@ -27,34 +26,9 @@ public sealed class SqlSourceHealthCheck : ISourceHealthCheck
             || value is not string connectionString
             || string.IsNullOrWhiteSpace(connectionString))
         {
-            return new SourceHealthResult(Healthy: false, Error: "Source has no 'connectionString' property.", Latency: TimeSpan.Zero);
+            return Task.FromResult(new SourceHealthResult(Healthy: false, Error: "Source has no 'connectionString' property.", Latency: TimeSpan.Zero));
         }
 
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(Timeout);
-
-        var stopwatch = Stopwatch.StartNew();
-        try
-        {
-            await using var connection = new SqlConnection(connectionString);
-            await connection.OpenAsync(timeoutCts.Token).ConfigureAwait(false);
-
-            await using var command = connection.CreateCommand();
-            command.CommandText = "SELECT 1";
-            await command.ExecuteScalarAsync(timeoutCts.Token).ConfigureAwait(false);
-
-            stopwatch.Stop();
-            return new SourceHealthResult(Healthy: true, Error: null, stopwatch.Elapsed);
-        }
-        catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
-        {
-            stopwatch.Stop();
-            return new SourceHealthResult(Healthy: false, Error: $"Timed out after {Timeout.TotalSeconds:0}s.", stopwatch.Elapsed);
-        }
-        catch (Exception ex)
-        {
-            stopwatch.Stop();
-            return new SourceHealthResult(Healthy: false, Error: ex.Message, stopwatch.Elapsed);
-        }
+        return AdoSourceHealth.PingAsync(() => new SqlConnection(connectionString), Timeout, cancellationToken);
     }
 }

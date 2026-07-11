@@ -3,6 +3,7 @@ using System.Data.Common;
 using System.Globalization;
 using Microsoft.Data.SqlClient;
 using NeoReports.Abstractions;
+using NeoReports.Sources.Common;
 
 namespace NeoReports.Sources.Sql;
 

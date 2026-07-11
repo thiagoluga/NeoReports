@@ -1,7 +1,6 @@
 using System.Data.Common;
-using System.Globalization;
-using System.Text.Json;
 using NeoReports.Abstractions;
+using NeoReports.Sources.Common;
 
 namespace NeoReports.Sources.Sql;
 
@@ -14,6 +13,8 @@ namespace NeoReports.Sources.Sql;
 /// </summary>
 public sealed class SqlConfigSourceProvider : IConfigSourceProvider
 {
+    private const string Label = "SQL";
+
     /// <inheritdoc />
     public string Type => "sql";
 
@@ -24,10 +25,10 @@ public sealed class SqlConfigSourceProvider : IConfigSourceProvider
         ArgumentNullException.ThrowIfNull(schema);
 
         IReadOnlyDictionary<string, object?>? properties = source.Properties;
-        string connectionString = RequireString(properties, "connectionString");
-        string sql = RequireString(properties, "sql");
-        string key = RequireString(properties, "key");
-        int pageSize = OptionalInt(properties, "pageSize") ?? 1000;
+        string connectionString = AdoConfigProperties.RequireString(properties, "connectionString", Label);
+        string sql = AdoConfigProperties.RequireString(properties, "sql", Label);
+        string key = AdoConfigProperties.RequireString(properties, "key", Label);
+        int pageSize = AdoConfigProperties.OptionalInt(properties, "pageSize", Label) ?? 1000;
 
         return new SqlKeysetSource<ReportRecord>(
             connectionString, sql, key, pageSize, schema,
@@ -47,35 +48,5 @@ public sealed class SqlConfigSourceProvider : IConfigSourceProvider
         }
 
         return new ReportRecord(schema, values);
-    }
-
-    private static string RequireString(IReadOnlyDictionary<string, object?>? properties, string key)
-    {
-        if (properties is not null
-            && properties.TryGetValue(key, out var value)
-            && value is string text
-            && !string.IsNullOrWhiteSpace(text))
-        {
-            return text;
-        }
-
-        throw new ConfigurationException($"The SQL source requires a non-empty '{key}' property.");
-    }
-
-    private static int? OptionalInt(IReadOnlyDictionary<string, object?>? properties, string key)
-    {
-        if (properties is null || !properties.TryGetValue(key, out var value) || value is null)
-            return null;
-
-        return value switch
-        {
-            int i => i,
-            long l => checked((int)l),
-            double d => (int)d,
-            string s when int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed) => parsed,
-            JsonElement { ValueKind: JsonValueKind.Number } e => e.GetInt32(),
-            _ => throw new ConfigurationException(
-                $"The SQL source property '{key}' must be an integer (was {value.GetType().Name})."),
-        };
     }
 }

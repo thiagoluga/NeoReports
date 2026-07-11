@@ -17,8 +17,11 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   hardcoded `SqlConnection`) plus `AdoNamedKeysetSource<T>`, `AdoSourceHealth.PingAsync`, and the
   property-bag/member-selector helpers every relational provider needs — reused by every future
   provider package (MySQL, Oracle) without duplicating the ADO.NET plumbing three more times.
-  `NeoReports.Sources.Sql` itself is untouched (deliberate — avoids breaking its already-published
-  public `SqlKeysetSource<T>`). Along the way, `AddParameter` now sets an explicit `DbType.String`
+  `NeoReports.Sources.Sql`'s public `SqlKeysetSource<T>` itself stays untouched (already-published
+  since v1.2.0 — no need to risk a break for zero behavioral gain), but its internal glue
+  (`SqlConfigSourceProvider`'s property parsing, `SqlSourceHealthCheck`'s ping body, the
+  member-selector helper) now calls the same shared helpers instead of duplicating them, closing
+  the duplication Sonar's quality gate flagged. Along the way, `AddParameter` now sets an explicit `DbType.String`
   on null-valued parameters — Postgres (unlike SQL Server) can't infer a parameter's type from a
   null CLR value alone and rejects the query outright; harmless for every other provider. Note for
   report authors: Postgres doesn't implicitly convert the cursor parameter to the key column's

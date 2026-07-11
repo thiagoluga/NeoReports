@@ -9,6 +9,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\NeoReports.Abstractions\NeoReports.Abstractions.csproj" />
     <ProjectReference Include="..\..\NeoReports.Core\NeoReports.Core.csproj" />
+    <ProjectReference Include="..\NeoReports.Sources.Common\NeoReports.Sources.Common.csproj" />
   </ItemGroup>
 
   <ItemGroup>

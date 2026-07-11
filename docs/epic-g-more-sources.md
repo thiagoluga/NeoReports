@@ -13,7 +13,10 @@ restatement of the decisions.
   existing public shape exactly: `Source.<Provider>(...)`/`Source.<Provider>Named(...)`,
   `<Provider>ConfigSourceProvider`, `<Provider>SourceHealthCheck`, `Add<Provider>ConfigSource()`.
   Don't invent a different shape per provider — copy-and-adapt from `Sources.Sql`.
-- `NeoReports.Sources.Sql` itself is not touched by G1 (D43) — no behavior change, no refactor.
+- `NeoReports.Sources.Sql`'s public `SqlKeysetSource<T>` is not touched by G1 (D43) — already
+  published (v1.2.0), no behavior/signature change. Its internal glue (property parsing,
+  health-check body, member-selector) is migrated onto the shared helpers alongside the new
+  providers, once Sonar's duplication gate correctly rejected leaving it as dead-weight duplication.
 - New NuGet dependencies go in `build/Directory.Packages.props` (CPM), never inline.
 - Package license: MIT, same tier as `Sources.Sql` (maintainer call, D42 precedent).
 

@@ -656,8 +656,11 @@ Requested directly by the maintainer (2026-07). Blueprint: `docs/epic-g-more-sou
 
 - [x] **G1 — `NeoReports.Sources.Common` + PostgreSQL.** Extract `SqlKeysetSource<T>`'s engine into
   a provider-agnostic `AdoKeysetSource<T>` (`Func<DbConnection>` instead of hardcoded
-  `SqlConnection`) + shared `RecordMaterializer<T>`; `Sources.Sql` itself untouched (avoids
-  breaking its already-published public API). `NeoReports.Sources.Postgres` (Npgsql):
+  `SqlConnection`) + shared `RecordMaterializer<T>`; `SqlKeysetSource<T>`'s own already-published
+  public API stays untouched, but its surrounding glue (property parsing, health-check body,
+  member-selector) was migrated onto the same shared helpers rather than left duplicated — Sonar's
+  quality gate (correctly) rejected the first "leave Sources.Sql alone entirely" attempt on
+  duplication grounds. `NeoReports.Sources.Postgres` (Npgsql):
   `Source.Postgres`/`.PostgresNamed`, `PostgresConfigSourceProvider`, `PostgresSourceHealthCheck`,
   `AddPostgresConfigSource()`. Testcontainers.PostgreSql integration tests. Found along the way:
   Postgres needs an explicit `DbType.String` on null parameters (Npgsql can't infer type from a

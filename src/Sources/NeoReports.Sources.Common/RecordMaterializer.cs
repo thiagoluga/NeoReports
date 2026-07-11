@@ -10,12 +10,13 @@ namespace NeoReports.Sources.Common;
 /// Compiled column ordinals are cached per reader shape on first use.
 /// </summary>
 /// <typeparam name="T">The row type to materialize.</typeparam>
-internal sealed class RecordMaterializer<T>
+public sealed class RecordMaterializer<T>
 {
     private readonly ConstructorInfo? _ctor;
     private readonly ParameterInfo[] _ctorParams;
     private readonly PropertyInfo[] _settableProps;
 
+    /// <summary>Reflects over <typeparamref name="T"/> once, ahead of any row reads.</summary>
     public RecordMaterializer()
     {
         var type = typeof(T);
@@ -29,6 +30,9 @@ internal sealed class RecordMaterializer<T>
             .ToArray();
     }
 
+    /// <summary>Materializes the reader's current row into a <typeparamref name="T"/> instance.</summary>
+    /// <param name="reader">The reader, positioned on the row to materialize.</param>
+    /// <param name="ordinalByName">Column ordinal by name (case-insensitive), for this reader's shape.</param>
     public T Materialize(DbDataReader reader, IReadOnlyDictionary<string, int> ordinalByName)
     {
         if (_ctor is not null)
