@@ -51,14 +51,15 @@
         {
             <Card Title="Engine source type" Sub="What POST /api/reports actually reads from">
                 <ChildContent>
-                <div class="field">
-                    <span class="label-sm">Type</span>
-                    <select class="input mono" style="width:100%;max-width:280px" @bind="Wizard.SourceType">
-                        @foreach (var type in _engineSources)
-                        {
-                            <option value="@type">@type</option>
-                        }
-                    </select>
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+                    @foreach (var type in _engineSources)
+                    {
+                        <SelectableCard Selected="@(Wizard.SourceType == type)" OnClick="@(() => Wizard.SourceType = type)">
+                            <CatTile Kind="teal" Icon="database" />
+                            <div class="name mono">@type</div>
+                            <div class="conn">Registered <span class="mono">IConfigSourceProvider</span></div>
+                        </SelectableCard>
+                    }
                 </div>
                 </ChildContent>
             </Card>
