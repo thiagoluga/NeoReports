@@ -1,5 +1,6 @@
 using System.Text;
 using NeoReports.Abstractions;
+using NeoReports.Core.SourceRegistry;
 
 namespace NeoReports.Core.UnitTests.Fakes;
 
@@ -56,6 +57,38 @@ public sealed class FakeBatchSource<T> : IBatchSource<T>
         var nextCursor = hasMore ? (page + 1).ToString(System.Globalization.CultureInfo.InvariantCulture) : null;
         return Task.FromResult(new BatchResult<T>(records, nextCursor, hasMore));
     }
+}
+
+/// <summary>
+/// Minimal named by-name source (ADR D42's <see cref="INamedSourceResolver"/>) for testing the
+/// typed-path wiring (F5) without a real SQL provider: records whether/with-what
+/// <see cref="AttachServices"/> was called, then delegates reads to an inner fake.
+/// </summary>
+public sealed class FakeNamedBatchSource<T> : IBatchSource<T>, INamedSourceResolver
+{
+    private readonly FakeBatchSource<T> _inner;
+
+    public FakeNamedBatchSource(string sourceName, IReadOnlyList<IReadOnlyList<T>> pages)
+    {
+        SourceName = sourceName;
+        _inner = new FakeBatchSource<T>(pages);
+    }
+
+    public string SourceName { get; }
+
+    public int AttachServicesCalls { get; private set; }
+    public IServiceProvider? LastAttachedServices { get; private set; }
+
+    public ReportSchema Schema => _inner.Schema;
+
+    public void AttachServices(IServiceProvider services)
+    {
+        AttachServicesCalls++;
+        LastAttachedServices = services;
+    }
+
+    public Task<BatchResult<T>> ReadBatchAsync(BatchContext context, CancellationToken cancellationToken) =>
+        _inner.ReadBatchAsync(context, cancellationToken);
 }
 
 /// <summary>Writer that records projected rows and can throw on chosen batches (1-based).</summary>

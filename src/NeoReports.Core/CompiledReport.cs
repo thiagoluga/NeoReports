@@ -19,7 +19,7 @@ public sealed class CompiledReport
         string name,
         ReportSchema schema,
         int pageSize,
-        Func<ReportExecutionContext, IProjectedBatchReader> readerFactory,
+        Func<ReportExecutionContext, IServiceProvider, IProjectedBatchReader> readerFactory,
         IReadOnlyList<OutputSpec> outputs,
         IReadOnlyList<ReportSchema> outputSchemas,
         IReadOnlyList<CompiledSectionedOutput> sectionedOutputs,
@@ -66,8 +66,8 @@ public sealed class CompiledReport
     /// <summary>Type id of each configured destination, in order (e.g. "local", "s3").</summary>
     public IReadOnlyList<string> DestinationTypes { get; }
 
-    /// <summary>Creates a fresh per-execution reader for this report.</summary>
-    internal Func<ReportExecutionContext, IProjectedBatchReader> ReaderFactory { get; }
+    /// <summary>Creates a fresh per-execution reader for this report, given the run's <see cref="IServiceProvider"/>.</summary>
+    internal Func<ReportExecutionContext, IServiceProvider, IProjectedBatchReader> ReaderFactory { get; }
 
     /// <summary>Configured outputs (formats).</summary>
     internal IReadOnlyList<OutputSpec> Outputs { get; }

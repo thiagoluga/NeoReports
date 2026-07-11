@@ -639,7 +639,13 @@ source `Properties` — this is where the actual secrets live.
   the browser (samples/09-web-ui-live): create → health-check honest-422 → two-click delete;
   Builder picker sets the ref and hides the inline connection field through review. 3 new
   `BuilderConfigMapperTests` for the ref-serialization shape.
-- [ ] **F5 — Typed path: `Source.SqlNamed("sales-db", sql)`.** Per-run registry resolution wired
+- [x] **F5 — Typed path: `Source.SqlNamed("sales-db", sql)`.** Per-run registry resolution wired
   at compile time (sources have no DI on the read path); populates `SourceRef`; E2E proof:
   swapping the definition's connection string between runs redirects the next run.
-  **Depends on:** F1, F2.
+  **Depends on:** F1, F2. New Core `INamedSourceResolver` — `CompiledReport.ReaderFactory` (internal)
+  grows an `IServiceProvider` parameter, threaded from `ReportRunner.ExecuteAsync`; `AddReport`
+  throws `ConfigurationException` at registration when a named source has no registry configured.
+  5 new Core tests (registration guard, success path, `SourceRef` population, `AttachServices`
+  called per run — including a second run) + 2 new `Sources.Sql` Testcontainers tests (connection
+  swap between two databases in the same container redirects the next run; unregistered name
+  throws).

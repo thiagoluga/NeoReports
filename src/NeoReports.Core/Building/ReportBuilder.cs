@@ -3,6 +3,7 @@ using NeoReports.Abstractions;
 using NeoReports.Core.Pipeline;
 using NeoReports.Core.Scheduling;
 using NeoReports.Core.Sections;
+using NeoReports.Core.SourceRegistry;
 using NeoReports.Core.Sources;
 
 namespace NeoReports.Core.Building;
@@ -31,6 +32,13 @@ public sealed class ReportBuilder<TRow>
     private ScheduleConfig? _schedule;
     private string? _sourceRef;
 
+    /// <summary>
+    /// True when <see cref="From(IBatchSource{TRow})"/> was given a named by-name source
+    /// (<see cref="INamedSourceResolver"/>, e.g. <c>Source.SqlNamed</c>) — checked at registration
+    /// time by <c>AddReport</c> so a missing source registry fails fast (ADR D42).
+    /// </summary>
+    internal bool RequiresSourceRegistry { get; private set; }
+
     /// <summary>Creates a builder for a report registered under <paramref name="name"/>.</summary>
     /// <param name="name">Unique report name.</param>
     public ReportBuilder(string name)
@@ -47,6 +55,11 @@ public sealed class ReportBuilder<TRow>
         ArgumentNullException.ThrowIfNull(source);
         _batchSource = source;
         _streamingSource = null;
+        if (source is INamedSourceResolver named)
+        {
+            RequiresSourceRegistry = true;
+            _sourceRef = named.SourceName;
+        }
         return this;
     }
 
@@ -283,8 +296,16 @@ public sealed class ReportBuilder<TRow>
         IStreamingSource<TRow>? streamingSource = _streamingSource;
         int pageSize = _pageSize;
 
-        IProjectedBatchReader ReaderFactory(ReportExecutionContext execution) =>
-            new TypedBatchReader<TRow>(batchSource, streamingSource, execution, pageSize, projections, sectionedProjections);
+        IProjectedBatchReader ReaderFactory(ReportExecutionContext execution, IServiceProvider services)
+        {
+            // The only point in the typed pipeline where an IServiceProvider is available to a
+            // by-name source (Source.SqlNamed) — it re-resolves its connection through the source
+            // registry at the start of every run rather than baking one in at construction (D42).
+            if (batchSource is INamedSourceResolver resolver)
+                resolver.AttachServices(services);
+
+            return new TypedBatchReader<TRow>(batchSource, streamingSource, execution, pageSize, projections, sectionedProjections);
+        }
 
         return new CompiledReport(
             _name,

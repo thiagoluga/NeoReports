@@ -68,6 +68,14 @@ public static class ServiceCollectionExtensions
 
         var builder = new ReportBuilder<TRow>(name);
         configure(builder);
+
+        if (builder.RequiresSourceRegistry && !services.Any(d => d.ServiceType == typeof(ISourceRegistry)))
+        {
+            throw new ConfigurationException(
+                $"Report '{name}' uses a named source (e.g. Source.SqlNamed) but no source registry is configured " +
+                "on this host. Call AddSourceRegistry()/AddInMemorySourceRegistry() before AddReport(...).");
+        }
+
         GetOrAddRegistry(services).Register(builder.Build());
 
         return services;

@@ -72,7 +72,7 @@ public sealed class ReportRunner : IReportRunner
 
         var outputs = new List<RunningOutput>(report.Outputs.Count);
         var sectioned = new List<RunningSectioned>(report.SectionedOutputs.Count);
-        var reader = report.ReaderFactory(execution);
+        var reader = report.ReaderFactory(execution, services);
 
         long recordsRead = 0, recordsWritten = 0;
         int retries = 0, batches = 0, skipped = 0;
