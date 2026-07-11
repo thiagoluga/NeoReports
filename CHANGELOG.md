@@ -19,6 +19,20 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   properties overlay, `${VAR}` substituted last), so rotating a connection string or deleting the
   source takes effect on the very next run without recompiling anything. `CompiledReport.SourceRef`
   is now populated for ref-based reports. Inline sources (`Ref` omitted) are entirely unaffected.
+- `NeoReports.Sources.Sql` — `Source.SqlNamed("sales-db", sql).Keyset(key, pageSize)` (ADR D42
+  locked decision 4): a typed-path SQL source that resolves its connection by name through the
+  source registry instead of an inline connection string. Typed sources are constructed by static
+  entry points inside registration lambdas with no `IServiceProvider`, so `NeoReports.Core` gains
+  `INamedSourceResolver` — the Core builder calls `AttachServices` once per run, right before the
+  source's first read (the only point in the typed pipeline where a service provider is
+  available); `CompiledReport.ReaderFactory`'s (internal) signature grows an `IServiceProvider`
+  parameter to carry it through. Registering a `SqlNamed`-based report on a host with no source
+  registry configured throws `ConfigurationException` immediately at `AddReport(...)`, checked
+  against the service collection before the registry ever needs to be built.
+  `CompiledReport.SourceRef` is populated for typed by-name reports exactly like the dynamic
+  path's `SourceConfig.Ref`, so they count in `ReferencedByCount` and block source deletion (F3's
+  409) the same way. E2E Testcontainers proof: the same registered source name, pointed at two
+  different databases in the same container across two runs, redirects rows on the very next run.
 - `NeoReports.UI` — sources screens wired to the registry (ADR D42): the Sources page gains a
   "Registered sources" section (grid, real health strip aggregating only actual results, add/edit
   forms with write-only properties and a `${VAR}` hint, "Check now", two-click delete blocked
