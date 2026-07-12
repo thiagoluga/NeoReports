@@ -129,7 +129,7 @@ The agent has **standing** permission (allowed to do everything in the cycle bel
 | Watch CI, read/reply to PR comments | Anything "outward-facing" beyond the PR | — |
 | Update docs (PLAN/ADR/CHANGELOG) via PR | — | — |
 
-> The **merge is always yours** — I never merge. The Claude Code app may still show you a harness prompt to authorize some commands (push, etc.); that's the permissions UI, separate from this workflow agreement.
+> The **merge is always yours** — I never merge, unless you explicitly say in chat that I may proceed autonomously and merge until everything currently planned is done. That authorization covers every PR in the stated scope of work — I won't ask again for each individual PR within that scope, but it does not carry over to unrelated future work or new sessions without being granted again. The Claude Code app may still show you a harness prompt to authorize some commands (push, etc.); that's the permissions UI, separate from this workflow agreement.
 
 Detail of the autonomous items:
 
@@ -149,16 +149,18 @@ For each `PLAN.md` item (or equivalent task), follow this end-to-end cycle:
 2. **Write all the necessary code** (and the tests).
 3. **Clean build / rebuild when needed** — when in doubt about cache, delete `obj/bin` or use `--no-incremental`.
 4. **Create and run all the tests**; read the actual `Passed!/Failed!` and `Build succeeded/FAILED` line.
-5. **If everything is green** (0 failures, build ok): **commit, push, and open the PR**.
-6. **After opening the PR, follow the check-runs until they finish** (`check runs until done`) — confirming the PR's `headRefOid` == the latest commit.
-7. **Watch the PR comments.** There are automated reviewers (e.g. analysis bots) that leave important comments, including inline ones. For each **new** comment, judge whether the suggestion makes sense:
+5. **Before any commit — every commit, not just the first one on a branch — run `/code-review` and `/security-review` on the change and address what they find.** This runs in addition to (before) the build/test-green gate above, not instead of it.
+6. **If everything is green** (0 failures, build ok, review gates addressed): **commit, push, and open the PR**.
+7. **After opening the PR, follow the check-runs until they finish** (`check runs until done`) — confirming the PR's `headRefOid` == the latest commit.
+8. **Watch the PR comments.** There are automated reviewers (e.g. analysis bots) that leave important comments, including inline ones. For each **new** comment, judge whether the suggestion makes sense:
    - **If it makes sense:** make the change, then **reply to the comment** explaining what was done and **mark it resolved**.
    - **If it does not:** **reply to the comment** explaining why you won't follow it, and **mark it resolved** anyway.
-8. **If you need to redo a step** (red CI, conflict, comment to address, etc.): fix, commit and push again, and repeat 3–7 until the PR is green and has no pending comments. All of this is allowed without new confirmation.
+   - Resolving the PR conversation thread does **not** dismiss the underlying CodeQL alert at the repository level — also dismiss it explicitly (`PATCH /repos/{owner}/{repo}/code-scanning/alerts/{number}` with a `dismissed_reason` and `dismissed_comment`), or it lingers open forever even though the conversation looks closed.
+9. **If you need to redo a step** (red CI, conflict, comment to address, etc.): fix, re-run `/code-review`/`/security-review` on the new diff, commit and push again, and repeat 4–8 until the PR is green and has no pending comments or open alerts. All of this is allowed without new confirmation.
 
 Only **stop and ask for confirmation** at the end (merge) and for the exceptions below.
 
-Still require explicit confirmation: **PR merge**, deleting someone else's remote branch, force-push, and destructive/irreversible actions (`reset --hard` on remote, changing repo visibility, dropping a schema, etc.).
+Still require explicit confirmation: **PR merge** (unless the maintainer has explicitly granted autonomous-merge authorization for the current scope of work — see the note above the summary table), deleting someone else's remote branch, force-push, and destructive/irreversible actions (`reset --hard` on remote, changing repo visibility, dropping a schema, etc.).
 
 ## Operational lessons (mistakes already made — do not repeat)
 
@@ -172,3 +174,4 @@ Still require explicit confirmation: **PR merge**, deleting someone else's remot
 8. **One PR at a time.** Don't open several simultaneously unless the maintainer asks; close (merge) the current one before the next.
 9. **New dependencies (including test ones) go in CPM** (`build/Directory.Packages.props`). `NU1010` = missing `PackageVersion`.
 10. **`dotnet format --verify-no-changes` gives a local false positive** due to autocrlf (CRLF in the working tree vs LF in the repo); CI checks out LF and passes. Don't chase `ENDOFLINE` locally; trust the CI format step.
+11. **Resolving a PR review thread does NOT dismiss the underlying CodeQL alert.** These are two separate GitHub objects. Justifying a CodeQL finding via `resolveReviewThread` (GraphQL) closes the conversation on the PR but leaves the alert itself `open` at the repository level (`GET /repos/{owner}/{repo}/code-scanning/alerts`) forever, even after the PR merges. Always also dismiss the alert via `PATCH .../code-scanning/alerts/{number}` with a `dismissed_reason` (`false positive` / `won't fix` / `used in tests`). Found on 2026-07-11 after several merged PRs (G1/G2) had left 10 "justified but never actually closed" alerts sitting open.
