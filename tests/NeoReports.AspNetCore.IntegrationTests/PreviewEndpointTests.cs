@@ -166,30 +166,40 @@ public class PreviewEndpointTests : IDisposable
     private Task<Microsoft.Extensions.Hosting.IHost> StartWithDynamicReportAsync(string sourceType, bool registerTranslator) =>
         StartWithDynamicReportAsync(sourceType, registerTranslator ? new FakeFilterTranslator(sourceType) : null);
 
-    private Task<Microsoft.Extensions.Hosting.IHost> StartWithDynamicReportAsync(string sourceType, IFilterTranslator? translator) =>
-        TestApp.StartAsync(async services =>
+    // Saves the report config through the running host's own IReportConfigStore, after
+    // TestApp.StartAsync has returned — not during the (synchronous) configureReports callback.
+    // TestApp.StartAsync's configureReports parameter is a plain Action<IServiceCollection>; an
+    // async lambda passed there runs fire-and-forget, so the config file's write could still be in
+    // flight when the host starts serving requests. That race is invisible at normal speed but
+    // reliably reproduces under CI's slower coverage-instrumented test run — this mirrors the
+    // proven-safe pattern DynamicReportEndpointsTests already uses (register after the host is up).
+    private async Task<Microsoft.Extensions.Hosting.IHost> StartWithDynamicReportAsync(string sourceType, IFilterTranslator? translator)
+    {
+        Microsoft.Extensions.Hosting.IHost host = await TestApp.StartAsync(services =>
         {
             services.AddDynamicReports(o => o.Directory = _configDir);
             services.AddSingleton<IConfigSourceProvider>(new FakeFilterableProvider(sourceType));
             services.AddSingleton<IWriterFactory>(new CsvWriterFactory(new CsvOptions()));
             if (translator is not null)
                 services.AddSingleton(translator);
-
-            await using var provider = services.BuildServiceProvider();
-            IReportConfigStore store = provider.GetRequiredService<IReportConfigStore>();
-            string config = $$"""
-            {
-              "name": "dyn",
-              "source": { "type": "{{sourceType}}", "properties": { "sql": "SELECT * FROM Sales", "key": "Id" } },
-              "columns": [
-                { "name": "Id", "type": "Integer" },
-                { "name": "Customer", "type": "String" }
-              ],
-              "outputs": [ { "format": "csv" } ]
-            }
-            """;
-            await store.SaveAsync("dyn", config, CancellationToken.None);
         });
+
+        IReportConfigStore store = host.Services.GetRequiredService<IReportConfigStore>();
+        string config = $$"""
+        {
+          "name": "dyn",
+          "source": { "type": "{{sourceType}}", "properties": { "sql": "SELECT * FROM Sales", "key": "Id" } },
+          "columns": [
+            { "name": "Id", "type": "Integer" },
+            { "name": "Customer", "type": "String" }
+          ],
+          "outputs": [ { "format": "csv" } ]
+        }
+        """;
+        await store.SaveAsync("dyn", config, CancellationToken.None);
+
+        return host;
+    }
 
     public void Dispose()
     {
