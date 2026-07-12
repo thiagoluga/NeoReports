@@ -691,10 +691,18 @@ Requested directly by the maintainer (2026-07). Blueprint: `docs/epic-g-more-sou
   dynamic-config E2E + validation + DI registration), sharing one Testcontainers Oracle container
   across the whole assembly via a collection fixture (Oracle's container startup is much slower
   than SQL Server/Postgres/MySQL, unlike those providers' per-class fixtures).
-- [ ] **G4 — MongoDB.** `NeoReports.Sources.MongoDb` (MongoDB.Driver) — own pagination design (no
-  shared engine with G1-G3): keyset via `Find(key > cursor).Sort(key).Limit(pageSize)`. No filter
-  translation in this pass (D45) — preview runs unfiltered with an honest note. Testcontainers.MongoDb
-  integration tests.
+- [x] **G4 — MongoDB.** `NeoReports.Sources.MongoDb` (MongoDB.Driver) — own pagination design (no
+  shared engine with G1-G3): keyset via `Find(key > cursor).Sort(key).Limit(pageSize)`, cursor
+  round-tripped through MongoDB Extended JSON to preserve its exact BSON type. No filter translation
+  in this pass (D45) — preview runs unfiltered with an honest note. No by-registry `MongoDbNamed`
+  entry point in this pass, unlike the SQL-family providers. Found along the way: MongoDB.Driver's
+  own `BsonClassMap` deserialization silently rebinds a POCO property named `Id` to the document's
+  `_id` field — worked around with a small reflection-based `BsonDocumentMaterializer<T>` instead of
+  the driver's deserializer; `BsonDateTime` always stores UTC, so seed/assertion `DateTime`s need an
+  explicit `DateTimeKind.Utc`; `MongoClient` (unlike `DbConnection`) is meant to be built once and
+  reused, not per page — caught in code review before merge. 8 new Testcontainers.MongoDb
+  integration tests (keyset paging, typed materialization, health check x3, dynamic-config E2E +
+  validation + DI registration).
 - [ ] **G5 — Core + AspNetCore: report preview endpoint.** `POST /reports/{name}/preview` (bounded
   page, no output writing, no job record); `PreviewFilter`/`PreviewFilterOperator` (Core, not
   Abstractions) + `IFilterTranslator` seam implemented once in `Sources.Common` for the SQL family;
