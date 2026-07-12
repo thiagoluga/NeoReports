@@ -721,5 +721,15 @@ Requested directly by the maintainer (2026-07). Blueprint: `docs/epic-g-more-sou
   `AdoFilterTranslator` (SQL wrapping, all 8 operators, `LIKE` wildcards as bound values, Oracle's `:`
   prefix), AspNetCore integration tests for the endpoint (happy path, page-size capping, typed-report
   400, filters applied/ignored-honestly per source type, unknown report 404).
-- [ ] **G6 — UI: report preview screen.** Paginated grid, filter editor (hidden/honest-note when
-  unsupported), "Run with these filters". **Depends on:** G5.
+- [x] **G6 — UI: report preview screen.** `/reports/{name}/preview`, linked from `ReportDetail.razor`.
+  Grid of the sample rows (`DataGrid`, page-size selector), filter editor (hidden with an honest
+  banner for typed reports; a config-driven report with no registered translator gets an honest
+  inline note after the first filtered attempt, since the API only reports `filtersApplied` on the
+  response, not upfront). "Run with these filters" disabled + explained whenever filters are
+  active, since `POST /run` doesn't accept `Filters` yet (G5's deferred scope). Two scope cuts from
+  the original sketch, both because G5 didn't ship the capability yet: no "Load more" pagination
+  (`PreviewResponse` has no next-page cursor — G5 always reads page 1), and no upfront
+  hidden-for-unsupported-sources filter editor (no "does this source support filters" query
+  exists). Verified live against `samples/09-web-ui-live` in a real browser: registered a dynamic
+  report, previewed it, applied a filter against a source type with no translator (the honest note
+  appeared, sample stayed unfiltered, "Run now" stayed enabled).
