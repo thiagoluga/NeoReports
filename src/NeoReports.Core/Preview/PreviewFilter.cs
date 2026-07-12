@@ -38,5 +38,15 @@ public enum PreviewFilterOperator
 /// </summary>
 /// <param name="Column">Must be one of the report's declared columns.</param>
 /// <param name="Operator">The comparison to apply.</param>
-/// <param name="Value">The value to compare against.</param>
-public sealed record PreviewFilter(string Column, PreviewFilterOperator Operator, object? Value);
+/// <param name="Value">
+/// The value to compare against, always its literal text form — the preview UI's filter editor is a
+/// plain text input regardless of the filtered column's real type, and a translator that needs a
+/// typed comparison (e.g. <c>AdoFilterTranslator</c> in <c>NeoReports.Sources.Common</c> casting to
+/// the column's SQL type) casts from this text rather than depending on the caller having sent a
+/// richer CLR type. Keeping this <c>string?</c> instead of <c>object?</c> makes that invariant checked by
+/// the compiler rather than merely documented (G7): a raw JSON number/boolean/date would otherwise
+/// silently bypass the cast machinery, and a JSON string that happens to look like a date would
+/// otherwise get silently reinterpreted before reaching a translator, corrupting <c>Contains</c>/
+/// <c>StartsWith</c> patterns and comparison casts alike.
+/// </param>
+public sealed record PreviewFilter(string Column, PreviewFilterOperator Operator, string? Value);

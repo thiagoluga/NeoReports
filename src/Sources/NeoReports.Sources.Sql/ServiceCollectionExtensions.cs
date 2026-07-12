@@ -20,7 +20,11 @@ public static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigSourceProvider, SqlConfigSourceProvider>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<ISourceHealthCheck, SqlSourceHealthCheck>());
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IFilterTranslator>(new AdoFilterTranslator("sql")));
+        // A derived table containing a bare ORDER BY (every keyset query already ends with one) is
+        // invalid T-SQL unless followed by TOP, OFFSET, or FOR XML — every other supported dialect
+        // allows it as-is.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IFilterTranslator>(
+            new AdoFilterTranslator("sql", innerQuerySuffix: " OFFSET 0 ROWS")));
         return services;
     }
 }

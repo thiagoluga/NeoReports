@@ -20,7 +20,11 @@ public static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigSourceProvider, PostgresConfigSourceProvider>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<ISourceHealthCheck, PostgresSourceHealthCheck>());
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IFilterTranslator>(new AdoFilterTranslator("postgres")));
+        // Postgres has no implicit conversion between text and most other types in a comparison —
+        // filter values always arrive text-bound (the preview UI's plain text input), so the
+        // translator must cast the bind parameter to the filtered column's real type.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IFilterTranslator>(
+            new AdoFilterTranslator("postgres", castParameter: AdoFilterTranslator.PostgresCast)));
         return services;
     }
 }

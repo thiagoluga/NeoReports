@@ -127,7 +127,7 @@ public static class ReportPreviewRunner
         if (effectiveProperties is null || !effectiveProperties.TryGetValue("sql", out var sqlValue) || sqlValue is not string sql)
             throw new ConfigurationException($"Source for report '{report.Name}' has no 'sql' property to filter.");
 
-        if (!translator.TryTranslate(sql, filters, out string translatedSql, out IReadOnlyDictionary<string, object?> filterParameters))
+        if (!translator.TryTranslate(sql, filters, report.Schema, out string translatedSql, out IReadOnlyDictionary<string, object?> filterParameters))
             throw new ConfigurationException($"Filters could not be translated for source type '{effectiveType}'.");
 
         // AdoKeysetSource reads its own baked-in pageSize property, not BatchContext.PageSize, so the

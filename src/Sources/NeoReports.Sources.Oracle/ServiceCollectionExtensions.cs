@@ -20,7 +20,12 @@ public static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigSourceProvider, OracleConfigSourceProvider>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<ISourceHealthCheck, OracleSourceHealthCheck>());
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IFilterTranslator>(new AdoFilterTranslator("oracle", parameterPrefix: ":")));
+        // Oracle does implicitly convert a text-bound parameter to NUMBER in a comparison, but that
+        // conversion follows the session's NLS settings — a value like "2000.00" can fail with
+        // ORA-01722 against a session whose numeric locale doesn't treat '.' as the decimal
+        // separator, so numeric filters need an explicit, locale-independent cast.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IFilterTranslator>(new AdoFilterTranslator(
+            "oracle", parameterPrefix: ":", castParameter: AdoFilterTranslator.OracleCast)));
         return services;
     }
 }

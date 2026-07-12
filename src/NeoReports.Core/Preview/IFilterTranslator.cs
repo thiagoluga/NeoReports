@@ -1,3 +1,5 @@
+using NeoReports.Abstractions;
+
 namespace NeoReports.Core.Preview;
 
 /// <summary>
@@ -21,12 +23,18 @@ public interface IFilterTranslator
     /// </summary>
     /// <param name="sql">The keyset query to filter.</param>
     /// <param name="filters">The filters to apply; never empty when called.</param>
+    /// <param name="schema">
+    /// The report's declared output schema — lets a translator look up each filter column's
+    /// declared <see cref="ColumnType"/> (e.g. to cast a bind parameter to the column's real SQL
+    /// type on a dialect that doesn't implicitly convert across a comparison).
+    /// </param>
     /// <param name="translatedSql">The filtered query text.</param>
     /// <param name="parameters">Bind values for the filter parameters referenced in <paramref name="translatedSql"/>.</param>
     /// <returns><c>true</c> when the filters were translated; <c>false</c> when this source type cannot apply them.</returns>
     bool TryTranslate(
         string sql,
         IReadOnlyList<PreviewFilter> filters,
+        ReportSchema schema,
         out string translatedSql,
         out IReadOnlyDictionary<string, object?> parameters);
 }

@@ -1,3 +1,4 @@
+using NeoReports.Abstractions;
 using NeoReports.Core.Preview;
 using NeoReports.Sources.Common;
 using Shouldly;
@@ -15,12 +16,20 @@ public class AdoFilterTranslatorTests
 {
     private const string Sql = "SELECT Id, Customer FROM Sales WHERE (@cursor IS NULL OR Id > @cursor) ORDER BY Id";
 
+    private static readonly ReportSchema Schema = new(new[]
+    {
+        new ReportColumn("Id", ColumnType.Integer),
+        new ReportColumn("Customer", ColumnType.String),
+        new ReportColumn("Amount", ColumnType.Decimal),
+        new ReportColumn("Date", ColumnType.DateTime),
+    });
+
     [Fact]
     public void No_filters_returns_the_original_sql_unchanged()
     {
         var translator = new AdoFilterTranslator("postgres");
 
-        var ok = translator.TryTranslate(Sql, Array.Empty<PreviewFilter>(), out var translatedSql, out var parameters);
+        var ok = translator.TryTranslate(Sql, Array.Empty<PreviewFilter>(), Schema, out var translatedSql, out var parameters);
 
         ok.ShouldBeTrue();
         translatedSql.ShouldBe(Sql);
@@ -33,7 +42,7 @@ public class AdoFilterTranslatorTests
         var translator = new AdoFilterTranslator("postgres");
         var filters = new[] { new PreviewFilter("Customer", PreviewFilterOperator.Equals, "Acme") };
 
-        translator.TryTranslate(Sql, filters, out var translatedSql, out var parameters);
+        translator.TryTranslate(Sql, filters, Schema, out var translatedSql, out var parameters);
 
         translatedSql.ShouldBe($"SELECT * FROM ({Sql}) t WHERE t.Customer = @filter0");
         parameters["filter0"].ShouldBe("Acme");
@@ -45,14 +54,14 @@ public class AdoFilterTranslatorTests
         var translator = new AdoFilterTranslator("postgres");
         var filters = new[]
         {
-            new PreviewFilter("Amount", PreviewFilterOperator.GreaterThan, 100m),
+            new PreviewFilter("Amount", PreviewFilterOperator.GreaterThan, "100"),
             new PreviewFilter("Customer", PreviewFilterOperator.NotEquals, "Globex"),
         };
 
-        translator.TryTranslate(Sql, filters, out var translatedSql, out var parameters);
+        translator.TryTranslate(Sql, filters, Schema, out var translatedSql, out var parameters);
 
         translatedSql.ShouldBe($"SELECT * FROM ({Sql}) t WHERE t.Amount > @filter0 AND t.Customer <> @filter1");
-        parameters["filter0"].ShouldBe(100m);
+        parameters["filter0"].ShouldBe("100");
         parameters["filter1"].ShouldBe("Globex");
     }
 
@@ -66,9 +75,9 @@ public class AdoFilterTranslatorTests
     public void Comparison_operators_map_to_the_expected_sql_operator(PreviewFilterOperator op, string expectedSqlOperator)
     {
         var translator = new AdoFilterTranslator("postgres");
-        var filters = new[] { new PreviewFilter("Amount", op, 42) };
+        var filters = new[] { new PreviewFilter("Amount", op, "42") };
 
-        translator.TryTranslate(Sql, filters, out var translatedSql, out _);
+        translator.TryTranslate(Sql, filters, Schema, out var translatedSql, out _);
 
         translatedSql.ShouldBe($"SELECT * FROM ({Sql}) t WHERE t.Amount {expectedSqlOperator} @filter0");
     }
@@ -79,7 +88,7 @@ public class AdoFilterTranslatorTests
         var translator = new AdoFilterTranslator("postgres");
         var filters = new[] { new PreviewFilter("Customer", PreviewFilterOperator.Contains, "cme") };
 
-        translator.TryTranslate(Sql, filters, out var translatedSql, out var parameters);
+        translator.TryTranslate(Sql, filters, Schema, out var translatedSql, out var parameters);
 
         translatedSql.ShouldBe($"SELECT * FROM ({Sql}) t WHERE t.Customer LIKE @filter0");
         parameters["filter0"].ShouldBe("%cme%");
@@ -91,7 +100,7 @@ public class AdoFilterTranslatorTests
         var translator = new AdoFilterTranslator("postgres");
         var filters = new[] { new PreviewFilter("Customer", PreviewFilterOperator.StartsWith, "Ac") };
 
-        translator.TryTranslate(Sql, filters, out var translatedSql, out var parameters);
+        translator.TryTranslate(Sql, filters, Schema, out var translatedSql, out var parameters);
 
         translatedSql.ShouldBe($"SELECT * FROM ({Sql}) t WHERE t.Customer LIKE @filter0");
         parameters["filter0"].ShouldBe("Ac%");
@@ -103,7 +112,7 @@ public class AdoFilterTranslatorTests
         var translator = new AdoFilterTranslator("oracle", parameterPrefix: ":");
         var filters = new[] { new PreviewFilter("Customer", PreviewFilterOperator.Equals, "Acme") };
 
-        translator.TryTranslate(Sql, filters, out var translatedSql, out var parameters);
+        translator.TryTranslate(Sql, filters, Schema, out var translatedSql, out var parameters);
 
         translatedSql.ShouldBe($"SELECT * FROM ({Sql}) t WHERE t.Customer = :filter0");
         parameters["filter0"].ShouldBe("Acme");
@@ -114,5 +123,99 @@ public class AdoFilterTranslatorTests
     {
         new AdoFilterTranslator("mysql").Type.ShouldBe("mysql");
         new AdoFilterTranslator("oracle", ":").Type.ShouldBe("oracle");
+    }
+
+    [Fact]
+    public void No_cast_configured_leaves_the_parameter_token_bare()
+    {
+        // The default (no castParameter) is what MySQL/SQL Server register with — those dialects
+        // implicitly convert a text-bound parameter across a comparison reliably.
+        var translator = new AdoFilterTranslator("mysql");
+        var filters = new[] { new PreviewFilter("Amount", PreviewFilterOperator.GreaterThan, "100.00") };
+
+        translator.TryTranslate(Sql, filters, Schema, out var translatedSql, out _);
+
+        translatedSql.ShouldBe($"SELECT * FROM ({Sql}) t WHERE t.Amount > @filter0");
+    }
+
+    [Theory]
+    [InlineData("Amount", "numeric")]
+    [InlineData("Date", "timestamp")]
+    public void Postgres_registration_casts_the_bind_parameter_to_the_filtered_columns_type(string column, string sqlType)
+    {
+        var translator = new AdoFilterTranslator("postgres", castParameter: AdoFilterTranslator.PostgresCast);
+        var filters = new[] { new PreviewFilter(column, PreviewFilterOperator.GreaterThan, "100") };
+
+        translator.TryTranslate(Sql, filters, Schema, out var translatedSql, out _);
+
+        translatedSql.ShouldBe($"SELECT * FROM ({Sql}) t WHERE t.{column} > @filter0::{sqlType}");
+    }
+
+    [Fact]
+    public void Postgres_registration_does_not_cast_a_string_column()
+    {
+        var translator = new AdoFilterTranslator("postgres", castParameter: AdoFilterTranslator.PostgresCast);
+        var filters = new[] { new PreviewFilter("Customer", PreviewFilterOperator.Equals, "Acme") };
+
+        translator.TryTranslate(Sql, filters, Schema, out var translatedSql, out _);
+
+        translatedSql.ShouldBe($"SELECT * FROM ({Sql}) t WHERE t.Customer = @filter0");
+    }
+
+    [Theory]
+    [InlineData(PreviewFilterOperator.Contains)]
+    [InlineData(PreviewFilterOperator.StartsWith)]
+    public void Contains_and_startswith_are_declined_against_a_non_string_column(PreviewFilterOperator op)
+    {
+        // A LIKE comparison only makes sense against text; against a numeric/date column it would
+        // otherwise emit an uncastable `t.Amount LIKE @filter0` that every dialect rejects at
+        // execution time — declining to translate here surfaces an honest 400 instead.
+        var translator = new AdoFilterTranslator("postgres", castParameter: AdoFilterTranslator.PostgresCast);
+        var filters = new[] { new PreviewFilter("Amount", op, "100") };
+
+        var ok = translator.TryTranslate(Sql, filters, Schema, out var translatedSql, out var parameters);
+
+        ok.ShouldBeFalse();
+        translatedSql.ShouldBe(Sql);
+        parameters.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Oracle_registration_casts_a_numeric_column_with_an_nls_independent_format()
+    {
+        var translator = new AdoFilterTranslator("oracle", parameterPrefix: ":", castParameter: AdoFilterTranslator.OracleCast);
+        var filters = new[] { new PreviewFilter("Amount", PreviewFilterOperator.GreaterThan, "2000.00") };
+
+        translator.TryTranslate(Sql, filters, Schema, out var translatedSql, out _);
+
+        translatedSql.ShouldBe(
+            $"SELECT * FROM ({Sql}) t WHERE t.Amount > " +
+            "TO_NUMBER(:filter0, 'FM999999999999999990.099999999999999999', 'NLS_NUMERIC_CHARACTERS=''.,''')");
+    }
+
+    [Fact]
+    public void Oracle_registration_does_not_cast_a_date_column_yet()
+    {
+        // Date/DateTime/Timestamp casting for Oracle is a separate, still-open gap (blocked on a
+        // reserved-word column-quoting issue) — left uncast rather than shipping an unverified fix.
+        var translator = new AdoFilterTranslator("oracle", parameterPrefix: ":", castParameter: AdoFilterTranslator.OracleCast);
+        var filters = new[] { new PreviewFilter("Date", PreviewFilterOperator.Equals, "2026-01-01") };
+
+        translator.TryTranslate(Sql, filters, Schema, out var translatedSql, out _);
+
+        translatedSql.ShouldBe($"SELECT * FROM ({Sql}) t WHERE t.Date = :filter0");
+    }
+
+    [Fact]
+    public void Sql_registration_appends_offset_zero_rows_so_the_derived_table_stays_valid_t_sql()
+    {
+        // A derived table containing a bare ORDER BY (every keyset query already ends with one) is
+        // invalid T-SQL unless followed by TOP, OFFSET, or FOR XML.
+        var translator = new AdoFilterTranslator("sql", innerQuerySuffix: " OFFSET 0 ROWS");
+        var filters = new[] { new PreviewFilter("Customer", PreviewFilterOperator.Equals, "Acme") };
+
+        translator.TryTranslate(Sql, filters, Schema, out var translatedSql, out _);
+
+        translatedSql.ShouldBe($"SELECT * FROM ({Sql} OFFSET 0 ROWS) t WHERE t.Customer = @filter0");
     }
 }

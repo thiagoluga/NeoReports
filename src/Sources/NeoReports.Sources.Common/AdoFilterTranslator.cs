@@ -1,4 +1,5 @@
 using System.Globalization;
+using NeoReports.Abstractions;
 using NeoReports.Core.Preview;
 
 namespace NeoReports.Sources.Common;
@@ -14,17 +15,50 @@ namespace NeoReports.Sources.Common;
 /// <c>:</c> vs. everyone else's <c>@</c>) — the translation logic itself is identical ADO.NET
 /// regardless of dialect.
 /// </summary>
+/// <remarks>
+/// A filter's bound value is always its literal text form — <see cref="PreviewFilter.Value"/> is
+/// <c>string?</c>, matching exactly what the preview UI's plain text input sends, regardless of the
+/// filtered column's real type (G7). Unlike the D43 keyset cursor (part of the report author's own
+/// trusted SQL text, so they can hand-write a cast such as <c>@cursor::bigint</c>), the
+/// <c>WHERE</c> fragment here is synthesized by this class with no author-controlled place to add
+/// one — so a dialect whose implicit text-to-typed conversion is missing (Postgres) or unreliable
+/// (Oracle's is session-NLS-dependent for decimal separators) needs an explicit cast added for it,
+/// via the constructor's <c>castParameter</c>.
+/// </remarks>
 public sealed class AdoFilterTranslator : IFilterTranslator
 {
     private readonly string _parameterPrefix;
+    private readonly Func<ColumnType, string, string?>? _castParameter;
+    private readonly string? _innerQuerySuffix;
 
     /// <summary>Creates a translator for one provider type.</summary>
     /// <param name="type">Source type id this translator handles (e.g. "postgres").</param>
     /// <param name="parameterPrefix">Bind-variable prefix the provider expects (<c>@</c> by default, <c>:</c> for Oracle).</param>
-    public AdoFilterTranslator(string type, string parameterPrefix = "@")
+    /// <param name="castParameter">
+    /// Given a filtered column's declared <see cref="ColumnType"/> and its bind parameter token
+    /// (e.g. <c>"@filter0"</c>), returns the expression to compare against instead of the bare
+    /// token — e.g. Postgres's <c>"{token}::numeric"</c>, Oracle's <c>"TO_NUMBER({token}, ...)"</c>
+    /// — or <c>null</c> to leave the token bare (no cast needed for that type, or the dialect
+    /// implicitly converts it correctly). <c>null</c> (the default) applies no cast to anything —
+    /// the right choice for a dialect whose implicit text-to-typed conversion is reliable.
+    /// </param>
+    /// <param name="innerQuerySuffix">
+    /// Text appended directly after <c>sql</c> before it is wrapped as a derived table — e.g. SQL
+    /// Server's <c>" OFFSET 0 ROWS"</c>, needed because a derived table containing a bare
+    /// <c>ORDER BY</c> (which every keyset query already ends with) is invalid T-SQL unless
+    /// followed by <c>TOP</c>, <c>OFFSET</c>, or <c>FOR XML</c>. <c>null</c> (the default) appends
+    /// nothing — the right choice for a dialect that allows <c>ORDER BY</c> in a derived table.
+    /// </param>
+    public AdoFilterTranslator(
+        string type,
+        string parameterPrefix = "@",
+        Func<ColumnType, string, string?>? castParameter = null,
+        string? innerQuerySuffix = null)
     {
         Type = type ?? throw new ArgumentNullException(nameof(type));
         _parameterPrefix = string.IsNullOrEmpty(parameterPrefix) ? "@" : parameterPrefix;
+        _castParameter = castParameter;
+        _innerQuerySuffix = innerQuerySuffix;
     }
 
     /// <inheritdoc />
@@ -34,11 +68,13 @@ public sealed class AdoFilterTranslator : IFilterTranslator
     public bool TryTranslate(
         string sql,
         IReadOnlyList<PreviewFilter> filters,
+        ReportSchema schema,
         out string translatedSql,
         out IReadOnlyDictionary<string, object?> parameters)
     {
         ArgumentNullException.ThrowIfNull(sql);
         ArgumentNullException.ThrowIfNull(filters);
+        ArgumentNullException.ThrowIfNull(schema);
 
         if (filters.Count == 0)
         {
@@ -53,10 +89,24 @@ public sealed class AdoFilterTranslator : IFilterTranslator
         for (var i = 0; i < filters.Count; i++)
         {
             PreviewFilter filter = filters[i];
+
+            // A LIKE comparison only makes sense against text — Contains/StartsWith on a numeric/date
+            // column would otherwise emit an uncastable `t.Amount LIKE @filter0`, which every dialect
+            // rejects at execution time with a raw provider error (e.g. Postgres's "operator does not
+            // exist: numeric ~~ unknown") instead of the honest 400 a translator declining to
+            // translate produces.
+            if (filter.Operator is PreviewFilterOperator.Contains or PreviewFilterOperator.StartsWith
+                && schema.Find(filter.Column)?.Type != ColumnType.String)
+            {
+                translatedSql = sql;
+                parameters = new Dictionary<string, object?>();
+                return false;
+            }
+
             string paramName = "filter" + i.ToString(CultureInfo.InvariantCulture);
             string token = _parameterPrefix + paramName;
 
-            (string op, object? value) = filter.Operator switch
+            (string op, string? value) = filter.Operator switch
             {
                 PreviewFilterOperator.Equals => ("=", filter.Value),
                 PreviewFilterOperator.NotEquals => ("<>", filter.Value),
@@ -69,12 +119,73 @@ public sealed class AdoFilterTranslator : IFilterTranslator
                 _ => throw new ArgumentOutOfRangeException(nameof(filters), filter.Operator, "Unknown preview filter operator."),
             };
 
-            conditions.Add($"t.{filter.Column} {op} {token}");
+            // LIKE always compares text to text (Contains/StartsWith coerce the bound value to a
+            // wildcarded string above) — casting only applies to the other, type-sensitive comparisons.
+            string comparand = op == "LIKE" ? token : ApplyCast(token, schema.Find(filter.Column)?.Type);
+
+            conditions.Add($"t.{filter.Column} {op} {comparand}");
             values[paramName] = value;
         }
 
-        translatedSql = $"SELECT * FROM ({sql}) t WHERE {string.Join(" AND ", conditions)}";
+        string innerSql = _innerQuerySuffix is null ? sql : sql + _innerQuerySuffix;
+        translatedSql = $"SELECT * FROM ({innerSql}) t WHERE {string.Join(" AND ", conditions)}";
         parameters = values;
         return true;
     }
+
+    private string ApplyCast(string token, ColumnType? columnType)
+    {
+        if (_castParameter is null || columnType is null)
+            return token;
+
+        return _castParameter(columnType.Value, token) ?? token;
+    }
+
+    /// <summary>
+    /// Casts a filter's bind parameter (always text-bound, coming from the preview UI's plain text
+    /// input) to the filtered column's real type using Postgres's <c>::type</c> syntax — Postgres has
+    /// no implicit conversion between <c>text</c> and most other types in a comparison operator.
+    /// Returns <c>null</c> for <see cref="ColumnType.String"/>/<see cref="ColumnType.Json"/>/
+    /// <see cref="ColumnType.Binary"/> (no cast needed, or no single safe cast to guess).
+    /// </summary>
+    public static string? PostgresCast(ColumnType type, string token) => type switch
+    {
+        ColumnType.Integer => $"{token}::bigint",
+        ColumnType.Decimal or ColumnType.Money => $"{token}::numeric",
+        ColumnType.Boolean => $"{token}::boolean",
+        ColumnType.Date => $"{token}::date",
+        ColumnType.Time => $"{token}::time",
+        ColumnType.DateTime or ColumnType.Timestamp => $"{token}::timestamp",
+        ColumnType.Uuid => $"{token}::uuid",
+        _ => null,
+    };
+
+    /// <summary>
+    /// Casts a filter's numeric bind parameter to <c>NUMBER</c> using an explicit format model and
+    /// an <c>NLS_NUMERIC_CHARACTERS</c> override that fixes '.' as the decimal separator — Oracle
+    /// does implicitly convert a <c>VARCHAR2</c> parameter to <c>NUMBER</c> in a comparison, but that
+    /// conversion follows the session's NLS settings, so a value like <c>"2000.00"</c> (the
+    /// invariant-culture format every filter value uses) can fail with <c>ORA-01722</c> against a
+    /// session whose numeric locale doesn't treat '.' as the decimal separator. The format model has
+    /// no explicit sign element (<c>S</c>/<c>MI</c>/<c>PR</c>) on purpose — verified empirically
+    /// against a real Oracle container that this plain form already accepts a leading <c>-</c> for
+    /// negative values with no special handling, while adding <c>S</c> instead breaks *positive*
+    /// values (Oracle then requires an explicit leading <c>+</c>, which invariant-culture formatting
+    /// never produces).
+    /// </summary>
+    /// <remarks>
+    /// Only numeric column types are covered here. Boolean/Uuid/Date/DateTime/Timestamp casting has
+    /// a separate, still-open gap — there is no single safe cast to guess for those without knowing
+    /// the report author's actual underlying Oracle column type (e.g. a <c>Boolean</c> column could
+    /// be <c>NUMBER(1)</c> or <c>CHAR(1)</c>; a date column hits a further, unrelated reserved-word
+    /// quoting bug, ORA-01747, in this translator's <c>t.{Column}</c> interpolation) — so all of
+    /// those are deliberately left uncast (return <c>null</c>) rather than shipping an unverified
+    /// fix. Tracked as a follow-up.
+    /// </remarks>
+    public static string? OracleCast(ColumnType type, string token) => type switch
+    {
+        ColumnType.Integer or ColumnType.Decimal or ColumnType.Money =>
+            $"TO_NUMBER({token}, 'FM999999999999999990.099999999999999999', 'NLS_NUMERIC_CHARACTERS=''.,''')",
+        _ => null,
+    };
 }
