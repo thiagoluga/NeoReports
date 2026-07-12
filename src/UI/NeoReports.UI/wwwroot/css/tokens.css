@@ -25,6 +25,13 @@
 }
 
 :root {
+  /* Tells the browser which palette native controls (select popups, scrollbars,
+     checkboxes) should use — without it, a <select>'s native OS dropdown list
+     ignores the page's dark palette entirely and falls back to illegible
+     default contrast, since the browser has no other signal that the page is
+     dark-themed. */
+  color-scheme: light;
+
   /* ---------- Color: neutrals ---------- */
   --bg:           #FFFFFF;         /* app surface, cards */
   --bg2:          #F7F7F8;         /* metric strips, code, table headers, footers */
@@ -121,6 +128,7 @@
 /* Dark mode — same tokens, remapped. ----------------------------- */
 @media (prefers-color-scheme: dark) {
   :root {
+    color-scheme: dark;
     --bg:           #0B0B0C;
     --bg2:          #141417;
     --bg3:          #1B1B1F;
