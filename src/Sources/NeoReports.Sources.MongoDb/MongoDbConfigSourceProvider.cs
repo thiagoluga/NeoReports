@@ -12,6 +12,8 @@ namespace NeoReports.Sources.MongoDb;
 /// </summary>
 public sealed class MongoDbConfigSourceProvider : IConfigSourceProvider
 {
+    private const string SourceTypeLabel = "MongoDB";
+
     /// <inheritdoc />
     public string Type => "mongodb";
 
@@ -22,11 +24,11 @@ public sealed class MongoDbConfigSourceProvider : IConfigSourceProvider
         ArgumentNullException.ThrowIfNull(schema);
 
         IReadOnlyDictionary<string, object?>? properties = source.Properties;
-        string connectionString = AdoConfigProperties.RequireString(properties, "connectionString", "MongoDB");
-        string database = AdoConfigProperties.RequireString(properties, "database", "MongoDB");
-        string collection = AdoConfigProperties.RequireString(properties, "collection", "MongoDB");
-        string key = AdoConfigProperties.RequireString(properties, "key", "MongoDB");
-        int pageSize = AdoConfigProperties.OptionalInt(properties, "pageSize", "MongoDB") ?? 1000;
+        string connectionString = AdoConfigProperties.RequireString(properties, "connectionString", SourceTypeLabel);
+        string database = AdoConfigProperties.RequireString(properties, "database", SourceTypeLabel);
+        string collection = AdoConfigProperties.RequireString(properties, "collection", SourceTypeLabel);
+        string key = AdoConfigProperties.RequireString(properties, "key", SourceTypeLabel);
+        int pageSize = AdoConfigProperties.OptionalInt(properties, "pageSize", SourceTypeLabel) ?? 1000;
 
         return new MongoDbKeysetSource<ReportRecord>(
             connectionString, database, collection, key, pageSize, schema,

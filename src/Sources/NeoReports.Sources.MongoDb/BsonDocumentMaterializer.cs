@@ -23,7 +23,7 @@ internal sealed class BsonDocumentMaterializer<T>
     /// <summary>Reflects over <typeparamref name="T"/> once, ahead of any document reads.</summary>
     public BsonDocumentMaterializer()
     {
-        var type = typeof(T);
+        Type type = typeof(T);
         _ctor = type.GetConstructors()
             .Where(c => c.GetParameters().Length > 0)
             .OrderByDescending(c => c.GetParameters().Length)
@@ -51,8 +51,8 @@ internal sealed class BsonDocumentMaterializer<T>
             return (T)_ctor.Invoke(args);
         }
 
-        var instance = Activator.CreateInstance<T>();
-        foreach (var prop in _settableProps)
+        T instance = Activator.CreateInstance<T>();
+        foreach (PropertyInfo prop in _settableProps)
         {
             if (document.TryGetValue(prop.Name, out BsonValue value) && value is not BsonNull)
                 prop.SetValue(instance, ReadValue(value, prop.PropertyType));
@@ -64,7 +64,7 @@ internal sealed class BsonDocumentMaterializer<T>
     private static object? ReadValue(BsonValue value, Type targetType)
     {
         var clrValue = BsonTypeMapper.MapToDotNetValue(value);
-        var underlying = Nullable.GetUnderlyingType(targetType) ?? targetType;
+        Type underlying = Nullable.GetUnderlyingType(targetType) ?? targetType;
 
         if (clrValue is null)
             return GetDefault(targetType);

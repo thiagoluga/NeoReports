@@ -14,8 +14,8 @@ public sealed class MongoDbServerFixture : IAsyncLifetime
     private readonly MongoDbContainer _container = new MongoDbBuilder("mongo:6.0").Build();
 
     public string ConnectionString { get; private set; } = string.Empty;
-    public string Database => "salesdb";
-    public string Collection => "Sales";
+    public static string Database => "salesdb";
+    public static string Collection => "Sales";
     public bool Available { get; private set; }
     public int SeededRows { get; private set; }
 
@@ -39,7 +39,7 @@ public sealed class MongoDbServerFixture : IAsyncLifetime
 
     private async Task SeedAsync()
     {
-        var client = new MongoClient(ConnectionString);
+        using var client = new MongoClient(ConnectionString);
         IMongoCollection<BsonDocument> collection = client.GetDatabase(Database).GetCollection<BsonDocument>(Collection);
 
         // 2500 documents so a pageSize of 1000 yields 3 pages (2 full + 1 partial).

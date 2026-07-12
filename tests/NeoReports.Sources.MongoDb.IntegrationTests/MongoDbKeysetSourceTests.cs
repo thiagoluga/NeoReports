@@ -21,7 +21,7 @@ public class MongoDbKeysetSourceTests : IClassFixture<MongoDbServerFixture>
     {
         Skip.IfNot(_fixture.Available, "Docker/MongoDB container not available.");
 
-        var source = Source.MongoDb(_fixture.ConnectionString, _fixture.Database, _fixture.Collection)
+        var source = Source.MongoDb(_fixture.ConnectionString, MongoDbServerFixture.Database, MongoDbServerFixture.Collection)
             .Keyset<Sale, long>(v => v.Id, pageSize: 1000);
 
         var all = new List<Sale>();
@@ -50,7 +50,7 @@ public class MongoDbKeysetSourceTests : IClassFixture<MongoDbServerFixture>
     {
         Skip.IfNot(_fixture.Available, "Docker/MongoDB container not available.");
 
-        var source = Source.MongoDb(_fixture.ConnectionString, _fixture.Database, _fixture.Collection)
+        var source = Source.MongoDb(_fixture.ConnectionString, MongoDbServerFixture.Database, MongoDbServerFixture.Collection)
             .Keyset<Sale, long>(v => v.Id, pageSize: 10);
         var result = await source.ReadBatchAsync(new BatchContext(Exec(), 10, null, 1), CancellationToken.None);
 

@@ -36,7 +36,7 @@ public sealed class MongoDbSourceHealthCheck : ISourceHealthCheck
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            var client = new MongoClient(connectionString);
+            using var client = new MongoClient(connectionString);
             await client.GetDatabase("admin")
                 .RunCommandAsync<BsonDocument>(new BsonDocument("ping", 1), cancellationToken: timeoutCts.Token)
                 .ConfigureAwait(false);

@@ -36,8 +36,8 @@ public class DynamicConfigMongoDbTests : IClassFixture<MongoDbServerFixture>, ID
             "type": "mongodb",
             "properties": {
               "connectionString": {{JsonString(_fixture.ConnectionString)}},
-              "database": {{JsonString(_fixture.Database)}},
-              "collection": {{JsonString(_fixture.Collection)}},
+              "database": {{JsonString(MongoDbServerFixture.Database)}},
+              "collection": {{JsonString(MongoDbServerFixture.Collection)}},
               "key": "Id",
               "pageSize": 1000
             }
