@@ -754,6 +754,15 @@ Requested directly by the maintainer (2026-07). Blueprint: `docs/epic-g-more-sou
   `FilterValueConverter`. See D45's "Fix (G7)" note for the full fix (schema-aware `IFilterTranslator`,
   per-provider `castParameter`/`innerQuerySuffix` on `AdoFilterTranslator`).
   **Known gap, not fixed here:** filtering Oracle's `Date` column (or any reserved-word column name)
-  still fails (`ORA-01747`, an identifier-quoting issue, not a value-type one); `OracleCast` also
-  only covers `Integer`/`Decimal`/`Money`, leaving `Boolean`/`Uuid`/`Date`/`DateTime`/`Timestamp`
-  uncast for the same "no single safe cast to guess" reason — both tracked as a follow-up.
+  still fails (`ORA-01747`, an identifier-quoting issue, not a value-type one) — fixed as a follow-up,
+  see G8. `OracleCast` still only covers `Integer`/`Decimal`/`Money`, leaving
+  `Boolean`/`Uuid`/`Date`/`DateTime`/`Timestamp` uncast for the same "no single safe cast to guess"
+  reason — remains open.
+- [x] **G8 — Fix: Oracle reserved-word column names rejected in filter WHERE clauses.** Follow-up to
+  G7's known gap. `AdoFilterTranslator` interpolated a filtered column bare (`t.{Column}`) into the
+  outer `WHERE`; Oracle rejects a bare reference to a column colliding with a reserved word/datatype
+  (e.g. `Date`) with `ORA-01747`. Fixed with an optional per-provider `quoteIdentifier` delegate on
+  `AdoFilterTranslator`; Oracle's `OracleQuoteIdentifier` quotes only columns matching a curated
+  reserved-word list (`"Date"`), leaving every other column bare — unaffected, since it matches
+  Oracle's default case-folding of the report author's own unquoted inner SQL. See D45's "Fix (G8)"
+  note.
