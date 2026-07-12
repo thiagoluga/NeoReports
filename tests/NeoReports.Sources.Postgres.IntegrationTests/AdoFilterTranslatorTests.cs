@@ -126,6 +126,53 @@ public class AdoFilterTranslatorTests
     }
 
     [Fact]
+    public void Unknown_operator_throws()
+    {
+        var translator = new AdoFilterTranslator("postgres");
+        var filters = new[] { new PreviewFilter("Customer", (PreviewFilterOperator)999, "Acme") };
+
+        Should.Throw<ArgumentOutOfRangeException>(() => translator.TryTranslate(Sql, filters, Schema, out _, out _));
+    }
+
+    [Theory]
+    [InlineData(ColumnType.Integer, "bigint")]
+    [InlineData(ColumnType.Decimal, "numeric")]
+    [InlineData(ColumnType.Money, "numeric")]
+    [InlineData(ColumnType.Boolean, "boolean")]
+    [InlineData(ColumnType.Date, "date")]
+    [InlineData(ColumnType.Time, "time")]
+    [InlineData(ColumnType.DateTime, "timestamp")]
+    [InlineData(ColumnType.Timestamp, "timestamp")]
+    [InlineData(ColumnType.Uuid, "uuid")]
+    public void PostgresCast_maps_every_castable_column_type(ColumnType type, string sqlType) =>
+        AdoFilterTranslator.PostgresCast(type, "@filter0").ShouldBe($"@filter0::{sqlType}");
+
+    [Theory]
+    [InlineData(ColumnType.String)]
+    [InlineData(ColumnType.Json)]
+    [InlineData(ColumnType.Binary)]
+    public void PostgresCast_returns_null_for_types_with_no_safe_cast(ColumnType type) =>
+        AdoFilterTranslator.PostgresCast(type, "@filter0").ShouldBeNull();
+
+    [Theory]
+    [InlineData(ColumnType.Integer)]
+    [InlineData(ColumnType.Decimal)]
+    [InlineData(ColumnType.Money)]
+    public void OracleCast_casts_numeric_types(ColumnType type) =>
+        AdoFilterTranslator.OracleCast(type, ":filter0").ShouldBe(
+            "TO_NUMBER(:filter0, 'FM999999999999999990.099999999999999999', 'NLS_NUMERIC_CHARACTERS=''.,''')");
+
+    [Theory]
+    [InlineData(ColumnType.String)]
+    [InlineData(ColumnType.Boolean)]
+    [InlineData(ColumnType.Uuid)]
+    [InlineData(ColumnType.Date)]
+    [InlineData(ColumnType.DateTime)]
+    [InlineData(ColumnType.Timestamp)]
+    public void OracleCast_returns_null_for_non_numeric_types(ColumnType type) =>
+        AdoFilterTranslator.OracleCast(type, ":filter0").ShouldBeNull();
+
+    [Fact]
     public void No_cast_configured_leaves_the_parameter_token_bare()
     {
         // The default (no castParameter) is what MySQL/SQL Server register with — those dialects
