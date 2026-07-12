@@ -42,10 +42,36 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   keyword before the alias — Oracle rejects it for derived tables, every other dialect accepts an
   alias with or without it) and binds filter values through the existing
   `ReportExecutionContext.Parameters` mechanism `AdoKeysetSource` already merges into its query — no
-  new ADO plumbing needed. New Core unit tests for `AdoFilterTranslator` (SQL wrapping, all eight
-  operators, `LIKE` wildcards bound as parameter values not string-concatenated, Oracle's `:` prefix)
+  new ADO plumbing needed. `PreviewFilter.Value`/`PreviewFilterRequest.Value` are `string?`, not
+  `object?` — a filter value is always its literal text form, matching exactly what the preview UI's
+  plain text input sends regardless of the filtered column's real type, checked by the compiler
+  rather than merely documented. A new `FilterValueConverter` decodes `PreviewFilterRequest.Value` as
+  that literal text however it arrived in JSON (string verbatim, a number's exact written digits, a
+  boolean as `"true"`/`"false"`) with no date-sniffing — unlike the existing `PrimitiveObjectConverter`
+  (used for config/parameter property bags), which would otherwise silently reinterpret an ordinary
+  decimal like `"12.25"` as a `DateTime` (December 25) before it ever reached a translator. Because
+  every filter value is now guaranteed text, `IFilterTranslator.TryTranslate` also receives the
+  report's `ReportSchema` and `AdoFilterTranslator` takes optional per-provider `castParameter`/
+  `innerQuerySuffix` hooks: Postgres casts the bind parameter to the column's real type
+  (`{token}::{type}` — no implicit `text` conversion), SQL Server appends `OFFSET 0 ROWS` to the
+  inner query (a derived table can't contain a bare `ORDER BY`, which every keyset query ends with,
+  without `TOP`/`OFFSET`/`FOR XML`), and Oracle casts numeric columns via `TO_NUMBER` with an
+  explicit format model (its implicit `VARCHAR2`→`NUMBER` conversion is session-NLS-dependent, so
+  `"2000.00"` can fail with `ORA-01722` against a session that doesn't treat `.` as the decimal
+  separator; verified empirically that a negative value like `"-1"` already parses correctly with
+  this plain format, with no sign element needed); MySQL needs neither. A `Contains`/`StartsWith` filter against a non-`String` column now
+  makes the translator decline (an honest 400) instead of emitting an uncastable `LIKE` comparison
+  that crashed with a raw provider error. New Core unit tests for `AdoFilterTranslator` (SQL
+  wrapping, all eight operators, `LIKE` wildcards bound as parameter values not string-concatenated,
+  Oracle's `:` prefix, per-provider casting/suffix behavior, `LIKE`-on-non-string-column rejection)
   and AspNetCore integration tests for the endpoint (happy path, page-size capping, typed-report 400,
-  filters applied/ignored-honestly per source type, unknown report 404).
+  filters applied/ignored-honestly per source type, unknown report 404, filter values decoded as
+  literal text — including a date-shaped decimal that must survive unreinterpreted). New
+  Testcontainers-backed integration tests per relational provider exercise a filtered preview against
+  a real database end to end (Postgres/SQL Server/Oracle/MySQL) — the gap that let the
+  `JsonElement`/cast/`ORDER BY`/NLS issues above ship unnoticed in the first place, since the existing
+  `AdoFilterTranslator` tests only asserted translated SQL text and the endpoint tests only used
+  fakes.
 - `NeoReports.Sources.MongoDb` — a MongoDB source (MongoDB.Driver, D44). Standalone design, unlike
   the relational providers: Mongo has no `DbConnection`/`DbDataReader` to share `AdoKeysetSource`
   with, so `MongoDbKeysetSource<T>` implements keyset pagination directly —

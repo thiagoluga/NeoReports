@@ -113,6 +113,43 @@ public class PreviewEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task Filter_value_is_unwrapped_to_a_string_not_left_as_a_raw_json_element()
+    {
+        // PreviewFilterRequest.Value is object? — without an explicit converter, System.Text.Json
+        // leaves it as a boxed JsonElement, which no ADO.NET provider can bind as a DbParameter
+        // value (every filtered preview, on every relational provider, would fail before this fix).
+        var translator = new FakeFilterTranslator("fake-sql");
+        using var host = await StartWithDynamicReportAsync("fake-sql", translator);
+        var client = host.GetTestClient();
+
+        var response = await PostJsonAsync(client, "/api/reports/dyn/preview",
+            """{ "filters": [ { "column": "Customer", "operator": "Equals", "value": "150.00" } ] }""");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        translator.LastValue.ShouldBe("150.00");
+    }
+
+    [Fact]
+    public async Task Filter_value_that_looks_like_a_date_is_not_silently_reinterpreted()
+    {
+        // A naive JsonElement-unwrap converter that recovers ISO-8601-shaped strings as DateTime
+        // (reasonable for config/parameter values) is the wrong choice here: an ordinary decimal
+        // like "12.25" parses as December 25 under DateTime.TryParse's lenient rules, which would
+        // corrupt both a Contains/StartsWith pattern (wildcarded around the reformatted date instead
+        // of the literal text) and a typed comparison cast (chosen from the column's declared type,
+        // now mismatched against the value's silently-changed runtime type).
+        var translator = new FakeFilterTranslator("fake-sql");
+        using var host = await StartWithDynamicReportAsync("fake-sql", translator);
+        var client = host.GetTestClient();
+
+        var response = await PostJsonAsync(client, "/api/reports/dyn/preview",
+            """{ "filters": [ { "column": "Customer", "operator": "Equals", "value": "12.25" } ] }""");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        translator.LastValue.ShouldBe("12.25");
+    }
+
+    [Fact]
     public async Task Filter_column_not_in_the_reports_schema_returns_400()
     {
         // A filter's Column is interpolated directly into SQL text by IFilterTranslator — this must
@@ -127,29 +164,42 @@ public class PreviewEndpointTests : IDisposable
     }
 
     private Task<Microsoft.Extensions.Hosting.IHost> StartWithDynamicReportAsync(string sourceType, bool registerTranslator) =>
-        TestApp.StartAsync(async services =>
+        StartWithDynamicReportAsync(sourceType, registerTranslator ? new FakeFilterTranslator(sourceType) : null);
+
+    // Saves the report config through the running host's own IReportConfigStore, after
+    // TestApp.StartAsync has returned — not during the (synchronous) configureReports callback.
+    // TestApp.StartAsync's configureReports parameter is a plain Action<IServiceCollection>; an
+    // async lambda passed there runs fire-and-forget, so the config file's write could still be in
+    // flight when the host starts serving requests. That race is invisible at normal speed but
+    // reliably reproduces under CI's slower coverage-instrumented test run — this mirrors the
+    // proven-safe pattern DynamicReportEndpointsTests already uses (register after the host is up).
+    private async Task<Microsoft.Extensions.Hosting.IHost> StartWithDynamicReportAsync(string sourceType, IFilterTranslator? translator)
+    {
+        Microsoft.Extensions.Hosting.IHost host = await TestApp.StartAsync(services =>
         {
             services.AddDynamicReports(o => o.Directory = _configDir);
             services.AddSingleton<IConfigSourceProvider>(new FakeFilterableProvider(sourceType));
             services.AddSingleton<IWriterFactory>(new CsvWriterFactory(new CsvOptions()));
-            if (registerTranslator)
-                services.AddSingleton<IFilterTranslator>(new FakeFilterTranslator(sourceType));
-
-            await using var provider = services.BuildServiceProvider();
-            IReportConfigStore store = provider.GetRequiredService<IReportConfigStore>();
-            string config = $$"""
-            {
-              "name": "dyn",
-              "source": { "type": "{{sourceType}}", "properties": { "sql": "SELECT * FROM Sales", "key": "Id" } },
-              "columns": [
-                { "name": "Id", "type": "Integer" },
-                { "name": "Customer", "type": "String" }
-              ],
-              "outputs": [ { "format": "csv" } ]
-            }
-            """;
-            await store.SaveAsync("dyn", config, CancellationToken.None);
+            if (translator is not null)
+                services.AddSingleton(translator);
         });
+
+        IReportConfigStore store = host.Services.GetRequiredService<IReportConfigStore>();
+        string config = $$"""
+        {
+          "name": "dyn",
+          "source": { "type": "{{sourceType}}", "properties": { "sql": "SELECT * FROM Sales", "key": "Id" } },
+          "columns": [
+            { "name": "Id", "type": "Integer" },
+            { "name": "Customer", "type": "String" }
+          ],
+          "outputs": [ { "format": "csv" } ]
+        }
+        """;
+        await store.SaveAsync("dyn", config, CancellationToken.None);
+
+        return host;
+    }
 
     public void Dispose()
     {
@@ -207,8 +257,15 @@ public sealed class FakeFilterTranslator : IFilterTranslator
 
     public string Type { get; }
 
+    /// <summary>The last-seen filter's literal value — lets a test assert it survived JSON
+    /// deserialization unchanged (not left as a boxed <c>JsonElement</c>, which no ADO.NET provider
+    /// could bind as a <c>DbParameter</c> value, and not silently reinterpreted by a converter that
+    /// guesses at richer types from the text).</summary>
+    public string? LastValue { get; private set; }
+
     public bool TryTranslate(
-        string sql, IReadOnlyList<PreviewFilter> filters, out string translatedSql, out IReadOnlyDictionary<string, object?> parameters)
+        string sql, IReadOnlyList<PreviewFilter> filters, ReportSchema schema, out string translatedSql,
+        out IReadOnlyDictionary<string, object?> parameters)
     {
         if (filters.Count == 0)
         {
@@ -217,6 +274,7 @@ public sealed class FakeFilterTranslator : IFilterTranslator
             return true;
         }
 
+        LastValue = filters[0].Value;
         translatedSql = $"SELECT * FROM ({sql}) t WHERE t.{filters[0].Column} = @filter0";
         parameters = new Dictionary<string, object?> { ["filter0"] = filters[0].Value };
         return true;

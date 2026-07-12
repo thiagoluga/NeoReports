@@ -733,3 +733,27 @@ Requested directly by the maintainer (2026-07). Blueprint: `docs/epic-g-more-sou
   exists). Verified live against `samples/09-web-ui-live` in a real browser: registered a dynamic
   report, previewed it, applied a filter against a source type with no translator (the honest note
   appeared, sample stayed unfiltered, "Run now" stayed enabled).
+- [x] **G7 — Fix: filtered preview never actually worked against a real relational database.**
+  G5/G6's tests only ever asserted `AdoFilterTranslator`'s translated SQL *text* (no database) or
+  went through fakes (`PreviewEndpointTests`) — no test executed a filtered preview against a real
+  Postgres/MySQL/Oracle/SQL Server. Adding real Testcontainers coverage surfaced five distinct bugs,
+  all before this feature had shipped: (1) `PreviewFilterRequest.Value` deserialized to a raw
+  `JsonElement`, which no ADO.NET provider can bind — broke every filtered preview, every provider,
+  regardless of column type; (2) Postgres has no implicit `text`→typed conversion in a comparison
+  (the D43 keyset-cursor gap, but with no report-author SQL text to hand-write a cast into this
+  time); (3) SQL Server rejects a bare `ORDER BY` inside a derived table (every keyset query ends
+  with one) without `TOP`/`OFFSET`/`FOR XML`; (4) Oracle's implicit `VARCHAR2`→`NUMBER` conversion is
+  session-NLS-dependent, failing on ordinary invariant-culture decimals like `"2000.00"`; (5) a
+  `Contains`/`StartsWith` filter against a non-`String` column crashed with a raw provider error
+  instead of an honest 400.
+  A first-pass fix for (1) reused an existing `PrimitiveObjectConverter` that also recovers
+  date-shaped strings as `DateTime` — wrong for filter values (an ordinary decimal like `"12.25"`
+  parses as December 25), caught by automated code review before merge with a concrete repro; the
+  actual fix narrows `PreviewFilter.Value`/`PreviewFilterRequest.Value` from `object?` to `string?`
+  (a filter value is always its literal text, checked by the compiler) via a new, non-date-sniffing
+  `FilterValueConverter`. See D45's "Fix (G7)" note for the full fix (schema-aware `IFilterTranslator`,
+  per-provider `castParameter`/`innerQuerySuffix` on `AdoFilterTranslator`).
+  **Known gap, not fixed here:** filtering Oracle's `Date` column (or any reserved-word column name)
+  still fails (`ORA-01747`, an identifier-quoting issue, not a value-type one); `OracleCast` also
+  only covers `Integer`/`Decimal`/`Money`, leaving `Boolean`/`Uuid`/`Date`/`DateTime`/`Timestamp`
+  uncast for the same "no single safe cast to guess" reason — both tracked as a follow-up.

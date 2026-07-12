@@ -20,8 +20,14 @@ public sealed record RunReportRequest(
 /// One of "Equals", "NotEquals", "GreaterThan", "GreaterThanOrEqual", "LessThan",
 /// "LessThanOrEqual", "Contains", "StartsWith" (case-insensitive).
 /// </param>
-/// <param name="Value">The value to compare against.</param>
-public sealed record PreviewFilterRequest(string Column, string Operator, object? Value);
+/// <param name="Value">
+/// The value to compare against, decoded via <see cref="FilterValueConverter"/> as its literal text
+/// form whatever JSON scalar it arrived as — without an explicit converter, <c>System.Text.Json</c>
+/// would leave an <c>object?</c>-typed property as a boxed <see cref="System.Text.Json.JsonElement"/>,
+/// which no ADO.NET provider can bind as a <c>DbParameter</c> value.
+/// </param>
+public sealed record PreviewFilterRequest(
+    string Column, string Operator, [property: JsonConverter(typeof(FilterValueConverter))] string? Value);
 
 /// <summary>Request body for <c>POST /reports/{name}/preview</c>.</summary>
 /// <param name="Filters">Structured filters to apply; omitted or empty for an unfiltered sample.</param>
