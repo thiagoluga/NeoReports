@@ -71,7 +71,11 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   a real database end to end (Postgres/SQL Server/Oracle/MySQL) — the gap that let the
   `JsonElement`/cast/`ORDER BY`/NLS issues above ship unnoticed in the first place, since the existing
   `AdoFilterTranslator` tests only asserted translated SQL text and the endpoint tests only used
-  fakes.
+  fakes. A follow-up (G8) closed the one gap those tests left open: filtering an Oracle column whose
+  name collides with a reserved word (e.g. `Date`) failed with `ORA-01747`, since the filtered
+  column was interpolated bare into the outer `WHERE`. `AdoFilterTranslator` gained an optional
+  per-provider `quoteIdentifier` hook; Oracle registers `OracleQuoteIdentifier`, which quotes only
+  columns matching a curated reserved-word list, leaving every other column bare.
 - `NeoReports.Sources.MongoDb` — a MongoDB source (MongoDB.Driver, D44). Standalone design, unlike
   the relational providers: Mongo has no `DbConnection`/`DbDataReader` to share `AdoKeysetSource`
   with, so `MongoDbKeysetSource<T>` implements keyset pagination directly —
