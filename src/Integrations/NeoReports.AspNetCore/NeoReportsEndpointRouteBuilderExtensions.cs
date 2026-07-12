@@ -6,12 +6,14 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using NeoReports.Abstractions;
 using NeoReports.Core;
 using NeoReports.Core.Artifacts;
 using NeoReports.Core.Configuration;
 using NeoReports.Core.Events;
 using NeoReports.Core.Pipeline;
+using NeoReports.Core.Preview;
 using NeoReports.Core.Registry;
 using NeoReports.Core.Scheduling;
 using NeoReports.Core.SourceRegistry;
@@ -25,6 +27,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
     /// Maps the NeoReports API under <paramref name="prefix"/>:
     /// <list type="bullet">
     /// <item><c>POST {prefix}/reports/{name}/run</c> — async (202 + jobId) or <c>?mode=sync</c> (streams a single output)</item>
+    /// <item><c>POST {prefix}/reports/{name}/preview</c> — read-only sample of one page, no output writing, no job record (ADR D45); optional structured filters, SQL-family dynamic reports only</item>
     /// <item><c>GET  {prefix}/reports</c> — list registered reports</item>
     /// <item><c>GET  {prefix}/reports/{name}</c> — full report definition (columns, formats, destinations, retry/failure strategy, origin)</item>
     /// <item><c>POST {prefix}/reports</c> — register a report at runtime from a config document (ADR D33)</item>
@@ -74,6 +77,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         }
 
         group.MapPost("/reports/{name}/run", RunReportAsync);
+        group.MapPost("/reports/{name}/preview", PreviewReportAsync);
         group.MapGet("/reports", ListReports);
         group.MapGet("/reports/{name}", GetReportDetailAsync);
         group.MapPost("/reports", CreateReportAsync);
@@ -116,6 +120,17 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         if (report is null)
             return Results.NotFound(new { error = $"No report named '{name}' is registered." });
 
+        if (body?.Filters is { Count: > 0 })
+        {
+            // Applying filters to a full run (not just a preview sample) needs a temporary compiled
+            // variant threaded through the job/scheduler pipeline — a larger, separate piece of work
+            // deferred past this pass; POST .../preview already supports filters fully.
+            return Results.BadRequest(new
+            {
+                error = "Filters are not yet supported on a full run — use POST /reports/{name}/preview instead.",
+            });
+        }
+
         var parameters = body?.Parameters;
 
         if (string.Equals(mode, "sync", StringComparison.OrdinalIgnoreCase))
@@ -154,6 +169,66 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         return Results.Accepted(
             $"{http.Request.PathBase}/api/jobs/{enqueuedId}",
             new RunAcceptedResponse(enqueuedId, ReportJobStatus.Queued));
+    }
+
+    private static async Task<IResult> PreviewReportAsync(
+        string name,
+        PreviewRequest? body,
+        IReportRegistry registry,
+        HttpContext http,
+        CancellationToken cancellationToken)
+    {
+        CompiledReport? report = registry.Find(name);
+        if (report is null)
+            return Results.NotFound(new { error = $"No report named '{name}' is registered." });
+
+        IReadOnlyList<PreviewFilter> filters;
+        try
+        {
+            filters = ParseFilters(body?.Filters);
+        }
+        catch (ConfigurationException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+
+        var jobId = Guid.NewGuid().ToString("N");
+        ILogger logger = http.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("NeoReports.Preview");
+        var execution = new ReportExecutionContext(jobId, name, null, logger, cancellationToken);
+
+        try
+        {
+            PreviewResult result = await ReportPreviewRunner.PreviewAsync(
+                report, filters, body?.PageSize ?? ReportPreviewRunner.MaxPageSize, execution, http.RequestServices, cancellationToken)
+                .ConfigureAwait(false);
+
+            ReportColumnView[] columns = result.Schema.Columns
+                .Select(c => new ReportColumnView(c.Name, c.Type.ToString(), c.DisplayName, c.Format, c.Nullable))
+                .ToArray();
+
+            return Results.Ok(new PreviewResponse(result.Rows, columns, result.FiltersApplied, result.HasMore));
+        }
+        catch (ConfigurationException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    }
+
+    private static IReadOnlyList<PreviewFilter> ParseFilters(IReadOnlyList<PreviewFilterRequest>? filters)
+    {
+        if (filters is null || filters.Count == 0)
+            return Array.Empty<PreviewFilter>();
+
+        var result = new List<PreviewFilter>(filters.Count);
+        foreach (PreviewFilterRequest f in filters)
+        {
+            if (!Enum.TryParse(f.Operator, ignoreCase: true, out PreviewFilterOperator op))
+                throw new ConfigurationException($"Unknown filter operator '{f.Operator}'.");
+
+            result.Add(new PreviewFilter(f.Column, op, f.Value));
+        }
+
+        return result;
     }
 
     private static IResult ListReports(IReportRegistry registry)

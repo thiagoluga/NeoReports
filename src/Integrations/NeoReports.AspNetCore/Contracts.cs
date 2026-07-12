@@ -5,7 +5,39 @@ namespace NeoReports.AspNetCore;
 
 /// <summary>Request body for triggering a report run.</summary>
 /// <param name="Parameters">Run-time parameters passed to the report (e.g. date ranges).</param>
-public sealed record RunReportRequest(IReadOnlyDictionary<string, object?>? Parameters);
+/// <param name="Filters">
+/// Structured preview filters (ADR D45) to apply for this run — additive, ephemeral, never
+/// persisted. Only dynamic (config-registered) SQL-family reports honor them; a typed report
+/// rejects a non-empty list with 400, the same as <c>POST /reports/{name}/preview</c>.
+/// </param>
+public sealed record RunReportRequest(
+    IReadOnlyDictionary<string, object?>? Parameters, IReadOnlyList<PreviewFilterRequest>? Filters = null);
+
+/// <summary>One structured preview filter row (ADR D45), as sent over HTTP — <see cref="Operator"/>
+/// is the string name of a <c>PreviewFilterOperator</c> value.</summary>
+/// <param name="Column">Must be one of the report's declared columns.</param>
+/// <param name="Operator">
+/// One of "Equals", "NotEquals", "GreaterThan", "GreaterThanOrEqual", "LessThan",
+/// "LessThanOrEqual", "Contains", "StartsWith" (case-insensitive).
+/// </param>
+/// <param name="Value">The value to compare against.</param>
+public sealed record PreviewFilterRequest(string Column, string Operator, object? Value);
+
+/// <summary>Request body for <c>POST /reports/{name}/preview</c>.</summary>
+/// <param name="Filters">Structured filters to apply; omitted or empty for an unfiltered sample.</param>
+/// <param name="PageSize">Requested sample size; capped server-side (<c>ReportPreviewRunner.MaxPageSize</c>).</param>
+public sealed record PreviewRequest(IReadOnlyList<PreviewFilterRequest>? Filters, int? PageSize);
+
+/// <summary>Response for <c>POST /reports/{name}/preview</c>.</summary>
+/// <param name="Rows">The sample rows, schema-projected (each element is one row's values, in <paramref name="Schema"/> order).</param>
+/// <param name="Schema">The columns the rows are aligned to.</param>
+/// <param name="FiltersApplied">
+/// <c>true</c> when the supplied filters were actually applied server-side; <c>false</c> when there
+/// were none, or the source type has no filter translator (the sample still ran, unfiltered).
+/// </param>
+/// <param name="HasMore">Whether more rows exist beyond this sample.</param>
+public sealed record PreviewResponse(
+    IReadOnlyList<object?[]> Rows, IReadOnlyList<ReportColumnView> Schema, bool FiltersApplied, bool HasMore);
 
 /// <summary>Response returned when a report is triggered asynchronously.</summary>
 /// <param name="JobId">Identifier of the queued job.</param>

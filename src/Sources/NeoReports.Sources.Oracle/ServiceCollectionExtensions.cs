@@ -1,7 +1,9 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NeoReports.Abstractions;
+using NeoReports.Core.Preview;
 using NeoReports.Core.SourceRegistry;
+using NeoReports.Sources.Common;
 
 namespace NeoReports.Sources.Oracle;
 
@@ -18,6 +20,7 @@ public static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigSourceProvider, OracleConfigSourceProvider>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<ISourceHealthCheck, OracleSourceHealthCheck>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IFilterTranslator>(new AdoFilterTranslator("oracle", parameterPrefix: ":")));
         return services;
     }
 }
