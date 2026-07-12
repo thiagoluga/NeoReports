@@ -19,10 +19,10 @@ namespace NeoReports.Sources.Oracle.IntegrationTests;
 /// (<see cref="AdoFilterTranslator.OracleCast"/>).
 /// </summary>
 /// <remarks>
-/// Filtering the <c>Date</c> column is deliberately not covered here — it hits a separate,
-/// still-open bug (ORA-01747) caused by "Date" being an Oracle reserved word/datatype name, which
-/// needs its own identifier-quoting fix in <see cref="AdoFilterTranslator"/>'s <c>t.{Column}</c>
-/// interpolation. Tracked as a follow-up rather than folded into this fix.
+/// Filtering the <c>Date</c> column is covered by
+/// <see cref="Filtering_the_reserved_word_Date_column_returns_only_matching_rows"/> — it hits
+/// ORA-01747 unless the translator quotes it, since "Date" is an Oracle reserved word/datatype
+/// name and cannot appear as a bare column reference.
 /// </remarks>
 [Collection(nameof(OracleCollection))]
 public sealed class OracleFilterTranslatorIntegrationTests
@@ -49,7 +49,11 @@ public sealed class OracleFilterTranslatorIntegrationTests
         new("job", "sales", parameters, NullLogger.Instance, CancellationToken.None);
 
     private static AdoFilterTranslator OracleTranslator() =>
-        new("oracle", parameterPrefix: ":", castParameter: AdoFilterTranslator.OracleCast);
+        new(
+            "oracle",
+            parameterPrefix: ":",
+            castParameter: AdoFilterTranslator.OracleCast,
+            quoteIdentifier: AdoFilterTranslator.OracleQuoteIdentifier);
 
     [SkippableFact]
     public async Task Filtering_a_numeric_column_with_a_decimal_text_bound_value_returns_only_matching_rows()
@@ -85,6 +89,26 @@ public sealed class OracleFilterTranslatorIntegrationTests
         BatchResult<ReportRecord> result = await ReadFilteredAsync(translatedSql, filterParameters, pageSize: 10);
 
         result.Records.ShouldBeEmpty(); // no negative amounts seeded — proves the cast didn't throw, not that rows matched
+    }
+
+    [SkippableFact]
+    public async Task Filtering_the_reserved_word_Date_column_returns_only_matching_rows()
+    {
+        Skip.IfNot(_fixture.Available, "Docker/Oracle container not available.");
+
+        // "Date" is an Oracle reserved word/datatype name — a bare t.Date reference in the
+        // translated WHERE clause is rejected with ORA-01747 unless the translator quotes it.
+        // "01-JAN-26" (not ISO) because DateTime casting is a separate, still-open gap (see
+        // AdoFilterTranslator.OracleCast's remarks) — the session's default NLS_DATE_FORMAT is
+        // what implicitly parses the bare text token here, and that format is DD-MON-RR.
+        var filters = new[] { new PreviewFilter("Date", PreviewFilterOperator.Equals, "01-JAN-26") };
+        OracleTranslator().TryTranslate(BaseSql, filters, Schema, out var translatedSql, out var filterParameters)
+            .ShouldBeTrue();
+
+        BatchResult<ReportRecord> result = await ReadFilteredAsync(translatedSql, filterParameters, pageSize: 2500);
+
+        result.Records.ShouldNotBeEmpty();
+        result.Records.ShouldAllBe(r => (DateTime)r["Date"]! == new DateTime(2026, 1, 1));
     }
 
     [SkippableFact]
