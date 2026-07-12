@@ -42,6 +42,9 @@ jobs:
         with:
           languages: csharp
           queries: security-and-quality
+          paths-ignore:
+            - "**/obj/**"
+            - "**/bin/**"
 
       - name: Build
         run: dotnet build NeoReports.sln --configuration Release
