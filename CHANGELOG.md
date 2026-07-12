@@ -9,6 +9,28 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 ## [Unreleased]
 
 ### Added
+- `NeoReports.Sources.MongoDb` — a MongoDB source (MongoDB.Driver, D44). Standalone design, unlike
+  the relational providers: Mongo has no `DbConnection`/`DbDataReader` to share `AdoKeysetSource`
+  with, so `MongoDbKeysetSource<T>` implements keyset pagination directly —
+  `Find(key > cursor).Sort(key ascending).Limit(pageSize)` — with the cursor round-tripped through
+  MongoDB Extended JSON (`BsonValue.ToJson()`) so its exact BSON type, not just its textual form,
+  survives the trip. `Source.MongoDb(...)` (typed; no by-registry `MongoDbNamed` entry point in this
+  pass), `type: "mongodb"` (dynamic path), `MongoDbSourceHealthCheck` (`{ ping: 1 }`),
+  `AddMongoDbConfigSource()`. Reuses `NeoReports.Sources.Common`'s `MemberSelector` and
+  `AdoConfigProperties.RequireString`/`OptionalInt` for the parts that are genuinely
+  provider-agnostic (expression-tree key-name extraction, property-bag parsing), despite not
+  sharing the ADO engine itself. Two MongoDB-specific pitfalls found and fixed: MongoDB.Driver's own
+  `BsonClassMap` deserialization silently rebinds a POCO property literally named `Id` to the
+  document's `_id` field, breaking typed reads when the report's key field is legitimately named
+  `Id` but stored under its own literal name — worked around with a small reflection-based
+  `BsonDocumentMaterializer<T>` (mirroring `RecordMaterializer<T>`'s approach) instead of the
+  driver's own deserializer; and `BsonDateTime` always stores UTC, so an `Unspecified`/`Local`-kind
+  `DateTime` gets silently shifted by the local machine's timezone offset on serialize. Also:
+  `MongoClient` (unlike `DbConnection`) is meant to be created once and reused, not per operation —
+  it owns its own pooled connections — so `MongoDbKeysetSource<T>` builds one in its constructor and
+  shares it across every page, not one per `ReadBatchAsync` call. 8 new integration tests
+  (Testcontainers.MongoDb: keyset paging, typed materialization, health check x3, dynamic-config
+  E2E + validation + DI registration).
 - `NeoReports.Sources.Oracle` — an Oracle source (Oracle.ManagedDataAccess.Core), same shape as
   `NeoReports.Sources.Postgres`/`NeoReports.Sources.MySql` on the shared `NeoReports.Sources.Common`
   ADO.NET engine (D43): `Source.Oracle(...)`/`Source.OracleNamed(...)` (typed), `type: "oracle"`
