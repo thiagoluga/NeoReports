@@ -21,6 +21,7 @@ namespace NeoReports.AspNetCore.IntegrationTests;
 public class PreviewEndpointTests : IDisposable
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly string[] IdCustomerColumns = { "Id", "Customer" };
     private readonly string _configDir = Path.Join(Path.GetTempPath(), "nr-g5-" + Guid.NewGuid().ToString("N"));
 
     private static async Task<HttpResponseMessage> PostJsonAsync(HttpClient client, string url, string json)
@@ -51,7 +52,7 @@ public class PreviewEndpointTests : IDisposable
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         var body = await response.Content.ReadFromJsonAsync<JsonElement>(Json);
         body.GetProperty("rows").GetArrayLength().ShouldBeGreaterThan(0);
-        body.GetProperty("schema").EnumerateArray().Select(c => c.GetProperty("name").GetString()).ShouldBe(new[] { "Id", "Customer" });
+        body.GetProperty("schema").EnumerateArray().Select(c => c.GetProperty("name").GetString()).ShouldBe(IdCustomerColumns);
         body.GetProperty("filtersApplied").GetBoolean().ShouldBeFalse();
     }
 

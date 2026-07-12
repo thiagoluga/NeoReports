@@ -71,11 +71,9 @@ public static class ReportPreviewRunner
     // attacker-supplied Column value would flow straight into the query.
     private static void ValidateFilterColumns(CompiledReport report, IReadOnlyList<PreviewFilter> filters)
     {
-        foreach (PreviewFilter filter in filters)
-        {
-            if (report.Schema.IndexOf(filter.Column) < 0)
-                throw new ConfigurationException($"'{filter.Column}' is not a declared column of report '{report.Name}'.");
-        }
+        PreviewFilter? invalid = filters.FirstOrDefault(f => report.Schema.IndexOf(f.Column) < 0);
+        if (invalid is not null)
+            throw new ConfigurationException($"'{invalid.Column}' is not a declared column of report '{report.Name}'.");
     }
 
     private static async Task<PreviewResult> PreviewUnfilteredAsync(

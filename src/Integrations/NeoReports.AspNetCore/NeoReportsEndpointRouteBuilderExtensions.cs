@@ -782,7 +782,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
 
         if (partials.Count == 1)
         {
-            var single = partials[0];
+            ReportArtifact single = partials[0];
             return Results.File(single.Path, single.MimeType, single.FileName);
         }
 
@@ -791,10 +791,10 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         var zip = new MemoryStream();
         using (var archive = new ZipArchive(zip, ZipArchiveMode.Create, leaveOpen: true))
         {
-            foreach (var partial in partials)
+            foreach (ReportArtifact partial in partials)
             {
-                var entry = archive.CreateEntry(partial.FileName, CompressionLevel.Optimal);
-                await using var entryStream = entry.Open();
+                ZipArchiveEntry entry = archive.CreateEntry(partial.FileName, CompressionLevel.Optimal);
+                await using Stream entryStream = entry.Open();
                 await using var fileStream = new FileStream(partial.Path, FileMode.Open, FileAccess.Read, FileShare.Read);
                 await fileStream.CopyToAsync(entryStream, cancellationToken).ConfigureAwait(false);
             }
@@ -863,8 +863,8 @@ public static class NeoReportsEndpointRouteBuilderExtensions
             return Results.NotFound(new { error = $"No source named '{name}' is registered." });
 
         await registry.SaveAsync(new SourceDefinition(name, body!.Type, body.Properties, body.Description), cancellationToken).ConfigureAwait(false);
-        var reportRegistry = http.RequestServices.GetRequiredService<IReportRegistry>();
-        var healthCache = http.RequestServices.GetService<ISourceHealthCache>();
+        IReportRegistry reportRegistry = http.RequestServices.GetRequiredService<IReportRegistry>();
+        ISourceHealthCache? healthCache = http.RequestServices.GetService<ISourceHealthCache>();
         return Results.Ok(ToSourceView(new SourceDefinition(name, body.Type, Description: body.Description), reportRegistry, healthCache));
     }
 
@@ -922,7 +922,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         }
 
         SourceHealthResult result = await check.CheckAsync(definition, http.RequestServices, cancellationToken).ConfigureAwait(false);
-        var checkedAt = DateTimeOffset.UtcNow;
+        DateTimeOffset checkedAt = DateTimeOffset.UtcNow;
 
         ISourceHealthCache? healthCache = http.RequestServices.GetService<ISourceHealthCache>();
         healthCache?.Set(name, new SourceHealthReading(result.Healthy, result.Error, result.Latency.TotalMilliseconds, checkedAt));
@@ -934,13 +934,14 @@ public static class NeoReportsEndpointRouteBuilderExtensions
     {
         int referencedByCount = reportRegistry.Reports.Count(r => string.Equals(r.SourceRef, definition.Name, StringComparison.Ordinal));
         SourceHealthReading? reading = healthCache?.Get(definition.Name);
+        string? lastHealthStatus = reading is null ? null : reading.Healthy ? "healthy" : "unhealthy";
 
         return new SourceView(
             Name: definition.Name,
             Type: definition.Type,
             Description: definition.Description,
             ReferencedByCount: referencedByCount,
-            LastHealthStatus: reading is null ? null : (reading.Healthy ? "healthy" : "unhealthy"),
+            LastHealthStatus: lastHealthStatus,
             LastHealthError: reading?.Error,
             LastHealthLatencyMs: reading?.LatencyMs,
             LastCheckedAt: reading?.CheckedAt);
