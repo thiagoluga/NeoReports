@@ -1,0 +1,241 @@
+@page "/reports/{Name}/preview"
+@using NeoReports.UI.Services
+@inject NavigationManager Nav
+@inject INeoReportsApiClient Api
+
+@if (_detail is null)
+{
+    <div class="page">
+        <EmptyState Icon="report-off" Title="Report not found">
+            <ChildContent>
+                No report matches "@Name", or the engine API is unreachable.
+            </ChildContent>
+            <Action><Button Variant="outline" Icon="arrow-left" OnClick="@(() => Nav.NavigateTo("reports"))">Back to reports</Button></Action>
+        </EmptyState>
+    </div>
+    return;
+}
+
+<div class="page">
+    @* Header — GET /api/reports/{name}. "Run with these filters" is disabled while filters are
+       actually applied — POST /run doesn't accept Filters yet (D45's filtered-run support is
+       deferred), so offering a control that would 400 would be dishonest. *@
+    <div class="page-head">
+        <div class="title">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <h1 style="font-size:24px">Preview · @_detail.Name</h1>
+                <Chip Kind="token">origin: @_detail.Origin</Chip>
+            </div>
+            <p class="sub" style="max-width:480px;margin-top:8px;line-height:1.5">
+                Read-only sample of the first page — no output is written, no job is created.
+            </p>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;align-self:flex-start;margin-top:6px">
+            <div style="display:flex;gap:8px">
+                <Button Variant="outline" Icon="arrow-left" OnClick="@(() => Nav.NavigateTo($"reports/{_detail.Name}"))">Back to report</Button>
+                <Button Variant="primary" Icon="player-play" Disabled="@_activeFilters" Loading="_running" OnClick="RunNowAsync">
+                    @(_activeFilters ? "Run with these filters" : "Run now")
+                </Button>
+            </div>
+            @if (_activeFilters)
+            {
+                <span class="muted" style="font-size:12px">Filtered runs aren't supported yet — clear the filters to run, or use this preview to inspect the filtered sample.</span>
+            }
+        </div>
+    </div>
+
+    @if (_detail.Origin == "code")
+    {
+        <Banner Variant="info" Icon="info-circle">
+            <b>Filters aren't available for this report</b>
+            <span style="font-size:12px">It's code-first — its source has no structured representation to filter. The sample below is always unfiltered.</span>
+        </Banner>
+    }
+    else
+    {
+        @* Filter editor — POST /api/reports/{name}/preview. Only dynamic reports whose source
+           type has a registered translator actually apply filters server-side; other source
+           types run the sample unfiltered and say so (FiltersApplied: false) rather than
+           silently dropping them — _filterNote surfaces that honestly after the first attempt. *@
+        <Card Title="Filters" Sub="Structured, closed-operator filters — applied server-side when the source type supports them">
+            <ChildContent>
+                @if (_filterNote is not null)
+                {
+                    <div style="margin-bottom:8px"><span class="muted" style="font-size:12px">@_filterNote</span></div>
+                }
+                @for (var i = 0; i < _filters.Count; i++)
+                {
+                    var row = _filters[i];
+                    var index = i;
+                    <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+                        <select class="input mono" style="width:180px" @bind="row.Column">
+                            @foreach (var c in _detail.Columns)
+                            {
+                                <option value="@c.Name">@(c.DisplayName ?? c.Name)</option>
+                            }
+                        </select>
+                        <select class="input mono" style="width:190px" @bind="row.Operator">
+                            @foreach (var op in Operators)
+                            {
+                                <option value="@op">@op</option>
+                            }
+                        </select>
+                        <input class="input" style="flex:1" @bind="row.Value" placeholder="value" />
+                        <Button Variant="outline" Icon="trash" OnClick="@(() => RemoveFilter(index))" />
+                    </div>
+                }
+                <div style="display:flex;gap:8px;margin-top:10px">
+                    <Button Variant="outline" Icon="plus" OnClick="AddFilter">Add filter</Button>
+                    <Button Variant="primary" Loading="_loading" OnClick="@(() => LoadAsync())">Apply</Button>
+                </div>
+            </ChildContent>
+        </Card>
+    }
+
+    @* Sample — always reflects the last successful preview call. *@
+    <Card Title="Sample" Sub="@SampleSubtitle">
+        <Action>
+            <select class="input mono" style="width:100px" value="@_pageSize" @onchange="OnPageSizeChangedAsync">
+                @foreach (var size in PageSizes)
+                {
+                    <option value="@size">@size rows</option>
+                }
+            </select>
+        </Action>
+        <ChildContent>
+        @if (_error is not null)
+        {
+            <Banner Variant="danger" Icon="alert-triangle"><span style="font-size:12px">@_error</span></Banner>
+        }
+        else
+        {
+            <DataGrid Columns="@Math.Max(_schema.Count, 1)" Loading="_loading" Empty="@(_rows.Count == 0)"
+                      EmptyIcon="table-off" EmptyTitle="No rows">
+                <Head>
+                    <tr>@foreach (var c in _schema) { <th>@(c.DisplayName ?? c.Name)</th> }</tr>
+                </Head>
+                <Body>
+                    @foreach (var row in _rows)
+                    {
+                        <tr>
+                            @foreach (var value in row)
+                            {
+                                <td class="mono">@(value?.ToString() ?? "—")</td>
+                            }
+                        </tr>
+                    }
+                </Body>
+            </DataGrid>
+        }
+        </ChildContent>
+    </Card>
+</div>
+
+@code {
+    [Parameter] public string Name { get; set; } = "";
+
+    private static readonly string[] Operators =
+        { "Equals", "NotEquals", "GreaterThan", "GreaterThanOrEqual", "LessThan", "LessThanOrEqual", "Contains", "StartsWith" };
+    private static readonly int[] PageSizes = { 10, 25, 50, 100, 200 };
+
+    private ApiReportDetail? _detail;
+    private readonly List<FilterRow> _filters = new();
+    private IReadOnlyList<object?[]> _rows = Array.Empty<object?[]>();
+    private IReadOnlyList<ApiReportColumn> _schema = Array.Empty<ApiReportColumn>();
+    private bool _activeFilters;
+    private bool _hasMore;
+    private bool _loading;
+    private bool _running;
+    private string? _error;
+    private string? _filterNote;
+    private int _pageSize = 50;
+
+    private string SampleSubtitle => _hasMore
+        ? "More rows exist beyond this sample — narrow with filters or a smaller result set to see them"
+        : "End of the report's output";
+
+    private sealed class FilterRow
+    {
+        public string Column { get; set; } = "";
+        public string Operator { get; set; } = "Equals";
+        public string Value { get; set; } = "";
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _detail = await Api.TryGetReportDetailAsync(Name);
+        _filters.Clear();
+        _filterNote = null;
+        _activeFilters = false;
+        if (_detail is null)
+            return;
+
+        await LoadAsync();
+    }
+
+    private void AddFilter() => _filters.Add(new FilterRow { Column = _detail!.Columns.FirstOrDefault()?.Name ?? "" });
+    private void RemoveFilter(int index) => _filters.RemoveAt(index);
+
+    private async Task OnPageSizeChangedAsync(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var size))
+            _pageSize = size;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_detail is null)
+            return;
+
+        _loading = true;
+        _error = null;
+        try
+        {
+            var filters = _filters
+                .Where(f => !string.IsNullOrWhiteSpace(f.Column))
+                .Select(f => new ApiPreviewFilter(f.Column, f.Operator, f.Value))
+                .ToArray();
+
+            ApiPreviewResult result = await Api.TryPreviewReportAsync(_detail.Name, filters, _pageSize);
+            switch (result.Outcome)
+            {
+                case ApiPreviewOutcome.Ok when result.Data is { } data:
+                    _rows = data.Rows;
+                    _schema = data.Schema;
+                    _hasMore = data.HasMore;
+                    _activeFilters = data.FiltersApplied;
+                    _filterNote = filters.Length > 0 && !data.FiltersApplied
+                        ? "This source type doesn't support server-side filters — showing the unfiltered sample instead."
+                        : null;
+                    break;
+                default:
+                    _rows = Array.Empty<object?[]>();
+                    _activeFilters = false;
+                    _error = result.Error ?? "The engine rejected the preview request.";
+                    break;
+            }
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task RunNowAsync()
+    {
+        if (_detail is null || _activeFilters)
+            return;
+
+        _running = true;
+        try
+        {
+            var jobId = await Api.TryRunReportAsync(_detail.Name);
+            Nav.NavigateTo(jobId is not null ? $"jobs/{jobId}" : "jobs/failed");
+        }
+        finally
+        {
+            _running = false;
+        }
+    }
+}

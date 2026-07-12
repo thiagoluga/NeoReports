@@ -9,6 +9,21 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 ## [Unreleased]
 
 ### Added
+- `NeoReports.UI` — a report preview screen (`/reports/{name}/preview`, D45), linked from
+  `ReportDetail.razor`'s new "Preview" button. Shows a read-only sample via
+  `POST /reports/{name}/preview` in a `DataGrid`, a page-size selector (10-200 rows), and — for
+  dynamic (config-registered) reports — a structured filter editor (column/operator/value rows,
+  closed operator list, "Add filter"/remove/"Apply"). A code-first report hides the filter editor
+  entirely behind an honest banner explaining it has no structured source to filter (D36 pattern);
+  a dynamic report whose source type has no registered translator shows an honest inline note
+  after the first filtered attempt rather than upfront (the API has no "does this source support
+  filters" capability query yet, only `filtersApplied` on the response, so the note can only appear
+  after a real attempt) and still runs the unfiltered sample. "Run now"/"Run with these filters" is
+  disabled with an explanatory note whenever filters are actually applied — `POST /run` doesn't
+  accept `Filters` yet (deferred in G5), so offering a control that would 400 would be dishonest.
+  No "Load more" pagination in this pass — `PreviewResponse` carries `hasMore` but no cursor for a
+  second page (G5 always reads page 1 only), so the sample subtitle says "more rows exist" rather
+  than offering a button that can't actually fetch them; deferred alongside filtered-run support.
 - `POST /reports/{name}/preview` — a bounded, read-only sample of one page of a report: no output
   writing, no upload, no job record (D45). Reuses the exact reader machinery a real run uses for an
   unfiltered sample, so the preview matches what the report would actually write. Optional structured

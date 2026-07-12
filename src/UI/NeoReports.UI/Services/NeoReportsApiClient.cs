@@ -148,6 +148,36 @@ public sealed record ApiSourceDeleteResult(ApiSourceDeleteOutcome Outcome, strin
 public sealed record ApiSourceHealth(bool Healthy, string? Error, double LatencyMs, DateTimeOffset CheckedAt);
 
 /// <summary>
+/// One structured preview filter row (ADR D45), sent to <c>POST /api/reports/{name}/preview</c>.
+/// <see cref="Operator"/> is the string name of a <c>PreviewFilterOperator</c> value (e.g. "Equals",
+/// "Contains") — see <see cref="INeoReportsApiClient"/>'s preview docs for the closed list.
+/// </summary>
+public sealed record ApiPreviewFilter(string Column, string Operator, object? Value);
+
+/// <summary>Result of a successful <c>POST /api/reports/{name}/preview</c> call.</summary>
+public sealed record ApiPreviewData(
+    IReadOnlyList<object?[]> Rows, IReadOnlyList<ApiReportColumn> Schema, bool FiltersApplied, bool HasMore);
+
+/// <summary>Outcome of a <c>POST /api/reports/{name}/preview</c> call.</summary>
+public enum ApiPreviewOutcome
+{
+    /// <summary>200 — the sample was returned.</summary>
+    Ok,
+
+    /// <summary>404 — no report with that name is registered.</summary>
+    NotFound,
+
+    /// <summary>400 — non-empty filters against a typed (code-first) report, or an invalid filter.</summary>
+    Invalid,
+
+    /// <summary>The engine wasn't reachable, or returned an unexpected status.</summary>
+    Unavailable,
+}
+
+/// <summary>Result of <see cref="INeoReportsApiClient.TryPreviewReportAsync"/>.</summary>
+public sealed record ApiPreviewResult(ApiPreviewOutcome Outcome, ApiPreviewData? Data, string? Error);
+
+/// <summary>
 /// Reads and drives NeoReports engine jobs/reports over its HTTP API (<c>MapNeoReports</c>). Every
 /// call is best-effort: on a network error, timeout, or unexpected shape it logs and returns a
 /// "not available" result so pages can fall back to sample data instead of failing.
@@ -278,6 +308,20 @@ public interface INeoReportsApiClient
     /// registered for its type (422).
     /// </summary>
     Task<ApiSourceHealth?> TryCheckSourceHealthAsync(string name, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Runs a bounded, read-only sample of one page of a report (ADR D45) — no output writing, no
+    /// job record. <paramref name="filters"/> only take effect for a dynamic (config-registered)
+    /// report whose source type has a registered filter translator; pass <c>null</c> or an empty
+    /// list for an unfiltered sample. A closed set of operator names: "Equals", "NotEquals",
+    /// "GreaterThan", "GreaterThanOrEqual", "LessThan", "LessThanOrEqual", "Contains", "StartsWith".
+    /// </summary>
+    /// <param name="reportName">The report name.</param>
+    /// <param name="filters">Structured filters to apply, or <c>null</c>/empty for an unfiltered sample.</param>
+    /// <param name="pageSize">Requested sample size; capped server-side.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<ApiPreviewResult> TryPreviewReportAsync(
+        string reportName, IReadOnlyList<ApiPreviewFilter>? filters, int? pageSize, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Locates the NeoReports engine API the UI calls.</summary>
@@ -744,6 +788,38 @@ internal sealed class NeoReportsApiClient(
         }
     }
 
+    public async Task<ApiPreviewResult> TryPreviewReportAsync(
+        string reportName, IReadOnlyList<ApiPreviewFilter>? filters, int? pageSize, CancellationToken cancellationToken = default)
+    {
+        var apiBase = ApiBase;
+        try
+        {
+            using var response = await http.PostAsJsonAsync(
+                new Uri(apiBase, $"reports/{Uri.EscapeDataString(reportName)}/preview"),
+                new PreviewRequestBody(filters, pageSize), Json, cancellationToken).ConfigureAwait(false);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var data = await response.Content.ReadFromJsonAsync<ApiPreviewData>(Json, cancellationToken).ConfigureAwait(false);
+                return new ApiPreviewResult(ApiPreviewOutcome.Ok, data, null);
+            }
+
+            string? error = await TryReadErrorAsync(response, cancellationToken).ConfigureAwait(false);
+            ApiPreviewOutcome outcome = response.StatusCode switch
+            {
+                HttpStatusCode.NotFound => ApiPreviewOutcome.NotFound,
+                HttpStatusCode.BadRequest => ApiPreviewOutcome.Invalid,
+                _ => ApiPreviewOutcome.Unavailable,
+            };
+            return new ApiPreviewResult(outcome, null, error);
+        }
+        catch (Exception ex) when (IsTransient(ex))
+        {
+            logger.LogWarning(ex, "POST {ApiBase}reports/{ReportName}/preview failed.", Sanitize(apiBase.ToString()), Sanitize(reportName));
+            return new ApiPreviewResult(ApiPreviewOutcome.Unavailable, null, null);
+        }
+    }
+
     private static async Task<string?> TryReadErrorAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         try
@@ -765,6 +841,8 @@ internal sealed class NeoReportsApiClient(
     private static string Sanitize(string value) => value.Replace('\r', '_').Replace('\n', '_');
 
     private sealed record RunRequestBody(object? Parameters);
+
+    private sealed record PreviewRequestBody(IReadOnlyList<ApiPreviewFilter>? Filters, int? PageSize);
 
     private sealed record SourceRequestBody(
         string Name, string Type, IReadOnlyDictionary<string, object?>? Properties, string? Description);

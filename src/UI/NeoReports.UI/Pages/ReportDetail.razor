@@ -29,6 +29,7 @@
         </div>
         <div style="display:flex;gap:8px;align-self:flex-start;margin-top:6px">
             <Button Variant="outline" Icon="pencil" OnClick="@(() => Nav.NavigateTo("builder"))">Edit</Button>
+            <Button Variant="outline" Icon="eye" OnClick="@(() => Nav.NavigateTo($"reports/{_detail.Name}/preview"))">Preview</Button>
             <Button Variant="primary" Icon="player-play" OnClick="RunNowAsync">Run now</Button>
             @if (_detail.Deletable)
             {
