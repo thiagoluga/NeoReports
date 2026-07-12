@@ -284,14 +284,13 @@ public static class ServiceCollectionExtensions
 
     private static ReportRegistry GetOrAddRegistry(IServiceCollection services)
     {
-        foreach (var descriptor in services)
-        {
-            if (descriptor.ServiceType == typeof(ReportRegistry) &&
-                descriptor.ImplementationInstance is ReportRegistry existing)
-            {
-                return existing;
-            }
-        }
+        ReportRegistry? existing = services
+            .Where(descriptor => descriptor.ServiceType == typeof(ReportRegistry))
+            .Select(descriptor => descriptor.ImplementationInstance as ReportRegistry)
+            .FirstOrDefault(instance => instance is not null);
+
+        if (existing is not null)
+            return existing;
 
         var registry = new ReportRegistry();
 
