@@ -394,7 +394,7 @@ public sealed class ReportRunner : IReportRunner
         }
         finally
         {
-            foreach (var output in outputs.Where(o => !o.Closed))
+            foreach (RunningOutput output in outputs.Where(o => !o.Closed))
             {
                 await SafeDisposeAsync(output.Writer).ConfigureAwait(false);
                 await SafeDisposeAsync(output.WriteStream).ConfigureAwait(false);

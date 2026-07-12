@@ -284,7 +284,7 @@ public static class ServiceCollectionExtensions
 
     private static ReportRegistry GetOrAddRegistry(IServiceCollection services)
     {
-        var existing = services
+        ReportRegistry? existing = services
             .Where(descriptor => descriptor.ServiceType == typeof(ReportRegistry))
             .Select(descriptor => descriptor.ImplementationInstance as ReportRegistry)
             .FirstOrDefault(instance => instance is not null);
