@@ -1,7 +1,9 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NeoReports.Abstractions;
+using NeoReports.Core.Preview;
 using NeoReports.Core.SourceRegistry;
+using NeoReports.Sources.Common;
 
 namespace NeoReports.Sources.Postgres;
 
@@ -18,6 +20,7 @@ public static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigSourceProvider, PostgresConfigSourceProvider>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<ISourceHealthCheck, PostgresSourceHealthCheck>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IFilterTranslator>(new AdoFilterTranslator("postgres")));
         return services;
     }
 }

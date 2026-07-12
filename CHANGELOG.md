@@ -9,6 +9,28 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 ## [Unreleased]
 
 ### Added
+- `POST /reports/{name}/preview` — a bounded, read-only sample of one page of a report: no output
+  writing, no upload, no job record (D45). Reuses the exact reader machinery a real run uses for an
+  unfiltered sample, so the preview matches what the report would actually write. Optional structured
+  filters (`PreviewFilter`/`PreviewFilterOperator` in `NeoReports.Core`, a closed enum — never a
+  free-form expression) apply only to dynamic (config-registered) SQL-family reports whose source type
+  has a registered `IFilterTranslator` (implemented once in `NeoReports.Sources.Common` as
+  `AdoFilterTranslator`, registered by `Sql`/`Postgres`/`MySql`/`Oracle`); MongoDB and any source
+  without a translator run the sample unfiltered and the response says so honestly
+  (`filtersApplied: false`) rather than silently dropping the filters. A typed (code-first) report has
+  no structured source to filter — a non-empty `filters` array against one returns 400. Filters are
+  ephemeral: never persisted, applied for that one call only. `RunReportRequest` gains an additive
+  `Filters` field for parity, but a full filtered *run* (as opposed to a preview sample) is deferred —
+  it needs a temporary re-compiled report threaded through the job/scheduler pipeline, a separate
+  piece of work; `POST /run` returns 400 on a non-empty `Filters` until then. `AdoFilterTranslator`
+  wraps the original keyset query as a derived table (`SELECT * FROM (<sql>) t WHERE ...`, no `AS`
+  keyword before the alias — Oracle rejects it for derived tables, every other dialect accepts an
+  alias with or without it) and binds filter values through the existing
+  `ReportExecutionContext.Parameters` mechanism `AdoKeysetSource` already merges into its query — no
+  new ADO plumbing needed. New Core unit tests for `AdoFilterTranslator` (SQL wrapping, all eight
+  operators, `LIKE` wildcards bound as parameter values not string-concatenated, Oracle's `:` prefix)
+  and AspNetCore integration tests for the endpoint (happy path, page-size capping, typed-report 400,
+  filters applied/ignored-honestly per source type, unknown report 404).
 - `NeoReports.Sources.MongoDb` — a MongoDB source (MongoDB.Driver, D44). Standalone design, unlike
   the relational providers: Mongo has no `DbConnection`/`DbDataReader` to share `AdoKeysetSource`
   with, so `MongoDbKeysetSource<T>` implements keyset pagination directly —

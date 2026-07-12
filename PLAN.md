@@ -703,11 +703,23 @@ Requested directly by the maintainer (2026-07). Blueprint: `docs/epic-g-more-sou
   reused, not per page — caught in code review before merge. 8 new Testcontainers.MongoDb
   integration tests (keyset paging, typed materialization, health check x3, dynamic-config E2E +
   validation + DI registration).
-- [ ] **G5 — Core + AspNetCore: report preview endpoint.** `POST /reports/{name}/preview` (bounded
+- [x] **G5 — Core + AspNetCore: report preview endpoint.** `POST /reports/{name}/preview` (bounded
   page, no output writing, no job record); `PreviewFilter`/`PreviewFilterOperator` (Core, not
-  Abstractions) + `IFilterTranslator` seam implemented once in `Sources.Common` for the SQL family;
-  `RunReportRequest` gains additive `Filters` (ephemeral, never persisted). Typed reports:
-  preview-only, 400 on non-empty filters. **Depends on:** G1 (`IFilterTranslator` lives in
-  `Sources.Common`).
+  Abstractions) + `IFilterTranslator` seam implemented once in `Sources.Common` (`AdoFilterTranslator`)
+  for the SQL family; `RunReportRequest` gains additive `Filters` (ephemeral, never persisted). Typed
+  reports: preview-only, 400 on non-empty filters. **Depends on:** G1 (`IFilterTranslator` lives in
+  `Sources.Common`). Implementation refinement from the original sketch (see D45): `IFilterTranslator`
+  doesn't take a `DbCommand` — `CompiledReport` type-erases its source behind an internal
+  `ReaderFactory`, unreachable at the DbCommand level from the preview endpoint — instead it returns
+  translated SQL text plus a parameter dictionary that flows through the existing
+  `ReportExecutionContext.Parameters` mechanism `AdoKeysetSource` already binds. A filtered dynamic
+  preview re-reads the report's *stored* config document rather than its compiled source, resolving a
+  `Ref`-based source's properties the same way `RefBatchSource` does (definition base, report-local
+  overlay wins). A full filtered *run* (not just preview) is deferred — `RunReportRequest.Filters` is
+  additive on the contract, but `POST /run` returns 400 on a non-empty value until a follow-up threads
+  a temporary re-compiled report through the job/scheduler pipeline. New tests: Core unit tests for
+  `AdoFilterTranslator` (SQL wrapping, all 8 operators, `LIKE` wildcards as bound values, Oracle's `:`
+  prefix), AspNetCore integration tests for the endpoint (happy path, page-size capping, typed-report
+  400, filters applied/ignored-honestly per source type, unknown report 404).
 - [ ] **G6 — UI: report preview screen.** Paginated grid, filter editor (hidden/honest-note when
   unsupported), "Run with these filters". **Depends on:** G5.
