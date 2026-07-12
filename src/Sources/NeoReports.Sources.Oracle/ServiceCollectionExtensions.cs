@@ -23,9 +23,13 @@ public static class ServiceCollectionExtensions
         // Oracle does implicitly convert a text-bound parameter to NUMBER in a comparison, but that
         // conversion follows the session's NLS settings — a value like "2000.00" can fail with
         // ORA-01722 against a session whose numeric locale doesn't treat '.' as the decimal
-        // separator, so numeric filters need an explicit, locale-independent cast.
+        // separator, so numeric filters need an explicit, locale-independent cast. Reserved-word
+        // columns (e.g. "Date") also need quoting or Oracle rejects the bare reference (ORA-01747).
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IFilterTranslator>(new AdoFilterTranslator(
-            "oracle", parameterPrefix: ":", castParameter: AdoFilterTranslator.OracleCast)));
+            "oracle",
+            parameterPrefix: ":",
+            castParameter: AdoFilterTranslator.OracleCast,
+            quoteIdentifier: AdoFilterTranslator.OracleQuoteIdentifier)));
         return services;
     }
 }

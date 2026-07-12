@@ -30,6 +30,7 @@ public sealed class AdoFilterTranslator : IFilterTranslator
     private readonly string _parameterPrefix;
     private readonly Func<ColumnType, string, string?>? _castParameter;
     private readonly string? _innerQuerySuffix;
+    private readonly Func<string, string>? _quoteIdentifier;
 
     /// <summary>Creates a translator for one provider type.</summary>
     /// <param name="type">Source type id this translator handles (e.g. "postgres").</param>
@@ -49,16 +50,25 @@ public sealed class AdoFilterTranslator : IFilterTranslator
     /// followed by <c>TOP</c>, <c>OFFSET</c>, or <c>FOR XML</c>. <c>null</c> (the default) appends
     /// nothing — the right choice for a dialect that allows <c>ORDER BY</c> in a derived table.
     /// </param>
+    /// <param name="quoteIdentifier">
+    /// Given a filtered column's name, returns how to reference it in the outer <c>t.{...}</c>
+    /// comparison — e.g. Oracle's <see cref="OracleQuoteIdentifier"/>, which wraps it in double
+    /// quotes when it collides with a reserved word (e.g. <c>Date</c>) that Oracle otherwise
+    /// refuses to parse as a bare column reference (ORA-01747). <c>null</c> (the default) leaves
+    /// every column bare — the right choice for a dialect with no such collision to work around.
+    /// </param>
     public AdoFilterTranslator(
         string type,
         string parameterPrefix = "@",
         Func<ColumnType, string, string?>? castParameter = null,
-        string? innerQuerySuffix = null)
+        string? innerQuerySuffix = null,
+        Func<string, string>? quoteIdentifier = null)
     {
         Type = type ?? throw new ArgumentNullException(nameof(type));
         _parameterPrefix = string.IsNullOrEmpty(parameterPrefix) ? "@" : parameterPrefix;
         _castParameter = castParameter;
         _innerQuerySuffix = innerQuerySuffix;
+        _quoteIdentifier = quoteIdentifier;
     }
 
     /// <inheritdoc />
@@ -123,7 +133,7 @@ public sealed class AdoFilterTranslator : IFilterTranslator
             // wildcarded string above) — casting only applies to the other, type-sensitive comparisons.
             string comparand = op == "LIKE" ? token : ApplyCast(token, schema.Find(filter.Column)?.Type);
 
-            conditions.Add($"t.{filter.Column} {op} {comparand}");
+            conditions.Add($"t.{QuoteIdentifier(filter.Column)} {op} {comparand}");
             values[paramName] = value;
         }
 
@@ -140,6 +150,8 @@ public sealed class AdoFilterTranslator : IFilterTranslator
 
         return _castParameter(columnType.Value, token) ?? token;
     }
+
+    private string QuoteIdentifier(string column) => _quoteIdentifier?.Invoke(column) ?? column;
 
     /// <summary>
     /// Casts a filter's bind parameter (always text-bound, coming from the preview UI's plain text
@@ -177,15 +189,44 @@ public sealed class AdoFilterTranslator : IFilterTranslator
     /// Only numeric column types are covered here. Boolean/Uuid/Date/DateTime/Timestamp casting has
     /// a separate, still-open gap — there is no single safe cast to guess for those without knowing
     /// the report author's actual underlying Oracle column type (e.g. a <c>Boolean</c> column could
-    /// be <c>NUMBER(1)</c> or <c>CHAR(1)</c>; a date column hits a further, unrelated reserved-word
-    /// quoting bug, ORA-01747, in this translator's <c>t.{Column}</c> interpolation) — so all of
-    /// those are deliberately left uncast (return <c>null</c>) rather than shipping an unverified
-    /// fix. Tracked as a follow-up.
+    /// be <c>NUMBER(1)</c> or <c>CHAR(1)</c>) — so all of those are deliberately left uncast (return
+    /// <c>null</c>) rather than shipping an unverified fix. Tracked as a follow-up. (The unrelated
+    /// reserved-word quoting bug this remark used to mention, ORA-01747 on a <c>Date</c> column, is
+    /// fixed separately by <see cref="OracleQuoteIdentifier"/>.)
     /// </remarks>
     public static string? OracleCast(ColumnType type, string token) => type switch
     {
         ColumnType.Integer or ColumnType.Decimal or ColumnType.Money =>
             $"TO_NUMBER({token}, 'FM999999999999999990.099999999999999999', 'NLS_NUMERIC_CHARACTERS=''.,''')",
         _ => null,
+    };
+
+    /// <summary>
+    /// Quotes <paramref name="column"/> Oracle-style (double quotes) when — and only when — it
+    /// collides with an Oracle reserved word/datatype name such as <c>Date</c>, which Oracle
+    /// otherwise refuses to parse as a bare column reference (<c>ORA-01747</c>). Every other
+    /// column is left bare: a non-colliding column is necessarily unquoted in the report author's
+    /// own inner SQL too, so Oracle folds its stored name to upper-case, and an unquoted <c>t.Foo</c>
+    /// reference already matches that case-insensitively — quoting it would instead demand an exact
+    /// case match this translator has no way to know.
+    /// </summary>
+    /// <remarks>
+    /// A reserved-word column, by contrast, can only exist in the inner SQL because the report
+    /// author was forced to quote its alias there (a bare <c>DATE</c> alias isn't valid Oracle
+    /// syntax at all) — by convention they quote it with the exact same casing as the column's
+    /// declared <see cref="ReportSchema"/> name (see <c>OracleFilterTranslatorIntegrationTests</c>),
+    /// so quoting here with that same declared name matches what Oracle actually stored.
+    /// </remarks>
+    public static string OracleQuoteIdentifier(string column) =>
+        OracleReservedWords.Contains(column) ? $"\"{column}\"" : column;
+
+    // Oracle reserved words/datatype names plausible as a report column name. Not the full Oracle
+    // reserved-word list (hundreds of entries, most unusable as column names to begin with) — just
+    // the ones a report author would naturally reach for.
+    private static readonly HashSet<string> OracleReservedWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "ACCESS", "AUDIT", "CLUSTER", "COLUMN", "COMMENT", "DATE", "DEFAULT", "FILE", "GROUP",
+        "INDEX", "LEVEL", "MODE", "NUMBER", "OPTION", "ORDER", "RESOURCE", "ROW", "ROWID",
+        "ROWNUM", "SESSION", "SIZE", "START", "TABLE", "TYPE", "UID", "USER", "VIEW",
     };
 }
