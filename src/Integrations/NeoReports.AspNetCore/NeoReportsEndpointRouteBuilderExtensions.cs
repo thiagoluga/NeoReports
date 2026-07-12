@@ -934,7 +934,12 @@ public static class NeoReportsEndpointRouteBuilderExtensions
     {
         int referencedByCount = reportRegistry.Reports.Count(r => string.Equals(r.SourceRef, definition.Name, StringComparison.Ordinal));
         SourceHealthReading? reading = healthCache?.Get(definition.Name);
-        string? lastHealthStatus = reading is null ? null : reading.Healthy ? "healthy" : "unhealthy";
+        string? lastHealthStatus = reading switch
+        {
+            null => null,
+            { Healthy: true } => "healthy",
+            _ => "unhealthy",
+        };
 
         return new SourceView(
             Name: definition.Name,
