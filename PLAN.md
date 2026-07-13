@@ -797,13 +797,18 @@ same in-memory-source pattern and don't have to guess which naming convention to
   long as the sample existed. Fixed at the converter, with a regression test that checks the exact
   boxed type rather than numeric equality (the existing `DynamicConfigTests` assertion had used
   `ShouldBe`, which coerces across numeric types and so never caught this).
-- [ ] **H2 — Aspire seed generator.** A shared "wide + large" fake-row generator in
+- [x] **H2 — Aspire seed generator.** A shared "wide + large" fake-row generator in
   `NeoReports.Samples.Shared` (reused by all 4 new DB samples in H3, so their seed shape/scale is
-  identical rather than each DB sample inventing its own): a wide POCO (~50 columns spanning every
-  `ColumnType` NeoReports supports — string/int/decimal/money/bool/date/datetime/timestamp/uuid) and
-  a deterministic (seeded `Random`) bulk generator, target ~500,000 rows — large enough to make
-  NeoReports' constant-memory streaming a visible, honest selling point in a sample run, not so large
-  a sample takes unreasonably long to seed/run in CI or on a contributor's machine.
+  identical rather than each DB sample inventing its own): `WideTransaction` (51 columns spanning
+  every scalar `ColumnType` with an obvious CLR mapping — string/long/decimal/bool/DateTime/Guid,
+  denormalized sales-transaction shape) and `WideTransactionGenerator.Generate(rowCount, seed)`, a
+  deterministic (seeded `Random`) lazy (`yield return`) bulk generator defaulting to 500,000 rows —
+  large enough to make NeoReports' constant-memory streaming a visible, honest selling point in a
+  sample run, not so large a sample takes unreasonably long to seed/run in CI or on a contributor's
+  machine. Verified: 500,000 rows generate in ~0.6s with no more than one row materialized at a
+  time (the seeding step honors the same constant-memory principle the engine itself is built on);
+  the same seed reproduces byte-identical output, so re-running a sample's seeding step is
+  idempotent without persisting what was generated.
 - [ ] **H3 — Aspire multi-DB samples (one per provider, self-contained).** Four new numbered
   samples — `10-aspire-postgres-wide`, `11-aspire-mysql-wide`, `12-aspire-sqlserver-wide`,
   `13-aspire-mongodb-wide` — each its own Aspire AppHost (`Aspire.Hosting.PostgreSQL`/`.MySql`/
