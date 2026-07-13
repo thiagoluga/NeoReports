@@ -77,7 +77,7 @@ public static class WideTransactionGenerator
             DateTime orderDate = Epoch.AddMinutes(random.Next(0, 60 * 24 * 730));
 
             yield return new WideTransaction(
-                TransactionId: NextGuid(random),
+                TransactionId: DeterministicGuid(i, seed * 1_000_003L + 1),
                 CustomerId: customerId,
                 CustomerName: $"{Pick(random, FirstNames)} {Pick(random, LastNames)}",
                 CustomerEmail: $"customer{customerId}@example.com",
@@ -121,7 +121,7 @@ public static class WideTransactionGenerator
                 DeviceType: Pick(random, DeviceTypes),
                 Browser: Pick(random, Browsers),
                 OperatingSystem: Pick(random, OperatingSystems),
-                SessionId: NextGuid(random),
+                SessionId: DeterministicGuid(i, seed * 1_000_003L + 2),
                 Rating: random.Next(100) < 60 ? 1 + random.Next(5) : 0,
                 FeedbackScore: Math.Round((decimal)(random.NextDouble() * 10), 2),
                 LoyaltyPoints: random.Next(0, 5000),
@@ -133,10 +133,14 @@ public static class WideTransactionGenerator
 
     private static string Pick(Random random, string[] values) => values[random.Next(values.Length)];
 
-    private static Guid NextGuid(Random random)
+    // Packs two longs into the Guid's 16 bytes directly — deterministic from (rowIndex, salt) alone,
+    // with no randomness involved, so it carries none of the "looks like a security token" pattern a
+    // Random-backed Guid would (these are synthetic sample-row identifiers, never used as one).
+    private static Guid DeterministicGuid(long rowIndex, long salt)
     {
-        var bytes = new byte[16];
-        random.NextBytes(bytes);
+        Span<byte> bytes = stackalloc byte[16];
+        BitConverter.TryWriteBytes(bytes[..8], rowIndex);
+        BitConverter.TryWriteBytes(bytes[8..], salt);
         return new Guid(bytes);
     }
 }
