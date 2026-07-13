@@ -766,3 +766,52 @@ Requested directly by the maintainer (2026-07). Blueprint: `docs/epic-g-more-sou
   reserved-word list (`"Date"`), leaving every other column bare — unaffected, since it matches
   Oracle's default case-folding of the report author's own unquoted inner SQL. See D45's "Fix (G8)"
   note.
+
+## Epic H — Samples standardization + Aspire multi-DB samples (D46)
+
+Requested directly by the maintainer (2026-07). The 9 existing samples grew organically (01-03
+predate READMEs entirely; 04 and 09 independently invented near-identical in-memory fake-data
+providers; csproj naming splits between folder-name-style for 01-06 and assembly-name-style for
+07-09) — standardize before adding more, so the new Aspire samples don't add a 4th variant of the
+same in-memory-source pattern and don't have to guess which naming convention to follow.
+
+- [x] **H1 — `NeoReports.Samples.Shared` + standardize 01-09.** New non-packable samples-only
+  project: a canonical `Sale` record (currently copy-pasted with minor doc-comment drift across
+  01/02/03/06) and a generic, schema-driven `InMemoryBatchSource<T>`/config-source-provider pattern
+  promoted from 09's (strictly more capable than 04's fixed-to-`Sale`/5-row version — 09's generates
+  values per declared column type, not hardcoded to one shape). Migrate 01/02/03/06 to the shared
+  `Sale`; migrate 04 to the shared generic provider (keeping its existing 5-row/4-column behavior
+  and `report.json`-driven config, just backed by shared code instead of a local copy). Unify csproj
+  naming onto the assembly-name style already used by 07-09 (`NeoReports.Samples.<Name>.csproj`) —
+  chosen over folder-name style because it scales better once Aspire adds several same-shaped
+  numbered samples. Add a minimal README to 01/02/03 (the only samples with none). Remove the
+  `Nullable`/`ImplicitUsings` re-declarations in 01-07's csproj that `samples/Directory.Build.props`
+  → `build/Directory.Build.props` already set. Every touched sample must still build and run
+  end-to-end after migration (01/02/05 need a real SQL Server reachable to fully exercise, same as
+  before this change — not a new requirement).
+  **Found along the way:** migrating 04 changed its observed row count from 5 to 25 (the shared
+  provider's own default) even with `report.json`'s `"rows": 5` unchanged — `PrimitiveObjectConverter`
+  (`NeoReports.Core`) was silently re-boxing every whole JSON number as `double`, never `long`,
+  because of C#'s switch-expression common-type unification (see CHANGELOG's "Fixed" entry); 04's
+  old hardcoded fallback of 5 happened to equal its own configured value, masking the bug for as
+  long as the sample existed. Fixed at the converter, with a regression test that checks the exact
+  boxed type rather than numeric equality (the existing `DynamicConfigTests` assertion had used
+  `ShouldBe`, which coerces across numeric types and so never caught this).
+- [ ] **H2 — Aspire seed generator.** A shared "wide + large" fake-row generator in
+  `NeoReports.Samples.Shared` (reused by all 4 new DB samples in H3, so their seed shape/scale is
+  identical rather than each DB sample inventing its own): a wide POCO (~50 columns spanning every
+  `ColumnType` NeoReports supports — string/int/decimal/money/bool/date/datetime/timestamp/uuid) and
+  a deterministic (seeded `Random`) bulk generator, target ~500,000 rows — large enough to make
+  NeoReports' constant-memory streaming a visible, honest selling point in a sample run, not so large
+  a sample takes unreasonably long to seed/run in CI or on a contributor's machine.
+- [ ] **H3 — Aspire multi-DB samples (one per provider, self-contained).** Four new numbered
+  samples — `10-aspire-postgres-wide`, `11-aspire-mysql-wide`, `12-aspire-sqlserver-wide`,
+  `13-aspire-mongodb-wide` — each its own Aspire AppHost (`Aspire.Hosting.PostgreSQL`/`.MySql`/
+  `.SqlServer`/`.MongoDB`, CPM-versioned in `build/Directory.Packages.props`) that provisions one
+  Docker container, seeds it via H2's shared generator on first run, and a report project that reads
+  the wide/large table back out through the matching G1-G4 source
+  (`NeoReports.Sources.Postgres`/`.MySql`/`.Sql`/`.MongoDb`) and writes CSV+XLSX. Self-contained per
+  DB (not one shared AppHost orchestrating all four) so a reader interested in only one provider
+  doesn't need Docker images for the other three. READMEs follow 09's walkthrough style (the most
+  detailed of the existing samples) and call out the seed scale (~50 columns / ~500k rows) and how to
+  override it.

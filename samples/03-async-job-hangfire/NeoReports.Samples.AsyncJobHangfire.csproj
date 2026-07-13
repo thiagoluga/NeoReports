@@ -2,8 +2,6 @@
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>
@@ -16,6 +14,7 @@
     <ProjectReference Include="..\..\src\Jobs\NeoReports.Jobs\NeoReports.Jobs.csproj" />
     <ProjectReference Include="..\..\src\Jobs\NeoReports.Jobs.Hangfire\NeoReports.Jobs.Hangfire.csproj" />
     <ProjectReference Include="..\..\src\Integrations\NeoReports.AspNetCore\NeoReports.AspNetCore.csproj" />
+    <ProjectReference Include="..\NeoReports.Samples.Shared\NeoReports.Samples.Shared.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -18,7 +18,7 @@ using NeoReports.Destinations.Local;
 using NeoReports.Formats.Csv;
 using NeoReports.Formats.Xlsx;
 using NeoReports.Jobs.DependencyInjection;
-using NeoReports.Samples.WebUiLive;
+using NeoReports.Samples.Shared;
 using NeoReports.UI;
 
 var builder = WebApplication.CreateBuilder(args);

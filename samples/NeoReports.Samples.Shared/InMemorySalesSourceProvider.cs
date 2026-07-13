@@ -1,16 +1,16 @@
 using NeoReports.Abstractions;
 
-namespace NeoReports.Samples.WebUiLive;
+namespace NeoReports.Samples.Shared;
 
 /// <summary>
-/// Self-contained <see cref="IConfigSourceProvider"/> (id "inmemory") so this sample needs no
-/// external database, cloud account, or credentials to demonstrate the full dynamic-registration
-/// flow (Epic D / ADR D33) — register a report from the Builder, validate it, run it, and download
-/// a real file, all against synthetic in-memory rows. Values are generated from the requested
-/// schema rather than a fixed shape, so any column names/count typed into the Builder work without
-/// a mismatch.
+/// Self-contained <see cref="IConfigSourceProvider"/> (id "inmemory") so dynamic-config samples
+/// need no external database, cloud account, or credentials to demonstrate the full config-driven
+/// flow. Values are generated from the requested schema rather than a fixed shape, so any column
+/// names/count/types declared in a report's config work without a mismatch (promoted from sample
+/// 09's provider during Epic H — strictly more capable than the fixed-to-a-specific-schema version
+/// sample 04 used to carry on its own).
 /// </summary>
-internal sealed class InMemorySalesSourceProvider : IConfigSourceProvider
+public sealed class InMemorySalesSourceProvider : IConfigSourceProvider
 {
     public string Type => "inmemory";
 

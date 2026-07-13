@@ -248,6 +248,24 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   runtime" chip, and Set/Clear actions; honest states when scheduling isn't supported or nothing
   is scheduled.
 
+### Fixed
+- `NeoReports.Core` — `PrimitiveObjectConverter` (the JSON reader for `object?` property-bag
+  values used by dynamic report/source-registry config) silently re-boxed every whole JSON number
+  as `double`, never `long`, even though `Utf8JsonReader.TryGetInt64` correctly succeeded — the
+  switch expression's success arm returned `long`, its fallback arm returned `double`, and C#
+  unifies a switch expression's arms to one common type, silently widening `long` to `double` on
+  every successful integer parse. Found while migrating sample 04 to a shared, schema-driven
+  in-memory source provider (Epic H): its `raw is long n` row-count check had *always* silently
+  failed, for every whole-number `properties` value, in every dynamic-config report ever run
+  against this converter — masked because the sample's own hardcoded fallback (5) happened to
+  equal its `report.json`'s configured `"rows": 5`. No shipped source/writer/destination reads a
+  numeric config property this way today, so the practical blast radius was limited to this
+  sample, but the bug affected the converter itself, not sample code. Fixed with an explicit
+  `(object)` cast on the `long` arm; new `PrimitiveObjectConverterTests` assert the exact boxed
+  type (`ShouldBeOfType<long>`), not just numeric equality — `DynamicConfigTests`' existing
+  `props["limit"].ShouldBe(10L)` assertion had silently accepted a boxed `double` all along,
+  since Shouldly's `ShouldBe` coerces across numeric types for comparison.
+
 ## [1.2.0] - 2026-07-03
 
 Two additive feature sets, both SemVer-minor — v1/v1.1 code is unchanged:

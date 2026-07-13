@@ -5,7 +5,7 @@ using NeoReports.Core.DependencyInjection;
 using NeoReports.Core.Pipeline;
 using NeoReports.Destinations.Local;
 using NeoReports.Formats.Csv;
-using NeoReports.Samples.SqlToCsvLocal;
+using NeoReports.Samples.Shared;
 using NeoReports.Sources.Sql;
 using static NeoReports.Core.Building.ReportColumns;
 
