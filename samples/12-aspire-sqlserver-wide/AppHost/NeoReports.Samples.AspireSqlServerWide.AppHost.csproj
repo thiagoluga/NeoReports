@@ -7,6 +7,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <IsPackable>false</IsPackable>
     <IsAspireHost>true</IsAspireHost>
+    <UserSecretsId>f5ac9389-cb65-4959-b032-088b5302e804</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
