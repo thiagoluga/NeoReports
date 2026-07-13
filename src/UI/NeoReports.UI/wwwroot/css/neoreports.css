@@ -372,6 +372,16 @@ select.input option { background: var(--bg); color: var(--fg); }
   background: var(--info-dot);
   transition: width 600ms ease-out;
 }
+/* No row count for this run (ADR D47) — a sliding segment stands in for an unknown percentage. */
+.progress-bar.indeterminate > i {
+  width: 40% !important;
+  transition: none;
+  animation: progress-indeterminate 1.4s ease-in-out infinite;
+}
+@keyframes progress-indeterminate {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
 .progress-hero .foot { display: flex; justify-content: space-between; font: 400 11px var(--font-mono); color: var(--fg-muted); }
 
 /* ---------- Source/Destination row ---------- */
@@ -654,6 +664,7 @@ select.input option { background: var(--bg); color: var(--fg); }
 .banner.success { background: var(--success-bg); color: var(--success-fg); border-color: color-mix(in oklab, var(--success-fg) 18%, transparent); }
 .banner.info    { background: var(--info-bg);    color: var(--info-fg);    border-color: color-mix(in oklab, var(--info-fg) 18%, transparent); }
 .banner.danger  { background: var(--danger-bg);  color: var(--danger-fg);  border-color: color-mix(in oklab, var(--danger-fg) 18%, transparent); }
+.banner.warn    { background: var(--warn-bg);    color: var(--warn-fg);    border-color: color-mix(in oklab, var(--warn-fg) 18%, transparent); }
 
 /* ---------- Permission row ---------- */
 .perm-row {

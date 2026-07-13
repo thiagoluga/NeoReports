@@ -21,19 +21,23 @@
         </div>
     </div>
 
-    @* Progress hero — GET /api/jobs/{id} (polled). Percent complete has no server-side total to
-       divide by, so the bar itself stays a decorative indicator of "in progress"; the counters
-       below it come from the polled job when one is found. *@
+    @* Progress hero — real percentage from recordsRead/totalRecords off the polled event log
+       (ADR D47): the pre-run source row count, when tracking is enabled and the source supports
+       it. No total known (tracking off, unsupported source, or a failed count) degrades honestly
+       to an indeterminate sliding bar rather than a fabricated percentage. *@
     <div class="progress-hero">
         <div class="top">
             <div style="display:flex;align-items:baseline;gap:16px">
-                <span class="pctbig">@_pct%</span>
+                <span class="pctbig">@(HasKnownTotal ? $"{ComputedPct}%" : "—")</span>
                 <span class="where">@Where</span>
             </div>
             <span class="live-indicator"><span class="dot"></span>live</span>
         </div>
-        <div class="progress-bar"><i style="width:@(_pct)%"></i></div>
-        <div class="foot"><span>@ElapsedText</span></div>
+        <ProgressBar Pct="ComputedPct" Indeterminate="@(!HasKnownTotal)" />
+        <div class="foot">
+            <span>@ElapsedText</span>
+            <span>@ProgressFootnote</span>
+        </div>
     </div>
 
     <Card Flat="true" Dense="true">
@@ -122,9 +126,23 @@
     private ApiJobView? _job;
     private ApiReportDetail? _reportDetail;
     private (string Variant, string Icon, string Label, bool Live) _badge = ("info", "player-play", "Running", true);
-    private int _pct = 64;
-    private System.Threading.Timer? _pctTimer;
     private System.Threading.Timer? _pollTimer;
+
+    // Real progress (ADR D47) — sourced from the event log, not JobStats (which only persists once
+    // at job completion, so it reads zero for the whole life of a Running job).
+    private long? _totalRecords;
+    private long _progressRecords;
+
+    // A total of exactly 0 (a source with no matching rows) is a "known but degenerate" total —
+    // treated the same as "unknown" so the UI never shows a misleading, permanently-stalled "0%"
+    // bar instead of the indeterminate one.
+    private bool HasKnownTotal => _totalRecords is > 0;
+    private int ComputedPct => HasKnownTotal
+        ? (int)Math.Clamp(_progressRecords * 100 / _totalRecords!.Value, 0, 100)
+        : 0;
+    private string ProgressFootnote => HasKnownTotal
+        ? $"{_progressRecords:N0} / {_totalRecords:N0} rows"
+        : "no row count for this run — progress is indeterminate";
 
     private string Title => _job?.ReportName ?? "Loading…";
     private string SubLine => _job is not null
@@ -181,14 +199,6 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // Cosmetic progress-bar animation — there is no server-side total to divide a real
-        // percentage by, so this stays a decorative "in progress" indicator.
-        _pctTimer = new System.Threading.Timer(_ =>
-        {
-            _pct = _pct >= 70 ? 60 : _pct + 1;
-            InvokeAsync(StateHasChanged);
-        }, null, 1100, 1100);
-
         await PollAsync();
         _pollTimer = new System.Threading.Timer(async _ => await InvokeAsync(PollAsync), null, 1500, 1500);
     }
@@ -212,12 +222,17 @@
         if (_reportDetail is null || !string.Equals(_reportDetail.Name, job.ReportName, StringComparison.Ordinal))
             _reportDetail = await Api.TryGetReportDetailAsync(job.ReportName);
 
-        var events = await Api.TryGetJobEventsAsync(Id);
+        // Explicit limit (the server's own max, D38/D47): the default 200-event page would
+        // otherwise never advance across polls, freezing the real percentage — and the rate/retry
+        // cards below it — for any run long enough to emit more than 200 page-completed events.
+        var events = await Api.TryGetJobEventsAsync(Id, limit: 1000);
         if (events is not null)
         {
             _events = events;
             _retryEvents = events.Where(e => e.Type == "retry").ToArray();
             _rateSeries = JobEventFormatter.ToRateSeries(events);
+            _totalRecords = JobEventFormatter.LatestTotalRecords(events);
+            _progressRecords = JobEventFormatter.LatestRecordsRead(events) ?? 0;
         }
 
         if (string.Equals(job.Status, "Completed", StringComparison.Ordinal))
@@ -259,8 +274,6 @@
 
     private void StopTimers()
     {
-        _pctTimer?.Dispose();
-        _pctTimer = null;
         _pollTimer?.Dispose();
         _pollTimer = null;
     }

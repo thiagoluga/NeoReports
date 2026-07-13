@@ -18,8 +18,10 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   `null`/indeterminate — never fails the run. **Behavior change on upgrade:** because tracking
   defaults to enabled, every existing report — typed and dynamic, no code change required — starts
   issuing one extra `COUNT` query per run. Set `.TrackProgress(false)` (typed) or
-  `"trackProgress": false` (dynamic config) to restore the previous behavior. The UI (Builder
-  toggle, real percentage bar) ships in a follow-up PR.
+  `"trackProgress": false` (dynamic config) to restore the previous behavior. `NeoReports.UI`'s
+  Builder gains a default-on "Track progress" switch (with an honest off-state warning) and the
+  running-job page now shows a real, clamped percentage — falling back to an indeterminate sliding
+  bar when no total is known.
 - `NeoReports.UI` — a report preview screen (`/reports/{name}/preview`, D45), linked from
   `ReportDetail.razor`'s new "Preview" button. Shows a read-only sample via
   `POST /reports/{name}/preview` in a `DataGrid`, a page-size selector (10-200 rows), and — for

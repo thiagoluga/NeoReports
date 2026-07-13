@@ -11,8 +11,11 @@ namespace NeoReports.UI.Services;
 /// <summary>A report registered with the NeoReports engine, as returned by <c>GET /api/reports</c>.</summary>
 public sealed record ApiReportSummary(string Name, int OutputCount, IReadOnlyList<string> Columns);
 
-/// <summary>Aggregate counters for a job, mirroring <c>NeoReports.Abstractions.JobStats</c>.</summary>
-public sealed record ApiJobStats(long RecordsRead, long RecordsWritten, long BytesWritten, int Retries, int BatchesProcessed);
+/// <summary>Aggregate counters for a job, mirroring <c>NeoReports.Abstractions.JobStats</c>. <see cref="TotalRecords"/>
+/// is the pre-run row count (ADR D47) — null when tracking was off, unsupported, or the count failed; an older
+/// engine without the field also deserializes it to null, so this is forward/backward compatible.</summary>
+public sealed record ApiJobStats(
+    long RecordsRead, long RecordsWritten, long BytesWritten, int Retries, int BatchesProcessed, long? TotalRecords = null);
 
 /// <summary>A job's status view, as returned by <c>GET /api/jobs/{id}</c>. <see cref="Status"/> is the
 /// <c>ReportJobStatus</c> enum member name (e.g. "Running", "Completed", "Failed").</summary>

@@ -79,6 +79,34 @@ public static class JobEventFormatter
         return rates;
     }
 
+    /// <summary>
+    /// The most recent <c>recordsRead</c> value carried by a <c>page-completed</c> event (ADR D47)
+    /// — the live read counter while a job is running, since <c>JobStats</c> itself only persists
+    /// once at job completion. Null when no page has completed yet.
+    /// </summary>
+    public static long? LatestRecordsRead(IEnumerable<ApiJobEvent> events) => LatestNumericDatum(events, "recordsRead");
+
+    /// <summary>
+    /// The most recent <c>totalRecords</c> value carried by an event (ADR D47) — repeated on every
+    /// <c>page-completed</c> event, so the latest one found is authoritative. Null when tracking
+    /// was disabled, unsupported by the source, or the pre-run count failed.
+    /// </summary>
+    public static long? LatestTotalRecords(IEnumerable<ApiJobEvent> events) => LatestNumericDatum(events, "totalRecords");
+
+    private static long? LatestNumericDatum(IEnumerable<ApiJobEvent> events, string key)
+    {
+        ArgumentNullException.ThrowIfNull(events);
+
+        long? latest = null;
+        foreach (ApiJobEvent e in events)
+        {
+            if (e.Data is not null && e.Data.TryGetValue(key, out var raw) && long.TryParse(raw, out var value))
+                latest = value;
+        }
+
+        return latest;
+    }
+
     private static string Get(IReadOnlyDictionary<string, string>? data, string key) =>
         data is not null && data.TryGetValue(key, out var value) ? value : "?";
 }
