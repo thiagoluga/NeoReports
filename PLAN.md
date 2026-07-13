@@ -848,3 +848,17 @@ same in-memory-source pattern and don't have to guess which naming convention to
     strong RNG" despite being synthetic sample data with no security purpose. Fixed by packing the
     row index and a per-field salt directly into the Guid's 16 bytes instead of going through
     `Random` at all (H2, landed before H3).
+  - **Follow-up (2026-07-13):** each sample's headless `ReportRunner` (seeded the DB, ran the
+    report once via `IReportRunner.RunAsync`, and exited) was replaced by a `Web` ASP.NET Core host
+    that mounts the full NeoReports UI (`AddNeoReportsUI`/`UseNeoReportsUI`/`MapNeoReports`, same
+    pattern as `09-web-ui-live`) alongside the typed `AddReport<WideTransaction>` registration —
+    Aspire's job is now only provisioning the database and starting that UI; running the report,
+    watching live progress, and downloading the file all happen by clicking through it instead of
+    happening automatically on startup. Found in the process: the shipped `AppHost.cs` files were
+    never actually launched end to end before H3 merged (only `ReportRunner`'s logic was verified,
+    against manually-started containers) — both were missing `Properties/launchSettings.json`
+    (`DistributedApplication.Build().Run()` throws immediately without `ASPNETCORE_URLS`/OTLP
+    dashboard endpoint env vars, which Visual Studio surfaces as a console window that opens and
+    closes with no output) and `UserSecretsId` (without it Aspire can't persist the generated DB
+    password across runs, so a Docker volume reused via `WithDataVolume()` fails auth forever on
+    any run after the first).

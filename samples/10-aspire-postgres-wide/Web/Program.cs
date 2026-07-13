@@ -1,45 +1,42 @@
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using MySqlConnector;
+using NeoReports.AspNetCore;
+using NeoReports.AspNetCore.DependencyInjection;
 using NeoReports.Core.DependencyInjection;
-using NeoReports.Core.Pipeline;
 using NeoReports.Destinations.Local;
+using NeoReports.Jobs.DependencyInjection;
 using NeoReports.Samples.Shared;
-using NeoReports.Sources.MySql;
+using NeoReports.Sources.Postgres;
+using NeoReports.UI;
+using Npgsql;
+using NpgsqlTypes;
 using static NeoReports.Core.Building.ReportColumns;
 // Import the format entry methods directly so Csv(...) and Xlsx(...) read cleanly and avoid the
 // Format class-name collision between the two format packages (ADR D16).
 using static NeoReports.Formats.Csv.Format;
 using static NeoReports.Formats.Xlsx.Format;
 
-// Sample 11 — the ReportRunner half of the MySQL Aspire sample. Started by AppHost.cs with the
-// "widetransactions" connection string injected via WithReference; run standalone with:
-//   dotnet run --project samples/11-aspire-mysql-wide/ReportRunner -- "<connection-string>"
-//
-// GuidFormat=Char36 is required on the connection string (both here and for the report source
-// below) so MySqlConnector reads/writes a CHAR(36) column as a native Guid instead of a string —
-// without it, RecordMaterializer's Convert.ChangeType(string, typeof(Guid)) throws, since Guid
-// doesn't implement IConvertible.
+// Sample 10 — the Web half of the Postgres Aspire sample. AppHost.cs provisions "postgres" and
+// injects the "widetransactions" connection string via WithReference; this host seeds the
+// database once, registers the typed "wide-transactions" report, and mounts the full NeoReports
+// UI — Aspire's only job is standing up the database and starting this UI, everything else
+// (running the report, watching progress, downloading the file) happens by clicking through it.
+// Run standalone with:
+//   dotnet run --project samples/10-aspire-postgres-wide/Web -- "<connection-string>"
 
-string baseConnectionString = args.Length > 0
+var builder = WebApplication.CreateBuilder(args);
+
+string connectionString = args.Length > 0
     ? args[0]
-    : Environment.GetEnvironmentVariable("ConnectionStrings__widetransactions")
+    : builder.Configuration.GetConnectionString("widetransactions")
         ?? throw new InvalidOperationException(
-            "No connection string. Run via the AppHost (dotnet run --project samples/11-aspire-mysql-wide/AppHost) " +
+            "No connection string. Run via the AppHost (dotnet run --project samples/10-aspire-postgres-wide/AppHost) " +
             "or pass one as the first argument.");
-
-var connectionStringBuilder = new MySqlConnectionStringBuilder(baseConnectionString) { GuidFormat = MySqlGuidFormat.Char36 };
-string connectionString = connectionStringBuilder.ConnectionString;
-
-await EnsureSeededAsync(connectionString);
 
 const string Culture = "en-US"; // shared across every currency-formatted column below
 
-var services = new ServiceCollection();
-services.AddLogging(b => b.AddConsole().SetMinimumLevel(LogLevel.Information));
+builder.Services.AddNeoReportsUI();
 
-services.AddReport<WideTransaction>("wide-transactions", b => b
-    .From(Source.MySql(
+builder.Services.AddReport<WideTransaction>("wide-transactions", b => b
+    .From(Source.Postgres(
             connectionString,
             "SELECT TransactionId, CustomerId, CustomerName, CustomerEmail, CustomerCity, CustomerCountry, " +
             "IsVipCustomer, ProductId, ProductName, ProductCategory, ProductSku, Quantity, UnitPrice, " +
@@ -49,7 +46,7 @@ services.AddReport<WideTransaction>("wide-transactions", b => b
             "ProcessedAtUtc, SalesRepId, SalesRepName, Region, Channel, Campaign, ReferralCode, DeviceType, " +
             "Browser, OperatingSystem, SessionId, Rating, FeedbackScore, LoyaltyPoints, IsFirstPurchase, " +
             "WarehouseId, Notes FROM wide_transactions " +
-            "WHERE (@cursor IS NULL OR TransactionId > @cursor) ORDER BY TransactionId")
+            "WHERE (@cursor IS NULL OR TransactionId > @cursor::uuid) ORDER BY TransactionId")
         .Keyset<WideTransaction, Guid>(v => v.TransactionId, pageSize: 5000))
     .Columns(
         Col<WideTransaction, Guid>(v => v.TransactionId, "Transaction ID"),
@@ -107,29 +104,38 @@ services.AddReport<WideTransaction>("wide-transactions", b => b
     .To(Xlsx())
     .UploadTo(Destination.Local("./out/{name}-{date:yyyy-MM-dd}.{ext}")));
 
-var provider = services.BuildServiceProvider();
-var runner = provider.GetRequiredService<IReportRunner>();
+builder.Services.AddNeoReportsInMemoryJobs();
+builder.Services.AddNeoReportsArtifacts();
+builder.Services.AddInMemoryJobEvents(); // ADR D38 — powers the job Timeline/Retries/rate cards
 
-Console.WriteLine("Running wide-transactions report against MySQL...");
-var result = await runner.RunAsync("wide-transactions");
+var app = builder.Build();
 
-Console.WriteLine($"Status: {result.Status}");
-Console.WriteLine($"Records read/written: {result.Stats.RecordsRead}/{result.Stats.RecordsWritten}");
-foreach (var upload in result.Uploads)
-    Console.WriteLine($"Uploaded: {upload.RemotePath} (success={upload.Success})");
+app.MapNeoReports("/api");
 
-return result.Status == ReportRunStatus.Failed ? 1 : 0;
+var uiPath = app.Configuration["NeoReports:UIPath"] ?? NeoReportsUIExtensions.DefaultBasePath;
+app.UseNeoReportsUI(uiPath);
+
+// Convenience: the sample root redirects into the UI.
+app.MapGet("/", () => Results.Redirect(uiPath));
+
+// Start Kestrel BEFORE seeding: Aspire marks this resource's endpoint reachable as soon as the
+// process starts, and the seed can take a while on a 500,000-row table — starting the listener
+// first means the UI shell loads immediately instead of the endpoint refusing connections until
+// seeding finishes.
+await app.StartAsync();
+await EnsureSeededAsync(connectionString);
+await app.WaitForShutdownAsync();
 
 static async Task EnsureSeededAsync(string connectionString)
 {
-    await using var connection = new MySqlConnection(connectionString);
+    await using var connection = new NpgsqlConnection(connectionString);
     await connection.OpenAsync();
 
     await using (var createTable = connection.CreateCommand())
     {
         createTable.CommandText = """
             CREATE TABLE IF NOT EXISTS wide_transactions (
-                TransactionId CHAR(36) PRIMARY KEY,
+                TransactionId UUID PRIMARY KEY,
                 CustomerId BIGINT NOT NULL,
                 CustomerName TEXT NOT NULL,
                 CustomerEmail TEXT NOT NULL,
@@ -141,16 +147,16 @@ static async Task EnsureSeededAsync(string connectionString)
                 ProductCategory TEXT NOT NULL,
                 ProductSku TEXT NOT NULL,
                 Quantity BIGINT NOT NULL,
-                UnitPrice DECIMAL(18,4) NOT NULL,
-                DiscountRate DECIMAL(18,4) NOT NULL,
-                TaxRate DECIMAL(18,4) NOT NULL,
-                ShippingCost DECIMAL(18,4) NOT NULL,
-                ProcessingFee DECIMAL(18,4) NOT NULL,
-                TotalAmount DECIMAL(18,4) NOT NULL,
+                UnitPrice NUMERIC(18,4) NOT NULL,
+                DiscountRate NUMERIC(18,4) NOT NULL,
+                TaxRate NUMERIC(18,4) NOT NULL,
+                ShippingCost NUMERIC(18,4) NOT NULL,
+                ProcessingFee NUMERIC(18,4) NOT NULL,
+                TotalAmount NUMERIC(18,4) NOT NULL,
                 Currency TEXT NOT NULL,
                 PaymentMethod TEXT NOT NULL,
                 IsRefunded BOOLEAN NOT NULL,
-                RefundAmount DECIMAL(18,4) NOT NULL,
+                RefundAmount NUMERIC(18,4) NOT NULL,
                 IsGift BOOLEAN NOT NULL,
                 ShippingCity TEXT NOT NULL,
                 ShippingCountry TEXT NOT NULL,
@@ -158,12 +164,12 @@ static async Task EnsureSeededAsync(string connectionString)
                 CarrierName TEXT NOT NULL,
                 TrackingNumber TEXT NOT NULL,
                 EstimatedDeliveryDays BIGINT NOT NULL,
-                OrderDate DATETIME NOT NULL,
-                ShippedDate DATETIME NOT NULL,
-                DeliveredDate DATETIME NOT NULL,
-                CreatedAt DATETIME NOT NULL,
-                UpdatedAt DATETIME NOT NULL,
-                ProcessedAtUtc DATETIME NOT NULL,
+                OrderDate TIMESTAMP NOT NULL,
+                ShippedDate TIMESTAMP NOT NULL,
+                DeliveredDate TIMESTAMP NOT NULL,
+                CreatedAt TIMESTAMP NOT NULL,
+                UpdatedAt TIMESTAMP NOT NULL,
+                ProcessedAtUtc TIMESTAMP NOT NULL,
                 SalesRepId BIGINT NOT NULL,
                 SalesRepName TEXT NOT NULL,
                 Region TEXT NOT NULL,
@@ -173,9 +179,9 @@ static async Task EnsureSeededAsync(string connectionString)
                 DeviceType TEXT NOT NULL,
                 Browser TEXT NOT NULL,
                 OperatingSystem TEXT NOT NULL,
-                SessionId CHAR(36) NOT NULL,
+                SessionId UUID NOT NULL,
                 Rating BIGINT NOT NULL,
-                FeedbackScore DECIMAL(18,4) NOT NULL,
+                FeedbackScore NUMERIC(18,4) NOT NULL,
                 LoyaltyPoints BIGINT NOT NULL,
                 IsFirstPurchase BOOLEAN NOT NULL,
                 WarehouseId BIGINT NOT NULL,
@@ -188,7 +194,7 @@ static async Task EnsureSeededAsync(string connectionString)
     await using (var countCommand = connection.CreateCommand())
     {
         countCommand.CommandText = "SELECT COUNT(*) FROM wide_transactions";
-        var existingRows = Convert.ToInt64(await countCommand.ExecuteScalarAsync());
+        var existingRows = (long)(await countCommand.ExecuteScalarAsync() ?? 0L);
         if (existingRows > 0)
         {
             Console.WriteLine($"wide_transactions already has {existingRows:N0} rows — skipping seed.");
@@ -199,29 +205,8 @@ static async Task EnsureSeededAsync(string connectionString)
     Console.WriteLine($"Seeding wide_transactions with {WideTransactionGenerator.DefaultRowCount:N0} rows...");
     var started = DateTime.UtcNow;
 
-    const int batchSize = 200;
-    var batch = new List<WideTransaction>(batchSize);
-
-    foreach (var row in WideTransactionGenerator.Generate())
-    {
-        batch.Add(row);
-        if (batch.Count == batchSize)
-        {
-            await InsertBatchAsync(connection, batch);
-            batch.Clear();
-        }
-    }
-
-    if (batch.Count > 0)
-        await InsertBatchAsync(connection, batch);
-
-    Console.WriteLine($"Seeded in {(DateTime.UtcNow - started).TotalSeconds:N1}s.");
-}
-
-static async Task InsertBatchAsync(MySqlConnection connection, List<WideTransaction> rows)
-{
-    var sql = new System.Text.StringBuilder(
-        "INSERT INTO wide_transactions (" +
+    await using var writer = await connection.BeginBinaryImportAsync(
+        "COPY wide_transactions (" +
         "TransactionId, CustomerId, CustomerName, CustomerEmail, CustomerCity, CustomerCountry, IsVipCustomer, " +
         "ProductId, ProductName, ProductCategory, ProductSku, Quantity, UnitPrice, DiscountRate, TaxRate, " +
         "ShippingCost, ProcessingFee, TotalAmount, Currency, PaymentMethod, IsRefunded, RefundAmount, IsGift, " +
@@ -229,40 +214,69 @@ static async Task InsertBatchAsync(MySqlConnection connection, List<WideTransact
         "OrderDate, ShippedDate, DeliveredDate, CreatedAt, UpdatedAt, ProcessedAtUtc, SalesRepId, SalesRepName, " +
         "Region, Channel, Campaign, ReferralCode, DeviceType, Browser, OperatingSystem, SessionId, Rating, " +
         "FeedbackScore, LoyaltyPoints, IsFirstPurchase, WarehouseId, Notes" +
-        ") VALUES ");
+        ") FROM STDIN (FORMAT BINARY)");
 
-    var values = new List<object>(rows.Count * 51);
-    for (var r = 0; r < rows.Count; r++)
+    foreach (var row in WideTransactionGenerator.Generate())
     {
-        if (r > 0) sql.Append(',');
-        sql.Append('(');
-        for (var c = 0; c < 51; c++)
-        {
-            if (c > 0) sql.Append(',');
-            sql.Append('@').Append('p').Append(r).Append('_').Append(c);
-        }
-        sql.Append(')');
-
-        var row = rows[r];
-        values.AddRange(new object[]
-        {
-            row.TransactionId, row.CustomerId, row.CustomerName, row.CustomerEmail, row.CustomerCity,
-            row.CustomerCountry, row.IsVipCustomer, row.ProductId, row.ProductName, row.ProductCategory,
-            row.ProductSku, row.Quantity, row.UnitPrice, row.DiscountRate, row.TaxRate, row.ShippingCost,
-            row.ProcessingFee, row.TotalAmount, row.Currency, row.PaymentMethod, row.IsRefunded,
-            row.RefundAmount, row.IsGift, row.ShippingCity, row.ShippingCountry, row.ShippingPostalCode,
-            row.CarrierName, row.TrackingNumber, row.EstimatedDeliveryDays, row.OrderDate, row.ShippedDate,
-            row.DeliveredDate, row.CreatedAt, row.UpdatedAt, row.ProcessedAtUtc, row.SalesRepId,
-            row.SalesRepName, row.Region, row.Channel, row.Campaign, row.ReferralCode, row.DeviceType,
-            row.Browser, row.OperatingSystem, row.SessionId, row.Rating, row.FeedbackScore, row.LoyaltyPoints,
-            row.IsFirstPurchase, row.WarehouseId, row.Notes,
-        });
+        await writer.StartRowAsync();
+        await writer.WriteAsync(row.TransactionId, NpgsqlDbType.Uuid);
+        await writer.WriteAsync(row.CustomerId, NpgsqlDbType.Bigint);
+        await writer.WriteAsync(row.CustomerName, NpgsqlDbType.Text);
+        await writer.WriteAsync(row.CustomerEmail, NpgsqlDbType.Text);
+        await writer.WriteAsync(row.CustomerCity, NpgsqlDbType.Text);
+        await writer.WriteAsync(row.CustomerCountry, NpgsqlDbType.Text);
+        await writer.WriteAsync(row.IsVipCustomer, NpgsqlDbType.Boolean);
+        await writer.WriteAsync(row.ProductId, NpgsqlDbType.Bigint);
+        await writer.WriteAsync(row.ProductName, NpgsqlDbType.Text);
+        await writer.WriteAsync(row.ProductCategory, NpgsqlDbType.Text);
+        await writer.WriteAsync(row.ProductSku, NpgsqlDbType.Text);
+        await writer.WriteAsync(row.Quantity, NpgsqlDbType.Bigint);
+        await writer.WriteAsync(row.UnitPrice, NpgsqlDbType.Numeric);
+        await writer.WriteAsync(row.DiscountRate, NpgsqlDbType.Numeric);
+        await writer.WriteAsync(row.TaxRate, NpgsqlDbType.Numeric);
+        await writer.WriteAsync(row.ShippingCost, NpgsqlDbType.Numeric);
+        await writer.WriteAsync(row.ProcessingFee, NpgsqlDbType.Numeric);
+        await writer.WriteAsync(row.TotalAmount, NpgsqlDbType.Numeric);
+        await writer.WriteAsync(row.Currency, NpgsqlDbType.Text);
+        await writer.WriteAsync(row.PaymentMethod, NpgsqlDbType.Text);
+        await writer.WriteAsync(row.IsRefunded, NpgsqlDbType.Boolean);
+        await writer.WriteAsync(row.RefundAmount, NpgsqlDbType.Numeric);
+        await writer.WriteAsync(row.IsGift, NpgsqlDbType.Boolean);
+        await writer.WriteAsync(row.ShippingCity, NpgsqlDbType.Text);
+        await writer.WriteAsync(row.ShippingCountry, NpgsqlDbType.Text);
+        await writer.WriteAsync(row.ShippingPostalCode, NpgsqlDbType.Text);
+        await writer.WriteAsync(row.CarrierName, NpgsqlDbType.Text);
+        await writer.WriteAsync(row.TrackingNumber, NpgsqlDbType.Text);
+        await writer.WriteAsync(row.EstimatedDeliveryDays, NpgsqlDbType.Bigint);
+        await writer.WriteAsync(AsUnspecified(row.OrderDate), NpgsqlDbType.Timestamp);
+        await writer.WriteAsync(AsUnspecified(row.ShippedDate), NpgsqlDbType.Timestamp);
+        await writer.WriteAsync(AsUnspecified(row.DeliveredDate), NpgsqlDbType.Timestamp);
+        await writer.WriteAsync(AsUnspecified(row.CreatedAt), NpgsqlDbType.Timestamp);
+        await writer.WriteAsync(AsUnspecified(row.UpdatedAt), NpgsqlDbType.Timestamp);
+        await writer.WriteAsync(AsUnspecified(row.ProcessedAtUtc), NpgsqlDbType.Timestamp);
+        await writer.WriteAsync(row.SalesRepId, NpgsqlDbType.Bigint);
+        await writer.WriteAsync(row.SalesRepName, NpgsqlDbType.Text);
+        await writer.WriteAsync(row.Region, NpgsqlDbType.Text);
+        await writer.WriteAsync(row.Channel, NpgsqlDbType.Text);
+        await writer.WriteAsync(row.Campaign, NpgsqlDbType.Text);
+        await writer.WriteAsync(row.ReferralCode, NpgsqlDbType.Text);
+        await writer.WriteAsync(row.DeviceType, NpgsqlDbType.Text);
+        await writer.WriteAsync(row.Browser, NpgsqlDbType.Text);
+        await writer.WriteAsync(row.OperatingSystem, NpgsqlDbType.Text);
+        await writer.WriteAsync(row.SessionId, NpgsqlDbType.Uuid);
+        await writer.WriteAsync(row.Rating, NpgsqlDbType.Bigint);
+        await writer.WriteAsync(row.FeedbackScore, NpgsqlDbType.Numeric);
+        await writer.WriteAsync(row.LoyaltyPoints, NpgsqlDbType.Bigint);
+        await writer.WriteAsync(row.IsFirstPurchase, NpgsqlDbType.Boolean);
+        await writer.WriteAsync(row.WarehouseId, NpgsqlDbType.Bigint);
+        await writer.WriteAsync(row.Notes, NpgsqlDbType.Text);
     }
 
-    await using var command = connection.CreateCommand();
-    command.CommandText = sql.ToString();
-    for (var i = 0; i < values.Count; i++)
-        command.Parameters.AddWithValue($"@p{i / 51}_{i % 51}", values[i]);
-
-    await command.ExecuteNonQueryAsync();
+    await writer.CompleteAsync();
+    Console.WriteLine($"Seeded in {(DateTime.UtcNow - started).TotalSeconds:N1}s.");
 }
+
+// Postgres's TIMESTAMP (without time zone) rejects a DateTimeKind.Utc value outright — the
+// generator's rows are all UTC-based, but a naive column has no time-zone concept to validate
+// against, so the Kind tag is simply dropped rather than the value being reinterpreted.
+static DateTime AsUnspecified(DateTime value) => DateTime.SpecifyKind(value, DateTimeKind.Unspecified);

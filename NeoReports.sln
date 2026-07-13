@@ -29,19 +29,19 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NeoReports.Samples.Shared",
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NeoReports.Samples.AspirePostgresWide.AppHost", "samples\10-aspire-postgres-wide\AppHost\NeoReports.Samples.AspirePostgresWide.AppHost.csproj", "{082058C7-52BF-4548-A2B1-E502743337AC}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NeoReports.Samples.AspirePostgresWide.ReportRunner", "samples\10-aspire-postgres-wide\ReportRunner\NeoReports.Samples.AspirePostgresWide.ReportRunner.csproj", "{B09540BC-A901-4DA9-82F6-27E2A2D6DFA4}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NeoReports.Samples.AspirePostgresWide.Web", "samples\10-aspire-postgres-wide\Web\NeoReports.Samples.AspirePostgresWide.Web.csproj", "{B09540BC-A901-4DA9-82F6-27E2A2D6DFA4}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NeoReports.Samples.AspireMySqlWide.AppHost", "samples\11-aspire-mysql-wide\AppHost\NeoReports.Samples.AspireMySqlWide.AppHost.csproj", "{249725EE-9F48-42B6-AF0C-8C88D4C438B3}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NeoReports.Samples.AspireMySqlWide.ReportRunner", "samples\11-aspire-mysql-wide\ReportRunner\NeoReports.Samples.AspireMySqlWide.ReportRunner.csproj", "{36957DE9-0CF9-4387-8BBC-A894EB338C41}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NeoReports.Samples.AspireMySqlWide.Web", "samples\11-aspire-mysql-wide\Web\NeoReports.Samples.AspireMySqlWide.Web.csproj", "{36957DE9-0CF9-4387-8BBC-A894EB338C41}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NeoReports.Samples.AspireSqlServerWide.AppHost", "samples\12-aspire-sqlserver-wide\AppHost\NeoReports.Samples.AspireSqlServerWide.AppHost.csproj", "{0AB120B7-4707-4417-8388-7F530EF01290}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NeoReports.Samples.AspireSqlServerWide.ReportRunner", "samples\12-aspire-sqlserver-wide\ReportRunner\NeoReports.Samples.AspireSqlServerWide.ReportRunner.csproj", "{A53178F2-D182-44F1-928C-77C943A1A7CD}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NeoReports.Samples.AspireSqlServerWide.Web", "samples\12-aspire-sqlserver-wide\Web\NeoReports.Samples.AspireSqlServerWide.Web.csproj", "{A53178F2-D182-44F1-928C-77C943A1A7CD}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NeoReports.Samples.AspireMongoDbWide.AppHost", "samples\13-aspire-mongodb-wide\AppHost\NeoReports.Samples.AspireMongoDbWide.AppHost.csproj", "{F6A319DF-08EE-4F90-9DE1-D476CD826FFB}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NeoReports.Samples.AspireMongoDbWide.ReportRunner", "samples\13-aspire-mongodb-wide\ReportRunner\NeoReports.Samples.AspireMongoDbWide.ReportRunner.csproj", "{A1291EDB-1B7E-4108-84AC-99F801BAB867}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NeoReports.Samples.AspireMongoDbWide.Web", "samples\13-aspire-mongodb-wide\Web\NeoReports.Samples.AspireMongoDbWide.Web.csproj", "{A1291EDB-1B7E-4108-84AC-99F801BAB867}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NeoReports.Formats.Csv.UnitTests", "tests\NeoReports.Formats.Csv.UnitTests\NeoReports.Formats.Csv.UnitTests.csproj", "{2D69478A-68E9-4FBB-AEDE-40866829609F}"
 EndProject

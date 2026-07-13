@@ -9,30 +9,30 @@ Docker setup, no connection string to configure by hand.
 dotnet run --project samples/12-aspire-sqlserver-wide/AppHost
 ```
 
-Open the printed dashboard URL. Aspire pulls the SQL Server image it defaults to, starts the
-container, creates the `widetransactions` database, and injects its connection string into the
-`report-runner` project. On first run, `report-runner`:
+Open the printed dashboard URL and click into the **`web`** resource's endpoint — Aspire's only
+job here is standing up SQL Server (including creating the `widetransactions` database) and
+starting that page. It's the full NeoReports UI:
 
-1. Creates the `wide_transactions` table if it doesn't exist.
-2. Seeds it with 500,000 rows via `NeoReports.Samples.Shared`'s `WideTransactionGenerator`, bulk
-   loaded through `SqlBulkCopy` in batches of 5,000 rows — never more than one batch buffered in
-   memory at a time.
-3. Runs a report over the seeded table with `Source.Sql(...).Keyset<WideTransaction, Guid>(...)`
-   — the same constant-memory keyset pagination every other SQL sample in this repo uses — and
-   writes `./out/wide-transactions-<date>.csv` and `.xlsx` under `ReportRunner/`.
+1. On startup, `Web` creates the `wide_transactions` table if it doesn't exist and seeds it with
+   500,000 rows via `NeoReports.Samples.Shared`'s `WideTransactionGenerator`, bulk loaded through
+   `SqlBulkCopy` in batches of 5,000 rows — never more than one batch buffered in memory at a time.
+2. It registers `wide-transactions` — `Source.Sql(...).Keyset<WideTransaction, Guid>(...)`, the
+   same constant-memory keyset pagination every other SQL sample in this repo uses — and mounts
+   the NeoReports UI so you can click **Run**, watch live progress, and download
+   `wide-transactions-<date>.csv` / `.xlsx` from the Reports screen.
 
-Re-running the sample skips seeding (the table already has rows) and just re-runs the report —
-seeding is idempotent, not "drop and recreate."
+Re-running the sample skips seeding (the table already has rows) — seeding is idempotent, not
+"drop and recreate."
 
 ## Running the pieces separately
 
-`ReportRunner` also runs standalone against any SQL Server connection string, for example one from
+`Web` also runs standalone against any SQL Server connection string, for example one from
 `docker run -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD=... -p 1433:1433 mcr.microsoft.com/mssql/server:2022-latest`
 — note that a plain container (unlike Aspire's own orchestration) doesn't create the target
 database for you, so run `CREATE DATABASE widetransactions` once first:
 
 ```bash
-dotnet run --project samples/12-aspire-sqlserver-wide/ReportRunner -- "Server=localhost,1433;User Id=sa;Password=...;Database=widetransactions;TrustServerCertificate=True"
+dotnet run --project samples/12-aspire-sqlserver-wide/Web -- "Server=localhost,1433;User Id=sa;Password=...;Database=widetransactions;TrustServerCertificate=True"
 ```
 
 ## Notable implementation details

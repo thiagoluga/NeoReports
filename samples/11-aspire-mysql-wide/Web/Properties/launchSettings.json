@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "NeoReports.Samples.AspireMySqlWide.Web": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:18210;http://localhost:16210"
+    }
+  }
+}

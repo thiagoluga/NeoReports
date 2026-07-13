@@ -1,37 +1,41 @@
 using System.Data;
 using Microsoft.Data.SqlClient;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
+using NeoReports.AspNetCore;
+using NeoReports.AspNetCore.DependencyInjection;
 using NeoReports.Core.DependencyInjection;
-using NeoReports.Core.Pipeline;
 using NeoReports.Destinations.Local;
+using NeoReports.Jobs.DependencyInjection;
 using NeoReports.Samples.Shared;
 using NeoReports.Sources.Sql;
+using NeoReports.UI;
 using static NeoReports.Core.Building.ReportColumns;
 // Import the format entry methods directly so Csv(...) and Xlsx(...) read cleanly and avoid the
 // Format class-name collision between the two format packages (ADR D16).
 using static NeoReports.Formats.Csv.Format;
 using static NeoReports.Formats.Xlsx.Format;
 
-// Sample 12 — the ReportRunner half of the SQL Server Aspire sample. Started by AppHost.cs with the
-// "widetransactions" connection string injected via WithReference; run standalone with:
-//   dotnet run --project samples/12-aspire-sqlserver-wide/ReportRunner -- "<connection-string>"
+// Sample 12 — the Web half of the SQL Server Aspire sample. AppHost.cs provisions "sqlserver" and
+// injects the "widetransactions" connection string via WithReference; this host seeds the
+// database once, registers the typed "wide-transactions" report, and mounts the full NeoReports
+// UI — Aspire's only job is standing up the database and starting this UI, everything else
+// (running the report, watching progress, downloading the file) happens by clicking through it.
+// Run standalone with:
+//   dotnet run --project samples/12-aspire-sqlserver-wide/Web -- "<connection-string>"
+
+var builder = WebApplication.CreateBuilder(args);
 
 string connectionString = args.Length > 0
     ? args[0]
-    : Environment.GetEnvironmentVariable("ConnectionStrings__widetransactions")
+    : builder.Configuration.GetConnectionString("widetransactions")
         ?? throw new InvalidOperationException(
             "No connection string. Run via the AppHost (dotnet run --project samples/12-aspire-sqlserver-wide/AppHost) " +
             "or pass one as the first argument.");
 
-await EnsureSeededAsync(connectionString);
-
 const string Culture = "en-US"; // shared across every currency-formatted column below
 
-var services = new ServiceCollection();
-services.AddLogging(b => b.AddConsole().SetMinimumLevel(LogLevel.Information));
+builder.Services.AddNeoReportsUI();
 
-services.AddReport<WideTransaction>("wide-transactions", b => b
+builder.Services.AddReport<WideTransaction>("wide-transactions", b => b
     .From(Source.Sql(
             connectionString,
             "SELECT TransactionId, CustomerId, CustomerName, CustomerEmail, CustomerCity, CustomerCountry, " +
@@ -100,18 +104,27 @@ services.AddReport<WideTransaction>("wide-transactions", b => b
     .To(Xlsx())
     .UploadTo(Destination.Local("./out/{name}-{date:yyyy-MM-dd}.{ext}")));
 
-var provider = services.BuildServiceProvider();
-var runner = provider.GetRequiredService<IReportRunner>();
+builder.Services.AddNeoReportsInMemoryJobs();
+builder.Services.AddNeoReportsArtifacts();
+builder.Services.AddInMemoryJobEvents(); // ADR D38 — powers the job Timeline/Retries/rate cards
 
-Console.WriteLine("Running wide-transactions report against SQL Server...");
-var result = await runner.RunAsync("wide-transactions");
+var app = builder.Build();
 
-Console.WriteLine($"Status: {result.Status}");
-Console.WriteLine($"Records read/written: {result.Stats.RecordsRead}/{result.Stats.RecordsWritten}");
-foreach (var upload in result.Uploads)
-    Console.WriteLine($"Uploaded: {upload.RemotePath} (success={upload.Success})");
+app.MapNeoReports("/api");
 
-return result.Status == ReportRunStatus.Failed ? 1 : 0;
+var uiPath = app.Configuration["NeoReports:UIPath"] ?? NeoReportsUIExtensions.DefaultBasePath;
+app.UseNeoReportsUI(uiPath);
+
+// Convenience: the sample root redirects into the UI.
+app.MapGet("/", () => Results.Redirect(uiPath));
+
+// Start Kestrel BEFORE seeding: Aspire marks this resource's endpoint reachable as soon as the
+// process starts, and the seed can take a while on a 500,000-row table — starting the listener
+// first means the UI shell loads immediately instead of the endpoint refusing connections until
+// seeding finishes.
+await app.StartAsync();
+await EnsureSeededAsync(connectionString);
+await app.WaitForShutdownAsync();
 
 static async Task EnsureSeededAsync(string connectionString)
 {

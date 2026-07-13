@@ -16,7 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\ReportRunner\NeoReports.Samples.AspireMongoDbWide.ReportRunner.csproj" />
+    <ProjectReference Include="..\Web\NeoReports.Samples.AspireMongoDbWide.Web.csproj" />
   </ItemGroup>
 
 </Project>
