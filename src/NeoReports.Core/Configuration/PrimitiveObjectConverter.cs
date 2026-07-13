@@ -20,7 +20,12 @@ public sealed class PrimitiveObjectConverter : JsonConverter<object?>
             JsonTokenType.True => true,
             JsonTokenType.False => false,
             JsonTokenType.String => ConvertString(reader.GetString()),
-            JsonTokenType.Number => reader.TryGetInt64(out var l) ? l : reader.GetDouble(),
+            // The (object) cast on the long arm is load-bearing: without it, the switch expression's
+            // static result type unifies long and double to double (long -> double is an implicit
+            // widening conversion), silently re-boxing every whole-number property as a double even
+            // when TryGetInt64 succeeds — so `raw is long` never once matched anywhere this value
+            // was consumed, for any whole number, ever.
+            JsonTokenType.Number => reader.TryGetInt64(out var l) ? (object)l : reader.GetDouble(),
             _ => JsonDocument.ParseValue(ref reader).RootElement.Clone(),
         };
 

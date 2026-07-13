@@ -5,7 +5,7 @@ using NeoReports.Core.DependencyInjection;
 using NeoReports.Core.Pipeline;
 using NeoReports.Destinations.Local;
 using NeoReports.Formats.Csv;
-using NeoReports.Samples.DynamicConfigCsv;
+using NeoReports.Samples.Shared;
 
 // Sample 04 — config-driven report (the dynamic path), wired through DI.
 //

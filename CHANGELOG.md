@@ -247,6 +247,39 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   input with preset chips, "Next run" in the viewer's local time (UTC subline), an "overridden at
   runtime" chip, and Set/Clear actions; honest states when scheduling isn't supported or nothing
   is scheduled.
+- Samples — `NeoReports.Samples.Shared` gains `WideTransaction` (51 columns spanning
+  `string`/`long`/`decimal`/`bool`/`DateTime`/`Guid`) and `WideTransactionGenerator` (Epic H): a
+  deterministic, lazily-streamed generator defaulting to 500,000 rows, so seeding a demo database
+  never materializes more than one row at a time. Four new self-contained samples pair it with real
+  Docker databases orchestrated by [.NET Aspire](https://learn.microsoft.com/dotnet/aspire/) — no
+  manual setup beyond `docker` itself: `10-aspire-postgres-wide`, `11-aspire-mysql-wide`,
+  `12-aspire-sqlserver-wide`, `13-aspire-mongodb-wide`. Each provisions its own container, seeds it
+  idempotently on first run, and reads the seeded table/collection back through the matching G1-G4
+  source with the usual constant-memory keyset pagination, writing CSV and XLSX. Verified end to end
+  against real, standalone containers for all four providers.
+- Samples — standardized 01-09 (Epic H): a new non-packable `NeoReports.Samples.Shared` project
+  holds a canonical `Sale` record (was copy-pasted across 01/02/03/06) and promotes 09's generic,
+  schema-driven `InMemorySalesSourceProvider` as the one in-memory dynamic-config source, replacing
+  04's own fixed copy. csproj naming for 01-06 unified onto the assembly-name style already used by
+  07-09. Minimal READMEs added to 01/02/03 (the only samples with none).
+
+### Fixed
+- `NeoReports.Core` — `PrimitiveObjectConverter` (the JSON reader for `object?` property-bag
+  values used by dynamic report/source-registry config) silently re-boxed every whole JSON number
+  as `double`, never `long`, even though `Utf8JsonReader.TryGetInt64` correctly succeeded — the
+  switch expression's success arm returned `long`, its fallback arm returned `double`, and C#
+  unifies a switch expression's arms to one common type, silently widening `long` to `double` on
+  every successful integer parse. Found while migrating sample 04 to a shared, schema-driven
+  in-memory source provider (Epic H): its `raw is long n` row-count check had *always* silently
+  failed, for every whole-number `properties` value, in every dynamic-config report ever run
+  against this converter — masked because the sample's own hardcoded fallback (5) happened to
+  equal its `report.json`'s configured `"rows": 5`. No shipped source/writer/destination reads a
+  numeric config property this way today, so the practical blast radius was limited to this
+  sample, but the bug affected the converter itself, not sample code. Fixed with an explicit
+  `(object)` cast on the `long` arm; new `PrimitiveObjectConverterTests` assert the exact boxed
+  type (`ShouldBeOfType<long>`), not just numeric equality — `DynamicConfigTests`' existing
+  `props["limit"].ShouldBe(10L)` assertion had silently accepted a boxed `double` all along,
+  since Shouldly's `ShouldBe` coerces across numeric types for comparison.
 
 ## [1.2.0] - 2026-07-03
 

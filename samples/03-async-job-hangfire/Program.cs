@@ -4,7 +4,7 @@ using NeoReports.AspNetCore.DependencyInjection;
 using NeoReports.Core.DependencyInjection;
 using NeoReports.Destinations.Local;
 using NeoReports.Jobs.Hangfire.DependencyInjection;
-using NeoReports.Samples.AsyncJobHangfire;
+using NeoReports.Samples.Shared;
 using NeoReports.Sources.Sql;
 using static NeoReports.Core.Building.ReportColumns;
 using static NeoReports.Formats.Csv.Format;
