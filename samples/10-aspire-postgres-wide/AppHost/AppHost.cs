@@ -22,4 +22,4 @@ builder.AddProject<Projects.NeoReports_Samples_AspirePostgresWide_Web>("web")
     .WaitFor(postgres)
     .WithExternalHttpEndpoints();
 
-builder.Build().Run();
+await builder.Build().RunAsync();

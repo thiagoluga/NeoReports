@@ -18,4 +18,4 @@ builder.AddProject<Projects.NeoReports_Samples_AspireMySqlWide_Web>("web")
     .WaitFor(mysql)
     .WithExternalHttpEndpoints();
 
-builder.Build().Run();
+await builder.Build().RunAsync();

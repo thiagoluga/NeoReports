@@ -18,4 +18,4 @@ builder.AddProject<Projects.NeoReports_Samples_AspireMongoDbWide_Web>("web")
     .WaitFor(mongodb)
     .WithExternalHttpEndpoints();
 
-builder.Build().Run();
+await builder.Build().RunAsync();

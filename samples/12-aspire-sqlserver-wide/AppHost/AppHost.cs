@@ -18,4 +18,4 @@ builder.AddProject<Projects.NeoReports_Samples_AspireSqlServerWide_Web>("web")
     .WaitFor(sqlserver)
     .WithExternalHttpEndpoints();
 
-builder.Build().Run();
+await builder.Build().RunAsync();
