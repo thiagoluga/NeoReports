@@ -862,3 +862,28 @@ same in-memory-source pattern and don't have to guess which naming convention to
     closes with no output) and `UserSecretsId` (without it Aspire can't persist the generated DB
     password across runs, so a Docker volume reused via `WithDataVolume()` fails auth forever on
     any run after the first).
+
+## Epic I — Real progress percentage (D47)
+
+Requested directly by the maintainer (2026-07): the running-job page's percentage was a decorative
+client-side animation with no connection to real progress. Replaced by a real one computed from an
+optional row count taken before the run — default enabled everywhere, opt-out per report. Split
+into two PRs at the wire boundary (engine+wire, then UI), matching the E1/E6 precedent of shipping
+engine-side work before its UI.
+
+- [x] **I1 — Engine + wire.** `ISourceRowCounter` (Core capability interface, `is`-pattern-matched
+  like `INamedSourceResolver`); `ReportConfig.TrackProgress` + typed `ReportBuilder<T>.TrackProgress`
+  (default true in both, additive/SemVer-minor); `AdoKeysetSource`/`AdoNamedKeysetSource`/
+  `SqlKeysetSource`/`MongoDbKeysetSource` implement the counter (SQL Server via the same
+  `OFFSET 0 ROWS` derived-table fix G7 established); `MappingBatchSource`/`MappingStreamingSource`/
+  `RefBatchSource` forward it to their inner source; `ReportRunner.ExecuteAsync` counts once before
+  `run-started`, best-effort (a throw degrades to indeterminate, never fails the run); the total
+  rides on `JobStats.TotalRecords` (terminal truth) and a `totalRecords` datum on `run-started`/
+  `run-restarted`/every `page-completed` event (live channel, since `JobStats` only persists at
+  completion). Percentage is `recordsRead / TotalRecords` (not `recordsWritten` — the count is
+  pre-filter, so a written-based percentage would never reach 100% on a filtered report).
+- [ ] **I2 — UI.** `ApiJobStats.TotalRecords`; Builder's Configure step gains a default-on "Track
+  progress" switch with an honest off-state warning; `ProgressBar` gains an `Indeterminate` mode
+  (sliding-segment CSS animation); `JobRunning.razor` deletes the decorative timer and computes the
+  real, clamped percentage from polled events, falling back to the indeterminate bar when no total
+  is known (tracking off, unsupported source, or the count failed).

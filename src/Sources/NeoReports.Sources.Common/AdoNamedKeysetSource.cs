@@ -1,6 +1,7 @@
 using System.Data.Common;
 using NeoReports.Abstractions;
 using NeoReports.Core.SourceRegistry;
+using NeoReports.Core.Sources;
 
 namespace NeoReports.Sources.Common;
 
@@ -14,7 +15,7 @@ namespace NeoReports.Sources.Common;
 /// use.
 /// </summary>
 /// <typeparam name="T">The row type produced.</typeparam>
-public sealed class AdoNamedKeysetSource<T> : IBatchSource<T>, INamedSourceResolver
+public sealed class AdoNamedKeysetSource<T> : IBatchSource<T>, INamedSourceResolver, ISourceRowCounter
 {
     private readonly string _sourceName;
     private readonly string _sql;
@@ -23,6 +24,7 @@ public sealed class AdoNamedKeysetSource<T> : IBatchSource<T>, INamedSourceResol
     private readonly Func<string, DbConnection> _connectionFactory;
     private readonly string _parameterPrefix;
     private readonly Action<DbCommand>? _configureCommand;
+    private readonly string _countInnerSuffix;
     private IServiceProvider? _services;
     private AdoKeysetSource<T>? _resolved;
 
@@ -48,6 +50,7 @@ public sealed class AdoNamedKeysetSource<T> : IBatchSource<T>, INamedSourceResol
         options ??= new AdoProviderOptions();
         _parameterPrefix = options.ParameterPrefix;
         _configureCommand = options.ConfigureCommand;
+        _countInnerSuffix = options.CountInnerSuffix;
     }
 
     /// <inheritdoc />
@@ -73,6 +76,17 @@ public sealed class AdoNamedKeysetSource<T> : IBatchSource<T>, INamedSourceResol
         return await _resolved.ReadBatchAsync(context, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Counts the rows a full run would read (ADR D47). Resolves fresh through the registry, the
+    /// same freshness rule <see cref="ReadBatchAsync"/> applies on the first page of a run — the
+    /// resolved instance is not cached into <see cref="_resolved"/>, which is owned by that signal.
+    /// </summary>
+    public async Task<long?> CountAsync(ReportExecutionContext execution, CancellationToken cancellationToken)
+    {
+        AdoKeysetSource<T> resolved = await ResolveAsync(cancellationToken).ConfigureAwait(false);
+        return await resolved.CountAsync(execution, cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task<AdoKeysetSource<T>> ResolveAsync(CancellationToken cancellationToken)
     {
         if (_services is null)
@@ -94,6 +108,11 @@ public sealed class AdoNamedKeysetSource<T> : IBatchSource<T>, INamedSourceResol
 
         return new AdoKeysetSource<T>(
             () => _connectionFactory(connectionString), _sql, _keyColumn, _pageSize, Schema,
-            new AdoProviderOptions { ParameterPrefix = _parameterPrefix, ConfigureCommand = _configureCommand });
+            new AdoProviderOptions
+            {
+                ParameterPrefix = _parameterPrefix,
+                ConfigureCommand = _configureCommand,
+                CountInnerSuffix = _countInnerSuffix,
+            });
     }
 }

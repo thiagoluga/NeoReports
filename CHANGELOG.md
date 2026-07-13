@@ -9,6 +9,17 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 ## [Unreleased]
 
 ### Added
+- **Real progress percentage (D47).** Reports can now report a real completion percentage instead
+  of the previous decorative animation: `ReportConfig.TrackProgress` / typed
+  `ReportBuilder<T>.TrackProgress(bool)` — **enabled by default** — makes the engine count the
+  source's total rows once before each run (SQL-family and MongoDB sources support it out of the
+  box); `JobStats.TotalRecords` and a `totalRecords` event datum carry the total through to
+  `GET /jobs/{id}` and `/jobs/{id}/events`. Disabled, unsupported, or failed counts degrade to
+  `null`/indeterminate — never fails the run. **Behavior change on upgrade:** because tracking
+  defaults to enabled, every existing report — typed and dynamic, no code change required — starts
+  issuing one extra `COUNT` query per run. Set `.TrackProgress(false)` (typed) or
+  `"trackProgress": false` (dynamic config) to restore the previous behavior. The UI (Builder
+  toggle, real percentage bar) ships in a follow-up PR.
 - `NeoReports.UI` — a report preview screen (`/reports/{name}/preview`, D45), linked from
   `ReportDetail.razor`'s new "Preview" button. Shows a read-only sample via
   `POST /reports/{name}/preview` in a `DataGrid`, a page-size selector (10-200 rows), and — for

@@ -79,6 +79,9 @@ public static class ReportConfigCompiler
         if (config.Schedule is { } schedule)
             builder.Schedule(schedule.Cron);
 
+        if (config.TrackProgress is { } trackProgress)
+            builder.TrackProgress(trackProgress);
+
         foreach (OutputSpec output in regularOutputs)
             builder.To(output);
         foreach ((SectionedOutputSpec spec, IReadOnlyList<SectionConfig> sections) in sectionedOutputs)

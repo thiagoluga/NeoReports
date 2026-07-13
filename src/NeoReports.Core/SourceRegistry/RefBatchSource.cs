@@ -1,5 +1,6 @@
 using NeoReports.Abstractions;
 using NeoReports.Core.Configuration;
+using NeoReports.Core.Sources;
 
 namespace NeoReports.Core.SourceRegistry;
 
@@ -12,7 +13,7 @@ namespace NeoReports.Core.SourceRegistry;
 /// report's first page (a documented <see cref="BatchContext"/> invariant), so a retry of that first
 /// page simply (harmlessly) re-resolves rather than needing a separate "new run" signal.
 /// </summary>
-internal sealed class RefBatchSource : IBatchSource<ReportRecord>
+internal sealed class RefBatchSource : IBatchSource<ReportRecord>, ISourceRowCounter
 {
     private readonly string _refName;
     private readonly string _declaredType;
@@ -54,6 +55,21 @@ internal sealed class RefBatchSource : IBatchSource<ReportRecord>
         }
 
         return await _resolved.ReadBatchAsync(context, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Counts the rows a full run would read (ADR D47), or <c>null</c> when the resolved source
+    /// doesn't implement <see cref="ISourceRowCounter"/> — not a failure, so it must not throw.
+    /// Resolves fresh through the registry, the same freshness rule <see cref="ReadBatchAsync"/>
+    /// applies on the first page of a run — the resolved instance is not cached into
+    /// <see cref="_resolved"/>, which is owned by that signal.
+    /// </summary>
+    public async Task<long?> CountAsync(ReportExecutionContext execution, CancellationToken cancellationToken)
+    {
+        IBatchSource<ReportRecord> resolved = await ResolveAsync(cancellationToken).ConfigureAwait(false);
+        return resolved is ISourceRowCounter counter
+            ? await counter.CountAsync(execution, cancellationToken).ConfigureAwait(false)
+            : null;
     }
 
     private async Task<IBatchSource<ReportRecord>> ResolveAsync(CancellationToken cancellationToken)

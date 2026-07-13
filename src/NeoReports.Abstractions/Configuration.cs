@@ -18,6 +18,11 @@ namespace NeoReports.Abstractions;
 /// <param name="Filter">Optional dynamic filter expression (JsonLogic); evaluated by a later epic.</param>
 /// <param name="Resilience">Optional retry/failure-strategy overrides; the engine default policy is used when null.</param>
 /// <param name="Schedule">Optional recurring-run schedule (ADR D41); the report is run-on-demand only when null.</param>
+/// <param name="TrackProgress">
+/// Optional progress-tracking toggle (ADR D47). When omitted (null) the engine default applies
+/// (enabled): the source's total row count is taken once before the run so a real completion
+/// percentage can be computed. Set false to skip the count; progress is then indeterminate.
+/// </param>
 public sealed record ReportConfig(
     string Name,
     SourceConfig Source,
@@ -27,7 +32,8 @@ public sealed record ReportConfig(
     int? PageSize = null,
     string? Filter = null,
     ResilienceConfig? Resilience = null,
-    ScheduleConfig? Schedule = null);
+    ScheduleConfig? Schedule = null,
+    bool? TrackProgress = null);
 
 /// <summary>A source section: a stable type id plus a free-form property bag the provider reads.</summary>
 /// <param name="Type">

@@ -83,10 +83,10 @@ public sealed class ReportRunner : IReportRunner
         var pageNumber = 0;
         var stopwatch = Stopwatch.StartNew();
 
+        long? totalRecords = null;
+
         var jobEventStore = services.GetService(typeof(IJobEventStore)) as IJobEventStore;
         var events = await JobEventEmitter.CreateAsync(jobEventStore, execution.JobId, execution.Logger, cancellationToken)
-            .ConfigureAwait(false);
-        await events.EmitAsync(events.IsRestart ? JobEventTypes.RunRestarted : JobEventTypes.RunStarted, null, null, cancellationToken)
             .ConfigureAwait(false);
 
         // The retry hook only ever emits an event (ADR D38, ground rule 3: telemetry must never
@@ -153,6 +153,40 @@ public sealed class ReportRunner : IReportRunner
 
         try
         {
+            // Emitted first, before anything else in the try — including the row count below — so a
+            // crash or cancellation partway through this run still leaves at least one persisted
+            // event for this job id. JobEventEmitter.IsRestart (D38) detects a crash-restart by
+            // whether any event already exists for the job; if RunStarted only fired after a
+            // fallible/cancellable step, a crash during that step would leave zero events, and the
+            // next attempt would misdetect itself as a fresh start instead of a restart.
+            await events.EmitAsync(events.IsRestart ? JobEventTypes.RunRestarted : JobEventTypes.RunStarted, null, null, cancellationToken)
+                .ConfigureAwait(false);
+
+            // Progress tracking (ADR D47): a best-effort, single-attempt row count taken before the
+            // paging loop starts, so a real completion percentage can be shown. Never wrapped in the
+            // resilience pipeline and never allowed to fail the run — telemetry must never change a
+            // run's outcome (D38 ground rule), so any failure besides cancellation just leaves
+            // totalRecords null and progress stays indeterminate. Inside the try (not before it, and
+            // after RunStarted/RunRestarted above) so a cancelled count is disposed/cleaned up
+            // exactly like a cancelled read would be, without risking the restart-detection gap above.
+            if (report.RowCountFactory is { } countRows)
+            {
+                try
+                {
+                    totalRecords = await countRows(execution, services, cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    execution.Logger.LogWarning(ex,
+                        "Progress row count failed for report {Report}; the run continues with indeterminate progress.",
+                        report.Name);
+                }
+            }
+
             var usedFileNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             for (var outputIndex = 0; outputIndex < report.Outputs.Count; outputIndex++)
             {
@@ -255,13 +289,18 @@ public sealed class ReportRunner : IReportRunner
                     recordsWritten += batch.WrittenCount;
                     consecutiveFailures = 0;
 
-                    await events.EmitAsync(JobEventTypes.PageCompleted, null, new Dictionary<string, string>
+                    var pageData = new Dictionary<string, string>
                     {
                         ["page"] = pageNumber.ToString(CultureInfo.InvariantCulture),
                         ["recordsRead"] = recordsRead.ToString(CultureInfo.InvariantCulture),
                         ["recordsWritten"] = recordsWritten.ToString(CultureInfo.InvariantCulture),
                         ["elapsedMs"] = stopwatch.ElapsedMilliseconds.ToString(CultureInfo.InvariantCulture),
-                    }, cancellationToken).ConfigureAwait(false);
+                    };
+                    // Repeated on every page (ADR D47), not just run-started: a poller that starts
+                    // late, or an event log truncated past its cap (D38), still sees the total.
+                    if (totalRecords is { } pageTotal)
+                        pageData["totalRecords"] = pageTotal.ToString(CultureInfo.InvariantCulture);
+                    await events.EmitAsync(JobEventTypes.PageCompleted, null, pageData, cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -381,7 +420,7 @@ public sealed class ReportRunner : IReportRunner
                 null,
                 cancellationToken).ConfigureAwait(false);
 
-            var stats = new JobStats(recordsRead, recordsWritten, bytesWritten, retries, batches);
+            var stats = new JobStats(recordsRead, recordsWritten, bytesWritten, retries, batches, totalRecords);
             return new ReportRunResult(status, stats, skipped, error, uploads);
         }
         catch (OperationCanceledException)

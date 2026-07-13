@@ -1,6 +1,7 @@
 using System.Text;
 using NeoReports.Abstractions;
 using NeoReports.Core.SourceRegistry;
+using NeoReports.Core.Sources;
 
 namespace NeoReports.Core.UnitTests.Fakes;
 
@@ -89,6 +90,41 @@ public sealed class FakeNamedBatchSource<T> : IBatchSource<T>, INamedSourceResol
 
     public Task<BatchResult<T>> ReadBatchAsync(BatchContext context, CancellationToken cancellationToken) =>
         _inner.ReadBatchAsync(context, cancellationToken);
+}
+
+/// <summary>
+/// Batch source that also implements <see cref="ISourceRowCounter"/> (ADR D47), for testing
+/// progress-tracking wiring without a real ADO.NET/Mongo provider. Configurable to return a fixed
+/// count, throw, or observe cancellation; tracks how many times it was counted.
+/// </summary>
+public sealed class FakeCountingBatchSource<T> : IBatchSource<T>, ISourceRowCounter
+{
+    private readonly FakeBatchSource<T> _inner;
+    private readonly long? _count;
+    private readonly Exception? _throws;
+
+    public FakeCountingBatchSource(IReadOnlyList<IReadOnlyList<T>> pages, long? count = null, Exception? throws = null)
+    {
+        _inner = new FakeBatchSource<T>(pages);
+        _count = count;
+        _throws = throws;
+    }
+
+    public int CountCalls { get; private set; }
+
+    public ReportSchema Schema => _inner.Schema;
+
+    public Task<BatchResult<T>> ReadBatchAsync(BatchContext context, CancellationToken cancellationToken) =>
+        _inner.ReadBatchAsync(context, cancellationToken);
+
+    public Task<long?> CountAsync(ReportExecutionContext execution, CancellationToken cancellationToken)
+    {
+        CountCalls++;
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_throws is not null)
+            throw _throws;
+        return Task.FromResult<long?>(_count ?? 0L);
+    }
 }
 
 /// <summary>Writer that records projected rows and can throw on chosen batches (1-based).</summary>
