@@ -16,7 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\ReportRunner\NeoReports.Samples.AspireSqlServerWide.ReportRunner.csproj" />
+    <ProjectReference Include="..\Web\NeoReports.Samples.AspireSqlServerWide.Web.csproj" />
   </ItemGroup>
 
 </Project>

@@ -9,27 +9,28 @@ Docker setup, no connection string to configure by hand.
 dotnet run --project samples/10-aspire-postgres-wide/AppHost
 ```
 
-Open the printed dashboard URL. Aspire pulls the `postgres:17` image, starts the container, and
-injects its connection string into the `report-runner` project. On first run, `report-runner`:
+Open the printed dashboard URL and click into the **`web`** resource's endpoint — Aspire's only
+job here is standing up Postgres and starting that page. It's the full NeoReports UI:
 
-1. Creates the `wide_transactions` table if it doesn't exist.
-2. Seeds it with 500,000 rows via `NeoReports.Samples.Shared`'s `WideTransactionGenerator`,
-   streamed through Npgsql's binary `COPY` protocol — no batching, no intermediate buffering of
-   more than one row at a time, and fast (well under a minute on a typical machine).
-3. Runs a report over the seeded table with `Source.Postgres(...).Keyset<WideTransaction, Guid>(...)`
-   — the same constant-memory keyset pagination every other SQL sample in this repo uses — and
-   writes `./out/wide-transactions-<date>.csv` and `.xlsx` under `ReportRunner/`.
+1. On startup, `Web` creates the `wide_transactions` table if it doesn't exist and seeds it with
+   500,000 rows via `NeoReports.Samples.Shared`'s `WideTransactionGenerator`, streamed through
+   Npgsql's binary `COPY` protocol — no batching, no intermediate buffering of more than one row
+   at a time, and fast (well under a minute on a typical machine).
+2. It registers `wide-transactions` — `Source.Postgres(...).Keyset<WideTransaction, Guid>(...)`,
+   the same constant-memory keyset pagination every other SQL sample in this repo uses — and
+   mounts the NeoReports UI so you can click **Run**, watch live progress, and download
+   `wide-transactions-<date>.csv` / `.xlsx` from the Reports screen.
 
-Re-running the sample skips seeding (the table already has rows) and just re-runs the report —
-seeding is idempotent, not "drop and recreate."
+Re-running the sample skips seeding (the table already has rows) — seeding is idempotent, not
+"drop and recreate."
 
 ## Running the pieces separately
 
-`ReportRunner` also runs standalone against any PostgreSQL connection string, for example one from
+`Web` also runs standalone against any PostgreSQL connection string, for example one from
 `docker run -p 5432:5432 -e POSTGRES_PASSWORD=... postgres:17`:
 
 ```bash
-dotnet run --project samples/10-aspire-postgres-wide/ReportRunner -- "Host=localhost;Port=5432;Username=postgres;Password=...;Database=widetransactions"
+dotnet run --project samples/10-aspire-postgres-wide/Web -- "Host=localhost;Port=5432;Username=postgres;Password=...;Database=widetransactions"
 ```
 
 ## Notable implementation details

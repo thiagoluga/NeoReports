@@ -254,9 +254,11 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   Docker databases orchestrated by [.NET Aspire](https://learn.microsoft.com/dotnet/aspire/) — no
   manual setup beyond `docker` itself: `10-aspire-postgres-wide`, `11-aspire-mysql-wide`,
   `12-aspire-sqlserver-wide`, `13-aspire-mongodb-wide`. Each provisions its own container, seeds it
-  idempotently on first run, and reads the seeded table/collection back through the matching G1-G4
-  source with the usual constant-memory keyset pagination, writing CSV and XLSX. Verified end to end
-  against real, standalone containers for all four providers.
+  idempotently on first run, and mounts the full NeoReports UI (same pattern as `09-web-ui-live`)
+  with a typed `wide-transactions` report already registered against the matching G1-G4 source and
+  the usual constant-memory keyset pagination — Aspire's job is standing up the database and
+  starting the UI, running the report/watching progress/downloading CSV and XLSX all happen by
+  clicking through it. Verified end to end against real containers for all four providers.
 - Samples — standardized 01-09 (Epic H): a new non-packable `NeoReports.Samples.Shared` project
   holds a canonical `Sale` record (was copy-pasted across 01/02/03/06) and promotes 09's generic,
   schema-driven `InMemorySalesSourceProvider` as the one in-memory dynamic-config source, replacing

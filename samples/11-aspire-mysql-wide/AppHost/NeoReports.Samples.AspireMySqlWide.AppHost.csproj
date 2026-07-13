@@ -16,7 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\ReportRunner\NeoReports.Samples.AspireMySqlWide.ReportRunner.csproj" />
+    <ProjectReference Include="..\Web\NeoReports.Samples.AspireMySqlWide.Web.csproj" />
   </ItemGroup>
 
 </Project>

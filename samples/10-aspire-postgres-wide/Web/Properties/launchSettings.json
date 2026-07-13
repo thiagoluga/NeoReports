@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "NeoReports.Samples.AspirePostgresWide.Web": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:18110;http://localhost:16110"
+    }
+  }
+}

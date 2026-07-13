@@ -9,28 +9,29 @@ Docker setup, no connection string to configure by hand.
 dotnet run --project samples/13-aspire-mongodb-wide/AppHost
 ```
 
-Open the printed dashboard URL. Aspire pulls the MongoDB image it defaults to, starts the
-container, and injects its connection string into the `report-runner` project. On first run,
-`report-runner`:
+Open the printed dashboard URL and click into the **`web`** resource's endpoint — Aspire's only
+job here is standing up MongoDB and starting that page. It's the full NeoReports UI:
 
-1. Seeds `wide_transactions` with 500,000 documents via `NeoReports.Samples.Shared`'s
-   `WideTransactionGenerator`, in batches of 5,000 unordered `InsertMany` calls — MongoDB has no
-   schema to declare up front, unlike the three relational samples.
-2. Runs a report over the seeded collection with
-   `Source.MongoDb(...).Keyset<WideTransaction, Guid>(...)` — the same constant-memory keyset
-   pagination pattern the relational sources use, adapted to Mongo's own range-query/no-offset-drift
-   design (D44) — and writes `./out/wide-transactions-<date>.csv` and `.xlsx` under `ReportRunner/`.
+1. On startup, `Web` seeds `wide_transactions` with 500,000 documents via
+   `NeoReports.Samples.Shared`'s `WideTransactionGenerator`, in batches of 5,000 unordered
+   `InsertMany` calls — MongoDB has no schema to declare up front, unlike the three relational
+   samples.
+2. It registers `wide-transactions` — `Source.MongoDb(...).Keyset<WideTransaction, Guid>(...)`,
+   the same constant-memory keyset pagination pattern the relational sources use, adapted to
+   Mongo's own range-query/no-offset-drift design (D44) — and mounts the NeoReports UI so you can
+   click **Run**, watch live progress, and download `wide-transactions-<date>.csv` / `.xlsx` from
+   the Reports screen.
 
-Re-running the sample skips seeding (the collection already has documents) and just re-runs the
-report — seeding is idempotent, not "drop and recreate."
+Re-running the sample skips seeding (the collection already has documents) — seeding is
+idempotent, not "drop and recreate."
 
 ## Running the pieces separately
 
-`ReportRunner` also runs standalone against any MongoDB connection string, for example one from
+`Web` also runs standalone against any MongoDB connection string, for example one from
 `docker run -p 27017:27017 mongo:7`:
 
 ```bash
-dotnet run --project samples/13-aspire-mongodb-wide/ReportRunner -- "mongodb://localhost:27017"
+dotnet run --project samples/13-aspire-mongodb-wide/Web -- "mongodb://localhost:27017"
 ```
 
 ## Notable implementation details
