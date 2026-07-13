@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\NeoReports.Core\NeoReports.Core.csproj" />
+    <ProjectReference Include="..\..\..\src\Sources\NeoReports.Sources.Sql\NeoReports.Sources.Sql.csproj" />
+    <ProjectReference Include="..\..\..\src\Formats\NeoReports.Formats.Csv\NeoReports.Formats.Csv.csproj" />
+    <ProjectReference Include="..\..\..\src\Formats\NeoReports.Formats.Xlsx\NeoReports.Formats.Xlsx.csproj" />
+    <ProjectReference Include="..\..\..\src\Destinations\NeoReports.Destinations.Local\NeoReports.Destinations.Local.csproj" />
+    <ProjectReference Include="..\..\NeoReports.Samples.Shared\NeoReports.Samples.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" />
+  </ItemGroup>
+
+</Project>
