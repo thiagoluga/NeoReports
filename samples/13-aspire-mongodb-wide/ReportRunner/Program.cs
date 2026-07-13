@@ -38,6 +38,8 @@ string connectionString = args.Length > 0
 
 await EnsureSeededAsync(connectionString);
 
+const string Culture = "en-US"; // shared across every currency-formatted column below
+
 var services = new ServiceCollection();
 services.AddLogging(b => b.AddConsole().SetMinimumLevel(LogLevel.Information));
 
@@ -57,16 +59,16 @@ services.AddReport<WideTransaction>("wide-transactions", b => b
         Col<WideTransaction, string>(v => v.ProductCategory, "Product category"),
         Col<WideTransaction, string>(v => v.ProductSku, "Product SKU"),
         Col<WideTransaction, long>(v => v.Quantity, "Quantity"),
-        Col<WideTransaction, decimal>(v => v.UnitPrice, "Unit price", format: "C2", culture: "en-US"),
+        Col<WideTransaction, decimal>(v => v.UnitPrice, "Unit price", format: "C2", culture: Culture),
         Col<WideTransaction, decimal>(v => v.DiscountRate, "Discount rate", format: "P2"),
         Col<WideTransaction, decimal>(v => v.TaxRate, "Tax rate", format: "P2"),
-        Col<WideTransaction, decimal>(v => v.ShippingCost, "Shipping cost", format: "C2", culture: "en-US"),
-        Col<WideTransaction, decimal>(v => v.ProcessingFee, "Processing fee", format: "C2", culture: "en-US"),
-        Col<WideTransaction, decimal>(v => v.TotalAmount, "Total amount", format: "C2", culture: "en-US"),
+        Col<WideTransaction, decimal>(v => v.ShippingCost, "Shipping cost", format: "C2", culture: Culture),
+        Col<WideTransaction, decimal>(v => v.ProcessingFee, "Processing fee", format: "C2", culture: Culture),
+        Col<WideTransaction, decimal>(v => v.TotalAmount, "Total amount", format: "C2", culture: Culture),
         Col<WideTransaction, string>(v => v.Currency, "Currency"),
         Col<WideTransaction, string>(v => v.PaymentMethod, "Payment method"),
         Col<WideTransaction, bool>(v => v.IsRefunded, "Refunded"),
-        Col<WideTransaction, decimal>(v => v.RefundAmount, "Refund amount", format: "C2", culture: "en-US"),
+        Col<WideTransaction, decimal>(v => v.RefundAmount, "Refund amount", format: "C2", culture: Culture),
         Col<WideTransaction, bool>(v => v.IsGift, "Gift"),
         Col<WideTransaction, string>(v => v.ShippingCity, "Shipping city"),
         Col<WideTransaction, string>(v => v.ShippingCountry, "Shipping country"),
