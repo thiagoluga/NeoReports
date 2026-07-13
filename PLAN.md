@@ -809,14 +809,42 @@ same in-memory-source pattern and don't have to guess which naming convention to
   time (the seeding step honors the same constant-memory principle the engine itself is built on);
   the same seed reproduces byte-identical output, so re-running a sample's seeding step is
   idempotent without persisting what was generated.
-- [ ] **H3 — Aspire multi-DB samples (one per provider, self-contained).** Four new numbered
+- [x] **H3 — Aspire multi-DB samples (one per provider, self-contained).** Four new numbered
   samples — `10-aspire-postgres-wide`, `11-aspire-mysql-wide`, `12-aspire-sqlserver-wide`,
   `13-aspire-mongodb-wide` — each its own Aspire AppHost (`Aspire.Hosting.PostgreSQL`/`.MySql`/
-  `.SqlServer`/`.MongoDB`, CPM-versioned in `build/Directory.Packages.props`) that provisions one
-  Docker container, seeds it via H2's shared generator on first run, and a report project that reads
-  the wide/large table back out through the matching G1-G4 source
-  (`NeoReports.Sources.Postgres`/`.MySql`/`.Sql`/`.MongoDb`) and writes CSV+XLSX. Self-contained per
-  DB (not one shared AppHost orchestrating all four) so a reader interested in only one provider
-  doesn't need Docker images for the other three. READMEs follow 09's walkthrough style (the most
-  detailed of the existing samples) and call out the seed scale (~50 columns / ~500k rows) and how to
-  override it.
+  `.SqlServer`/`.MongoDB` 9.5.2, CPM-versioned) that provisions one Docker container, seeds it via
+  H2's shared generator on first run, and a `ReportRunner` project that reads the wide/large table
+  back out through the matching G1-G4 source (`NeoReports.Sources.Postgres`/`.MySql`/`.Sql`/
+  `.MongoDb`) and writes CSV+XLSX. Self-contained per DB (not one shared AppHost orchestrating all
+  four) so a reader interested in only one provider doesn't need Docker images for the other three.
+  Aspire pinned to the 9.x line (not the default `dotnet new` template's 13.x, which forces
+  `net10.0`) — 9.5.2's `Aspire.AppHost.Sdk` targets `net8.0`, matching every other runnable sample
+  in the repo. Verified end to end against real, standalone containers for all four providers (not
+  just via Aspire orchestration): 500,000/500,000 rows read and both CSV+XLSX written successfully
+  in every case. Found along the way, one per provider:
+  - **Postgres**: `TIMESTAMP` (no time zone) rejects a `DateTimeKind.Utc` value outright; the
+    generator's UTC rows need `DateTime.SpecifyKind(..., Unspecified)` before a binary-`COPY` write
+    (the value is unchanged, only the Kind tag Npgsql validates is dropped). The keyset cursor needs
+    an explicit `@cursor::uuid` cast, the same class of gap D43 hit for other column types.
+  - **MySQL**: no native UUID type — `TransactionId`/`SessionId` are `CHAR(36)`, and the connection
+    string needs `GuidFormat=Char36` or `RecordMaterializer`'s `Convert.ChangeType(string,
+    typeof(Guid))` throws (`Guid` doesn't implement `IConvertible`). No bulk-copy ADO.NET API
+    comparable to Postgres/SQL Server exists, so seeding uses batched parameterized multi-row
+    `INSERT`s (200 rows/batch) instead.
+  - **SQL Server**: `UNIQUEIDENTIFIER` sorts by its own particular byte-group order, not the
+    left-to-right binary comparison Postgres/MySQL/MongoDB use — `ORDER BY TransactionId` returns a
+    genuinely different row order than the same report against the other three providers (every row
+    is still read exactly once; keyset correctness never promised a cross-database order). Seeding
+    uses `SqlBulkCopy` in batches of 5,000 rows (a plain batched `INSERT` would exceed SQL Server's
+    2,100-parameter-per-query limit at even a 40-row batch for this 51-column table).
+  - **MongoDB**: `MongoDB.Driver`'s `GuidSerializer` throws (`"cannot serialize a Guid when
+    GuidRepresentation is Unspecified"`) unless a representation is registered process-wide
+    (`BsonSerializer.RegisterSerializer(new GuidSerializer(GuidRepresentation.Standard))`) before
+    any write — recent driver versions dropped the old implicit-default behavior. Only affects
+    seeding (the driver's own typed serializer); reads go through the engine's own
+    `BsonDocumentMaterializer` (D44), unaffected.
+  - Also found (Sonar S2245, not provider-specific): `WideTransactionGenerator`'s `TransactionId`/
+    `SessionId` were originally built from `Random.NextBytes` — flagged as "use a cryptographically
+    strong RNG" despite being synthetic sample data with no security purpose. Fixed by packing the
+    row index and a per-field salt directly into the Guid's 16 bytes instead of going through
+    `Random` at all (H2, landed before H3).
