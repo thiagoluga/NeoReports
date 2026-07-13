@@ -326,16 +326,8 @@ public sealed class ReportBuilder<TRow>
             return new TypedBatchReader<TRow>(batchSource, streamingSource, execution, pageSize, projections, sectionedProjections);
         }
 
-        ISourceRowCounter? rowCounter = _trackProgress ? _rowCounter : null;
         Func<ReportExecutionContext, IServiceProvider, CancellationToken, Task<long?>>? countRows =
-            rowCounter is null ? null : (execution, services, cancellationToken) =>
-            {
-                // Defensive: ReaderFactory (which attaches services to a by-name source) normally
-                // runs before the runner counts, but a named counter attached here too costs nothing.
-                if (rowCounter is INamedSourceResolver named)
-                    named.AttachServices(services);
-                return rowCounter.CountAsync(execution, cancellationToken);
-            };
+            BuildRowCountFactory(_trackProgress ? _rowCounter : null);
 
         return new CompiledReport(
             _name,
@@ -371,6 +363,26 @@ public sealed class ReportBuilder<TRow>
         return (
             new ReportSchema(columns.Select(c => c.Column).ToList()),
             new OutputProjection<TRow>(filters, columns.Select(c => c.Getter).ToArray()));
+    }
+
+    /// <summary>
+    /// Composes the row-count delegate <see cref="CompiledReport"/> runs (ADR D47), or <c>null</c>
+    /// when tracking is disabled or the source doesn't implement <see cref="ISourceRowCounter"/>.
+    /// </summary>
+    private static Func<ReportExecutionContext, IServiceProvider, CancellationToken, Task<long?>>? BuildRowCountFactory(
+        ISourceRowCounter? rowCounter)
+    {
+        if (rowCounter is null)
+            return null;
+
+        return (execution, services, cancellationToken) =>
+        {
+            // Defensive: ReaderFactory (which attaches services to a by-name source) normally runs
+            // before the runner counts, but a named counter attached here too costs nothing.
+            if (rowCounter is INamedSourceResolver named)
+                named.AttachServices(services);
+            return rowCounter.CountAsync(execution, cancellationToken);
+        };
     }
 
     /// <summary>An output plus its optional per-output view (own filters/columns).</summary>

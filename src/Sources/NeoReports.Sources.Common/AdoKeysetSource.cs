@@ -143,7 +143,7 @@ public sealed class AdoKeysetSource<T> : IBatchSource<T>, ISourceRowCounter
         // A trailing statement terminator is harmless standalone (ReadBatchAsync runs _sql as its
         // own statement) but is a syntax error inside a derived table — trim the common case of a
         // report author's copy-pasted trailing semicolon before wrapping.
-        var innerSql = _sql.AsSpan().TrimEnd().TrimEnd(';');
+        ReadOnlySpan<char> innerSql = _sql.AsSpan().TrimEnd().TrimEnd(';');
 
         await using DbCommand command = connection.CreateCommand();
         command.CommandText = $"SELECT COUNT(*) FROM (\n{innerSql}{_countInnerSuffix}\n) q";
