@@ -38,8 +38,12 @@
 }
 .nav-item:hover { background: var(--bg2); color: var(--fg); }
 .nav-item.active { background: var(--bg2); color: var(--fg); font-weight: 500; }
-/* Hidden above sm; the sm breakpoint below shows it and hides .nav until toggled. */
-.nav-toggle { display: none; margin-right: 4px; }
+/* Hidden above sm; the sm breakpoint below shows it and hides .nav until toggled.
+   Selector must out-specificity .icon-btn's own `display: inline-flex` below —
+   two same-specificity rules on the same element resolve by source order, and
+   a bare `.nav-toggle` here previously lost to `.icon-btn` declared right after
+   it, leaving the button visible (and functionally inert) at every width. */
+.icon-btn.nav-toggle { display: none; margin-right: 4px; }
 .icon-btn {
   width: 32px; height: 32px;
   display: inline-flex; align-items: center; justify-content: center;
@@ -262,6 +266,13 @@
   flex: 1; font: inherit; color: inherit;
   font-family: var(--font-sans);
 }
+/* select.input (e.g. the preview filter editor's column/operator pickers):
+   color-scheme (tokens.css) tells the browser which palette to use for the
+   native popup, but Chromium/Firefox only honor it fully when the option's
+   own color/background are also set explicitly — otherwise some render the
+   popup list with default (near-invisible-on-dark) text. */
+select.input { color: var(--fg); }
+select.input option { background: var(--bg); color: var(--fg); }
 .input i { color: var(--fg-muted); font-size: 14px; }
 .input ::placeholder { color: var(--fg-faint); }
 .pill {
@@ -567,6 +578,8 @@
 .sw {
   width: 28px; height: 16px;
   background: var(--bg3);
+  border: 0; padding: 0; margin: 0;
+  appearance: none; -webkit-appearance: none;
   border-radius: 999px;
   position: relative;
   cursor: pointer;
@@ -1299,8 +1312,9 @@ body {
   .page { padding: 16px 16px 24px; }
 
   /* Topbar nav collapses into a hamburger-triggered dropdown (Topbar.razor
-     toggles the "open" class and swaps the icon). */
-  .nav-toggle { display: inline-flex; }
+     toggles the "open" class and swaps the icon). Matches the base rule's
+     .icon-btn.nav-toggle specificity so this override actually wins here. */
+  .icon-btn.nav-toggle { display: inline-flex; }
   .nav {
     display: none;
     flex-direction: column;

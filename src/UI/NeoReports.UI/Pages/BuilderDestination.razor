@@ -18,19 +18,23 @@
     {
         <Card Title="Engine destination" Sub="What gets sent to the engine — optional; a report can also have none">
             <ChildContent>
-            <div class="grid-2">
-                <div class="field">
-                    <span class="label-sm">Type</span>
-                    <select class="input mono" style="width:100%" @bind="Wizard.DestinationType">
-                        <option value="">(none)</option>
-                        @foreach (var d in _engineDestinations)
-                        {
-                            <option value="@d">@d</option>
-                        }
-                    </select>
-                </div>
-                <div class="field"><span class="label-sm">Path / key template</span><span class="input mono"><input class="mono" @bind="Wizard.DestinationPath" @bind:event="oninput" placeholder="./out/{name}-{date:yyyy-MM-dd}.{ext}" style="width:100%" /></span></div>
+            <p class="label-sm" style="margin-bottom:10px">Type</p>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">
+                <SelectableCard Selected="@(string.IsNullOrEmpty(Wizard.DestinationType))" OnClick="@(() => Wizard.DestinationType = "")">
+                    <CatTile Kind="gray" Icon="ban" />
+                    <div class="name">None</div>
+                    <div class="conn" style="white-space:normal;font-family:var(--font-sans);font-size:12px">The report only runs, nothing gets uploaded.</div>
+                </SelectableCard>
+                @foreach (var d in _engineDestinations.Select(ToDestinationOption))
+                {
+                    <SelectableCard Selected="@(Wizard.DestinationType == d.Id)" OnClick="@(() => Wizard.DestinationType = d.Id)">
+                        <CatTile Kind="@d.Kind" Icon="@d.Icon" />
+                        <div class="name mono">@d.Id</div>
+                        <div class="conn" style="white-space:normal;font-family:var(--font-sans);font-size:12px">@d.Description</div>
+                    </SelectableCard>
+                }
             </div>
+            <div class="field"><span class="label-sm">Path / key template</span><span class="input mono"><input class="mono" @bind="Wizard.DestinationPath" @bind:event="oninput" placeholder="./out/{name}-{date:yyyy-MM-dd}.{ext}" style="width:100%" /></span></div>
         </ChildContent>
         </Card>
     }
@@ -47,6 +51,19 @@
 @code {
     private readonly string[] Steps = { "Source", "Columns", "Format", "Destination", "Review" };
     private IReadOnlyList<string> _engineDestinations = Array.Empty<string>();
+
+    private sealed record DestinationOption(string Id, string Kind, string Icon, string Description);
+
+    private static readonly Dictionary<string, (string Kind, string Icon, string Description)> KnownDestinations = new()
+    {
+        ["local"] = ("info", "folder", "Writes to a path on the local filesystem."),
+        ["s3"] = ("info", "cloud-upload", "Uploads to an Amazon S3 bucket."),
+    };
+
+    private static DestinationOption ToDestinationOption(string id) =>
+        KnownDestinations.TryGetValue(id, out var known)
+            ? new DestinationOption(id, known.Kind, known.Icon, known.Description)
+            : new DestinationOption(id, "gray", "cloud-upload", "Registered engine destination.");
 
     protected override async Task OnInitializedAsync()
     {
