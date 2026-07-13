@@ -1,4 +1,5 @@
 using NeoReports.Abstractions;
+using NeoReports.Samples.Shared;
 
 namespace NeoReports.Samples.MultiSheetXlsx;
 

@@ -5,6 +5,7 @@ using NeoReports.Core.DependencyInjection;
 using NeoReports.Core.Pipeline;
 using NeoReports.Destinations.Local;
 using NeoReports.Samples.MultiSheetXlsx;
+using NeoReports.Samples.Shared;
 using static NeoReports.Xlsx.Pro.Format;
 
 // Sample 06 — multi-sheet XLSX workbook (the Pro feature).

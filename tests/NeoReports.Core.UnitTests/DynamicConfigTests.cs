@@ -77,8 +77,10 @@ public class DynamicConfigTests
         config.Source.Type.ShouldBe("inmemory");
         var props = config.Source.Properties!;
         props["connectionString"].ShouldBe("Server=.");
-        props["limit"].ShouldBe(10L);   // integer JSON number → long
-        props["ratio"].ShouldBe(1.5);   // fractional JSON number → double
+        // ShouldBeOfType, not just ShouldBe: Shouldly's ShouldBe coerces across numeric types, so it
+        // can't tell a boxed long 10 from a boxed double 10.0 — only the exact-type assertion does.
+        props["limit"].ShouldBeOfType<long>().ShouldBe(10L);     // integer JSON number → long
+        props["ratio"].ShouldBeOfType<double>().ShouldBe(1.5);   // fractional JSON number → double
         props["active"].ShouldBe(true);
         props["disabled"].ShouldBe(false);
         props["since"].ShouldBe(new DateTime(2026, 1, 15, 0, 0, 0, DateTimeKind.Utc)); // ISO string → DateTime

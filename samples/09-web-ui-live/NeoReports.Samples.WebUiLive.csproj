@@ -14,6 +14,7 @@
     <ProjectReference Include="..\..\src\Formats\NeoReports.Formats.Csv\NeoReports.Formats.Csv.csproj" />
     <ProjectReference Include="..\..\src\Formats\NeoReports.Formats.Xlsx\NeoReports.Formats.Xlsx.csproj" />
     <ProjectReference Include="..\..\src\Destinations\NeoReports.Destinations.Local\NeoReports.Destinations.Local.csproj" />
+    <ProjectReference Include="..\NeoReports.Samples.Shared\NeoReports.Samples.Shared.csproj" />
   </ItemGroup>
 
 </Project>
