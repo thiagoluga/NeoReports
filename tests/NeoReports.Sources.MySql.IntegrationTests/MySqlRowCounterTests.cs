@@ -17,7 +17,7 @@ public class MySqlRowCounterTests : IClassFixture<MySqlServerFixture>
         "SELECT Id, Customer, Amount, Date FROM Sales " +
         "WHERE (@cursor IS NULL OR Id > @cursor) ORDER BY Id";
 
-    private ReportExecutionContext Exec() =>
+    private static ReportExecutionContext Exec() =>
         new("job", "sales", null, NullLogger.Instance, CancellationToken.None);
 
     [SkippableFact]

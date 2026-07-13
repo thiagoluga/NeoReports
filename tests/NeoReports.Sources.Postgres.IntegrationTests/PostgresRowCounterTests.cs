@@ -18,7 +18,7 @@ public class PostgresRowCounterTests : IClassFixture<PostgresServerFixture>
         "SELECT Id, Customer, Amount, Date FROM Sales " +
         "WHERE (@cursor IS NULL OR Id > @cursor::bigint) ORDER BY Id";
 
-    private ReportExecutionContext Exec() =>
+    private static ReportExecutionContext Exec() =>
         new("job", "sales", null, NullLogger.Instance, CancellationToken.None);
 
     [SkippableFact]
