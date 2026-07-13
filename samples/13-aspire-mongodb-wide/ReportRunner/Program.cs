@@ -115,7 +115,7 @@ return result.Status == ReportRunStatus.Failed ? 1 : 0;
 
 static async Task EnsureSeededAsync(string connectionString)
 {
-    var client = new MongoClient(connectionString);
+    using var client = new MongoClient(connectionString);
     var database = client.GetDatabase(DatabaseName);
     var collection = database.GetCollection<WideTransaction>(CollectionName);
 
