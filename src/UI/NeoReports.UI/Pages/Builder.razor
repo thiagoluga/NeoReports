@@ -14,6 +14,13 @@
         </div>
     </div>
 
+    @if (Wizard.IsEditing && string.IsNullOrEmpty(Wizard.SourceType) && string.IsNullOrEmpty(Wizard.SourceRef))
+    {
+        <Banner Variant="warn" Icon="alert-triangle">
+            <b>Confirm the source type.</b>
+            <span style="font-size:12px">Not shown for "@Wizard.EditingOriginalName" — the engine doesn't track a compiled report's source type. Pick the correct one below; saving with the wrong type would silently change what the report reads from.</span>
+        </Banner>
+    }
     @if (!Wizard.EngineAvailable)
     {
         <Banner Variant="info" Icon="info-circle">
@@ -79,20 +86,82 @@
     private IReadOnlyList<string> _engineSources = Array.Empty<string>();
     private IReadOnlyList<ApiSourceView> _registeredSources = Array.Empty<ApiSourceView>();
 
+    /// <summary>
+    /// Set by ReportDetail's "Edit" button (<c>?edit=name</c>) — hydrates the wizard from that
+    /// report instead of starting blank. Found missing entirely during a 2026-07 UI audit: the
+    /// Scoped <see cref="BuilderState"/> was never reset between visits, so "New report" after
+    /// saving one report silently reused its leftover fields.
+    /// </summary>
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "edit")]
+    public string? EditName { get; set; }
+
     protected override async Task OnInitializedAsync()
     {
+        if (!string.IsNullOrWhiteSpace(EditName))
+            await LoadForEditAsync(EditName);
+        else
+            Wizard.Reset();
+
         ApiCapabilities? capabilities = await Api.TryGetCapabilitiesAsync();
         Wizard.EngineAvailable = capabilities is { Sources.Count: > 0 };
         if (!Wizard.EngineAvailable)
             return;
 
         _engineSources = capabilities!.Sources;
-        if (!_engineSources.Contains(Wizard.SourceType))
+        // Not editing: an unrecognized/blank type (e.g. right after Reset()'s "sql" default, on a
+        // host that doesn't register a "sql" provider) falls back to the first available type. In
+        // edit mode, Wizard.SourceType is deliberately blank — leave it that way so nothing looks
+        // pre-selected; see the comment in LoadForEditAsync.
+        if (!Wizard.IsEditing && !_engineSources.Contains(Wizard.SourceType))
             Wizard.SourceType = _engineSources.Contains("sql") ? "sql" : _engineSources[0];
 
         _registeredSources = await Api.TryListSourcesAsync() ?? Array.Empty<ApiSourceView>();
         if (!string.IsNullOrEmpty(Wizard.SourceRef) && _registeredSources.All(s => s.Name != Wizard.SourceRef))
             Wizard.SourceRef = "";
+    }
+
+    /// <summary>
+    /// Prefills everything <c>GET /api/reports/{name}</c> safely exposes. The SQL query, key
+    /// column, connection string / source ref, and destination path are NOT retrievable — the
+    /// engine deliberately never returns a source's raw property bag (same write-only boundary
+    /// D33 already applies to registered sources) — and are left blank; BuilderConfigure and
+    /// BuilderDestination show a banner asking the user to re-enter them.
+    /// </summary>
+    private async Task LoadForEditAsync(string name)
+    {
+        Wizard.Reset();
+
+        ApiReportDetail? detail = await Api.TryGetReportDetailAsync(name);
+        if (detail is null || !detail.Deletable)
+            return; // Not editable (code-registered, or no longer exists) — falls back to a blank wizard.
+
+        Wizard.IsEditing = true;
+        Wizard.EditingOriginalName = name;
+        Wizard.ReportName = detail.Name;
+        // Not retrievable — GET /api/reports/{name} doesn't expose the source type at all (it isn't
+        // tracked past compilation), unlike the properties bag's deliberate secrecy. Left blank
+        // (not defaulted to "sql") so nothing is pre-selected below; the user must actively confirm
+        // it, and the existing validate-before-delete step in BuilderReview blocks Save outright if
+        // they don't — the alternative (silently keeping the "sql" default) could quietly change a
+        // report's real source type on save if the user never revisits this step.
+        Wizard.SourceType = "";
+        Wizard.PageSize = detail.PageSize;
+        Wizard.ColumnNames = string.Join(", ", detail.Columns.Select(c => c.Name));
+        Wizard.Formats = new HashSet<string>(detail.Formats);
+        Wizard.DestinationType = detail.Destinations.FirstOrDefault() ?? "";
+        Wizard.RetryMaxAttempts = detail.RetryMaxAttempts;
+        Wizard.RetryBackoff = detail.RetryBackoff;
+        Wizard.RetryBaseDelaySeconds = detail.RetryBaseDelaySeconds;
+        Wizard.RetryJitter = detail.RetryUseJitter;
+        Wizard.FailureStrategy = detail.FailureStrategy;
+        Wizard.AbortOnConsecutiveFailures = detail.AbortAfterConsecutiveFailures is not null;
+        Wizard.AbortConsecutiveFailures = detail.AbortAfterConsecutiveFailures ?? 3;
+        Wizard.AbortOnTotalFailures = detail.AbortAfterTotalFailures is not null;
+        Wizard.AbortTotalFailures = detail.AbortAfterTotalFailures ?? 10;
+        Wizard.AbortOnFailureRate = detail.AbortAtFailureRate is not null;
+        Wizard.AbortFailureRatePercent = (detail.AbortAtFailureRate ?? 0.5) * 100;
+        Wizard.ScheduleCron = detail.ScheduleCron ?? "";
     }
 
     private void SelectSourceRef(ApiSourceView source)

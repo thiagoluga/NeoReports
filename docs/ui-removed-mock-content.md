@@ -135,14 +135,28 @@ explicitly out of v1 scope; would need its own scope decision first.
 - **Configuration card's "Parameters" row** (`@since`/`@until`/`@tenant` name=value pills). Dynamic
   runtime parameters need an expression evaluator (JsonLogic/DynamicLinq), explicitly out of v1
   scope in `CLAUDE.md`.
-- **"Edit" header button** (found broken during a UI audit, 2026-07): navigated straight to a
-  blank `/builder` wizard, silently discarding the report being viewed instead of loading it —
-  `Wizard.ReportName`/`SqlQuery`/etc. all reset to their defaults. Not a wiring gap: there is no
-  `PUT /api/reports/{name}` (only create + delete), and `GET /api/reports/{name}` deliberately never
-  returns the raw source properties (SQL text, connection string) at all — same write-only-property-
-  bag boundary D33 already applies to `ApiSourceView`. A true edit would need a new update endpoint
-  and a decision on whether/how secrets get echoed back to prefill it; removed rather than left
-  misleading in the meantime.
+- **"Edit" header button** — found broken during a 2026-07 UI audit (navigated to a blank `/builder`
+  wizard, silently discarding the report being viewed), briefly removed, then rebuilt properly in
+  the same audit pass rather than left as a permanent gap. See "Builder — edit mode" below for how
+  it actually works now; kept here as history, not a currently-removed item.
+
+### Builder — edit mode (rebuilt 2026-07, not removed)
+
+`ReportDetail.razor`'s "Edit" button (shown only for `Deletable` — i.e. config-origin — reports;
+code-registered ones have no replace path either) opens `/builder?edit={name}`, which prefills
+everything `GET /api/reports/{name}` safely exposes: columns, page size, formats, destination
+*type*, resilience, abort-when thresholds, schedule. It deliberately does **not** prefill the SQL
+query, key column, connection string / source ref, or destination *path* — the engine never returns
+a source's or destination's raw property bag, on-edit or otherwise (same write-only boundary D33
+already applies to `ApiSourceView`), because that bag is exactly where a report author could have
+put a raw secret instead of a `${VAR}` placeholder. `BuilderConfigure`/`BuilderDestination` show an
+explicit banner asking the user to re-enter those fields rather than silently leaving them blank.
+
+There is no `PUT /api/reports/{name}` — saving in edit mode validates the new config first (so a
+bad edit never costs the existing report), then deletes the original and creates the replacement
+under the same name (`BuilderReview.razor`'s `PersistAsync`). Job history is unaffected (jobs
+reference a report by name string, not a foreign key, so it survives the delete+recreate). The name
+field is locked during edit to keep this a replace, not an ambiguous rename.
 
 ### `BuilderConfigure.razor` (Builder step 2)
 

@@ -102,6 +102,18 @@ public sealed class BuilderState
     /// </summary>
     public bool EngineAvailable { get; set; }
 
+    /// <summary>
+    /// True when the wizard was opened from an existing report's "Edit" button (found missing
+    /// during a 2026-07 UI audit) rather than "New report". Saving then deletes
+    /// <see cref="EditingOriginalName"/> and re-creates it under the (possibly unchanged) new
+    /// config — there is no <c>PUT /api/reports/{name}</c>, only create + delete.
+    /// </summary>
+    public bool IsEditing { get; set; }
+
+    /// <summary>The report name being edited, captured before <see cref="ReportName"/> can be
+    /// changed on the Review step — the name actually deleted on save. Empty outside edit mode.</summary>
+    public string EditingOriginalName { get; set; } = "";
+
     /// <summary>Reset everything (when starting a new report).</summary>
     public void Reset()
     {
@@ -131,5 +143,7 @@ public sealed class BuilderState
         AbortFailureRatePercent = 50;
         ScheduleCron = "";
         EngineAvailable = false;
+        IsEditing = false;
+        EditingOriginalName = "";
     }
 }

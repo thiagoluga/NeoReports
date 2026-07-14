@@ -40,9 +40,16 @@
             <Button Variant="outline" Size="sm" Icon="circle-check" Loading="_validating" OnClick="ValidateAsync">Validate</Button>
         </Action>
         <ChildContent>
+        @if (Wizard.IsEditing && string.IsNullOrEmpty(Wizard.SourceRef))
+        {
+            <Banner Variant="warn" Icon="alert-triangle">
+                <b>Re-enter the query and connection.</b>
+                <span style="font-size:12px">The engine never returns a report's raw source properties, even when editing — same security boundary as registered sources. Everything else below was prefilled from "@Wizard.EditingOriginalName".</span>
+            </Banner>
+        }
         <div class="col" style="gap:12px">
             <div class="grid-2">
-                <div class="field"><span class="label-sm">Report name</span><span class="input mono"><input class="mono" @bind="Wizard.ReportName" @bind:event="oninput" placeholder="monthly-sales" style="width:100%" /></span></div>
+                <div class="field"><span class="label-sm">Report name</span><span class="input mono"><input class="mono" @bind="Wizard.ReportName" @bind:event="oninput" placeholder="monthly-sales" readonly="@Wizard.IsEditing" style="width:100%" /></span></div>
                 @if (string.IsNullOrEmpty(Wizard.SourceRef))
                 {
                     <div class="field"><span class="label-sm">Connection string variable</span><span class="input mono"><span class="mono muted" style="font-size:11px">${</span><input class="mono" @bind="Wizard.ConnectionStringVariable" @bind:event="oninput" placeholder="SALES_DB" style="flex:1" /><span class="mono muted" style="font-size:11px">}</span></span></div>

@@ -14,6 +14,14 @@
         </div>
     </div>
 
+    @if (Wizard.IsEditing && !string.IsNullOrEmpty(Wizard.DestinationType) && string.IsNullOrEmpty(Wizard.DestinationPath))
+    {
+        <Banner Variant="warn" Icon="alert-triangle">
+            <b>Re-enter the path / key template.</b>
+            <span style="font-size:12px">Only the destination type ("@Wizard.DestinationType") was prefilled — the engine never returns a destination's raw properties, even when editing.</span>
+        </Banner>
+    }
+
     @if (Wizard.EngineAvailable)
     {
         <Card Title="Engine destination" Sub="What gets sent to the engine — optional; a report can also have none">
