@@ -882,8 +882,9 @@ engine-side work before its UI.
   `run-restarted`/every `page-completed` event (live channel, since `JobStats` only persists at
   completion). Percentage is `recordsRead / TotalRecords` (not `recordsWritten` — the count is
   pre-filter, so a written-based percentage would never reach 100% on a filtered report).
-- [ ] **I2 — UI.** `ApiJobStats.TotalRecords`; Builder's Configure step gains a default-on "Track
+- [x] **I2 — UI.** `ApiJobStats.TotalRecords`; Builder's Configure step gains a default-on "Track
   progress" switch with an honest off-state warning; `ProgressBar` gains an `Indeterminate` mode
   (sliding-segment CSS animation); `JobRunning.razor` deletes the decorative timer and computes the
-  real, clamped percentage from polled events, falling back to the indeterminate bar when no total
-  is known (tracking off, unsupported source, or the count failed).
+  real, clamped percentage from polled events (`JobEventFormatter.LatestRecordsRead`/
+  `LatestTotalRecords`), falling back to the indeterminate bar when no total is known (tracking off,
+  unsupported source, or the count failed).

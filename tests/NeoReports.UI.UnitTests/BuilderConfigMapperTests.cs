@@ -259,4 +259,23 @@ public class BuilderConfigMapperTests
 
         doc.RootElement.GetProperty("name").GetString().ShouldBe("some-weird-Name_123");
     }
+
+    [Fact]
+    public void TrackProgress_defaults_to_true_and_is_always_serialized()
+    {
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(FullState()));
+
+        doc.RootElement.GetProperty("trackProgress").GetBoolean().ShouldBeTrue();
+    }
+
+    [Fact]
+    public void TrackProgress_false_is_serialized_explicitly_not_omitted()
+    {
+        var state = FullState();
+        state.TrackProgress = false;
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        doc.RootElement.GetProperty("trackProgress").GetBoolean().ShouldBeFalse();
+    }
 }

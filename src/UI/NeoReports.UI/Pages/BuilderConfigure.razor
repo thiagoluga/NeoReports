@@ -61,6 +61,14 @@
                 <div class="field"><span class="label-sm">Page size</span><span class="input num"><input class="mono" type="number" min="1" @bind="Wizard.PageSize" @bind:event="oninput" /></span></div>
             </div>
             <div class="field"><span class="label-sm">Output columns</span><span class="input mono"><input class="mono" @bind="Wizard.ColumnNames" @bind:event="oninput" placeholder="Id, Customer, Amount" style="width:100%" /></span></div>
+            <div class="cgr"><span class="lbl">Track progress</span><div class="ctl"><Switch @bind-Value="Wizard.TrackProgress" /><span class="hint">counts the source rows once before each run · enables a real completion percentage</span></div></div>
+            @if (!Wizard.TrackProgress)
+            {
+                <Banner Variant="warn" Icon="alert-triangle">
+                    <b>No completion percentage.</b>
+                    <span style="font-size:12px">Without the row count, the running-job page shows an indeterminate progress bar; read/written counters and rates stay exact.</span>
+                </Banner>
+            }
         </div>
         @if (_validationResult is not null)
         {

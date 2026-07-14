@@ -1,15 +1,19 @@
 @* ProgressBar — thin bar (list rows) or 8px hero bar.
    Usage:  <ProgressBar Pct="64" />
-           <ProgressBar Pct="64" Height="8" /> *@
+           <ProgressBar Pct="64" Height="8" />
+           <ProgressBar Indeterminate="true" />   (no row count for this run, ADR D47) *@
 
-<div class="@(Mini ? "mini-bar" : "progress-bar")">
+<div class="@($"{(Mini ? "mini-bar" : "progress-bar")}{(Indeterminate ? " indeterminate" : "")}")">
     <i style="width:@(Pct)%"></i>
 </div>
 
 @code {
-    /// <summary>0–100</summary>
+    /// <summary>0–100. Ignored while <see cref="Indeterminate"/> is true.</summary>
     [Parameter] public int Pct { get; set; }
 
     /// <summary>true = 4px inline bar (table rows); false = 8px hero bar</summary>
     [Parameter] public bool Mini { get; set; }
+
+    /// <summary>No known total to divide by — renders a sliding segment instead of a fixed-width fill.</summary>
+    [Parameter] public bool Indeterminate { get; set; }
 }

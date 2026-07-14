@@ -99,4 +99,53 @@ public class JobEventFormatterTests
         JobEventFormatter.ToIntervalRates(Array.Empty<JobEventFormatter.RatePoint>()).ShouldBeEmpty();
         JobEventFormatter.ToIntervalRates(new[] { new JobEventFormatter.RatePoint(0, 0) }).ShouldBeEmpty();
     }
+
+    [Fact]
+    public void LatestTotalRecords_returns_the_most_recent_value_across_page_completed_events()
+    {
+        var events = new[]
+        {
+            Event("run-started", 1),
+            Event("page-completed", 2, data: new Dictionary<string, string> { ["recordsRead"] = "10", ["totalRecords"] = "500" }),
+            Event("page-completed", 3, data: new Dictionary<string, string> { ["recordsRead"] = "20", ["totalRecords"] = "500" }),
+        };
+
+        JobEventFormatter.LatestTotalRecords(events).ShouldBe(500);
+        JobEventFormatter.LatestRecordsRead(events).ShouldBe(20);
+    }
+
+    [Fact]
+    public void LatestTotalRecords_is_null_when_no_event_carries_the_datum()
+    {
+        var events = new[]
+        {
+            Event("run-started", 1),
+            Event("page-completed", 2, data: new Dictionary<string, string> { ["recordsRead"] = "10" }),
+        };
+
+        JobEventFormatter.LatestTotalRecords(events).ShouldBeNull();
+        JobEventFormatter.LatestRecordsRead(events).ShouldBe(10);
+    }
+
+    [Fact]
+    public void LatestRecordsRead_is_null_for_an_empty_event_list()
+    {
+        JobEventFormatter.LatestRecordsRead(Array.Empty<ApiJobEvent>()).ShouldBeNull();
+        JobEventFormatter.LatestTotalRecords(Array.Empty<ApiJobEvent>()).ShouldBeNull();
+    }
+
+    [Fact]
+    public void LatestTotalRecords_returns_a_real_zero_not_null_for_an_empty_source()
+    {
+        // A source with no matching rows still emits one page-completed event with totalRecords=0
+        // (ADR D47) — the caller (JobRunning.razor) is the one that treats 0 as "show indeterminate",
+        // not this parser, which must report the wire value faithfully.
+        var events = new[]
+        {
+            Event("page-completed", 1, data: new Dictionary<string, string> { ["recordsRead"] = "0", ["totalRecords"] = "0" }),
+        };
+
+        JobEventFormatter.LatestTotalRecords(events).ShouldBe(0);
+        JobEventFormatter.LatestRecordsRead(events).ShouldBe(0);
+    }
 }

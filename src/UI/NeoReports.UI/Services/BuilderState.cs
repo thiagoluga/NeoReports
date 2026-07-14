@@ -39,6 +39,13 @@ public sealed class BuilderState
     /// <summary>Rows read per page.</summary>
     public int PageSize { get; set; } = 1000;
 
+    /// <summary>
+    /// Whether the engine counts the source's total rows once before each run, enabling a real
+    /// completion percentage on the running-job page (ADR D47). Enabled by default, matching the
+    /// typed builder's own default; unchecking it trades that percentage for an indeterminate bar.
+    /// </summary>
+    public bool TrackProgress { get; set; } = true;
+
     /// <summary>Comma-separated output column names.</summary>
     public string ColumnNames { get; set; } = "Id";
 
@@ -107,6 +114,7 @@ public sealed class BuilderState
         SqlQuery = "";
         KeyColumn = "Id";
         PageSize = 1000;
+        TrackProgress = true;
         ColumnNames = "Id";
         DestinationType = "";
         DestinationPath = "";

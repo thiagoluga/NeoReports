@@ -71,7 +71,8 @@ public static class BuilderConfigMapper
             Destinations: destinations,
             PageSize: state.PageSize,
             Resilience: resilience,
-            Schedule: schedule);
+            Schedule: schedule,
+            TrackProgress: state.TrackProgress);
 
         return JsonSerializer.Serialize(document, Json);
     }
@@ -105,7 +106,8 @@ public static class BuilderConfigMapper
         IReadOnlyList<DestinationDocument>? Destinations,
         int PageSize,
         ResilienceDocument Resilience,
-        ScheduleDocument? Schedule);
+        ScheduleDocument? Schedule,
+        bool TrackProgress);
 
     private sealed record SourceDocument(string? Type, IReadOnlyDictionary<string, object?> Properties, string? Ref);
 
