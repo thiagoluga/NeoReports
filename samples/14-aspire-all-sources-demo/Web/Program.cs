@@ -25,10 +25,10 @@ using static NeoReports.Core.Building.ReportColumns;
 // Format class-name collision between the two format packages (ADR D16).
 using static NeoReports.Formats.Csv.Format;
 using static NeoReports.Formats.Xlsx.Format;
-using SqlSource = NeoReports.Sources.Sql.Source;
-using PostgresSource = NeoReports.Sources.Postgres.Source;
-using MySqlSource = NeoReports.Sources.MySql.Source;
 using MongoSource = NeoReports.Sources.MongoDb.Source;
+using MySqlSource = NeoReports.Sources.MySql.Source;
+using PostgresSource = NeoReports.Sources.Postgres.Source;
+using SqlSource = NeoReports.Sources.Sql.Source;
 
 // Sample 14 — the Web half of the combined "all sources" Aspire demo. AppHost.cs provisions all
 // four databases (Postgres, MySQL, SQL Server, MongoDB) and injects their connection strings via
