@@ -135,6 +135,14 @@ explicitly out of v1 scope; would need its own scope decision first.
 - **Configuration card's "Parameters" row** (`@since`/`@until`/`@tenant` name=value pills). Dynamic
   runtime parameters need an expression evaluator (JsonLogic/DynamicLinq), explicitly out of v1
   scope in `CLAUDE.md`.
+- **"Edit" header button** (found broken during a UI audit, 2026-07): navigated straight to a
+  blank `/builder` wizard, silently discarding the report being viewed instead of loading it —
+  `Wizard.ReportName`/`SqlQuery`/etc. all reset to their defaults. Not a wiring gap: there is no
+  `PUT /api/reports/{name}` (only create + delete), and `GET /api/reports/{name}` deliberately never
+  returns the raw source properties (SQL text, connection string) at all — same write-only-property-
+  bag boundary D33 already applies to `ApiSourceView`. A true edit would need a new update endpoint
+  and a decision on whether/how secrets get echoed back to prefill it; removed rather than left
+  misleading in the meantime.
 
 ### `BuilderConfigure.razor` (Builder step 2)
 

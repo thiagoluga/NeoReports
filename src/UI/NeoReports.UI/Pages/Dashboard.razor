@@ -24,12 +24,7 @@
 
     @* Recent jobs — GET /api/jobs (limit 8) *@
     <Card Title="Recent jobs" Sub="Newest first">
-        <Action>
-            @if (_recentJobs.Count > 0)
-            {
-                <Button Variant="link" OnClick="@(() => Nav.NavigateTo(JobRoute(_recentJobs[0])))">View all →</Button>
-            }
-        </Action>
+        <Action><Button Variant="link" OnClick="@(() => Nav.NavigateTo("jobs"))">View all →</Button></Action>
         <ChildContent>
         @if (!_isLive)
         {
@@ -58,17 +53,17 @@
             <Body>
                 @foreach (var r in _recentJobs)
                 {
-                    <tr class="clickable" @onclick="@(() => Nav.NavigateTo(JobRoute(r)))">
+                    <tr class="clickable" @onclick="@(() => Nav.NavigateTo(r.Route))">
                         <td>
                             <div style="display:flex;align-items:center;gap:10px">
-                                <CatTile Kind="@r.CatKind" Icon="@r.CatIcon" Sm="true" />
+                                <CatTile Kind="gray" Icon="report" Sm="true" />
                                 <div>
-                                    <div style="font-weight:500">@r.Name</div>
-                                    <div class="mono muted" style="font-size:11px">@r.SourceLabel</div>
+                                    <div style="font-weight:500">@r.ReportName</div>
+                                    <div class="mono muted" style="font-size:11px">—</div>
                                 </div>
                             </div>
                         </td>
-                        <td><JobStatusBadge Status="r.Status" LabelOverride="@(r.Status == JobStatus.Ok ? "Completed" : null)" /></td>
+                        <td><JobStatusBadge Status="r.Status" LabelOverride="@r.StatusLabel" /></td>
                         <td><span class="muted" style="font-size:12px">@r.ProgressLabel</span></td>
                         <td class="mono">@r.Started</td>
                         <td class="mono">@r.Duration</td>
@@ -134,10 +129,6 @@
 </div>
 
 @code {
-    private sealed record DashboardJobRow(
-        string Id, string Name, string CatKind, string CatIcon, string SourceLabel,
-        JobStatus Status, string ProgressLabel, string Started, string Duration);
-
     private sealed record DashboardMetrics(string JobsToday, string SuccessRate, string RecordsExported, string AvgDuration)
     {
         public static readonly DashboardMetrics Unavailable = new("—", "—", "—", "—");
@@ -146,37 +137,10 @@
     private sealed record DashboardFileRow(string ReportName, string FileName, long SizeBytes, DateTimeOffset? CompletedAt);
 
     private bool _isLive;
-    private IReadOnlyList<DashboardJobRow> _recentJobs = Array.Empty<DashboardJobRow>();
+    private IReadOnlyList<JobRowFormatter.Row> _recentJobs = Array.Empty<JobRowFormatter.Row>();
     private DashboardMetrics _metrics = DashboardMetrics.Unavailable;
     private IReadOnlyList<DashboardFileRow> _recentFiles = Array.Empty<DashboardFileRow>();
     private IReadOnlyList<ApiSourceView> _mostReferencedSources = Array.Empty<ApiSourceView>();
-
-    private static string JobRoute(DashboardJobRow r) => r.Status switch
-    {
-        JobStatus.Failed => $"jobs/failed/{r.Id}",
-        JobStatus.Ok => $"jobs/completed/{r.Id}",
-        _ => $"jobs/{r.Id}",
-    };
-
-    private static DashboardJobRow ToRow(ApiJobView j) => new(
-        Id: j.Id,
-        Name: j.ReportName,
-        CatKind: "gray",
-        CatIcon: "report",
-        SourceLabel: "—",
-        Status: ToJobStatus(j.Status),
-        ProgressLabel: j.Status,
-        Started: j.StartedAt?.ToLocalTime().ToString("HH:mm:ss") ?? "—",
-        Duration: FormatDuration(j.StartedAt, j.CompletedAt));
-
-    private static JobStatus ToJobStatus(string status) => status switch
-    {
-        "Completed" => JobStatus.Ok,
-        "Failed" => JobStatus.Failed,
-        "Running" or "Retrying" => JobStatus.Running,
-        "Paused" => JobStatus.Paused,
-        _ => JobStatus.Queued,
-    };
 
     private static string FormatDuration(DateTimeOffset? started, DateTimeOffset? completed)
     {
@@ -194,7 +158,7 @@
             return;
 
         _isLive = true;
-        _recentJobs = recent.Select(ToRow).ToArray();
+        _recentJobs = recent.Select(JobRowFormatter.ToRow).ToArray();
 
         DateTimeOffset todayUtc = DateTimeOffset.UtcNow.Date;
         IReadOnlyList<ApiJobView>? todaysJobs = await Api.TryListJobsAsync(since: todayUtc, limit: 200);
