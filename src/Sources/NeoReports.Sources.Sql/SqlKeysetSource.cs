@@ -1,9 +1,22 @@
 using System.Data.Common;
 using Microsoft.Data.SqlClient;
 using NeoReports.Abstractions;
+using NeoReports.Core.Sources;
 using NeoReports.Sources.Common;
 
 namespace NeoReports.Sources.Sql;
+
+/// <summary>
+/// SQL Server's derived-table suffix for counting rows (ADR D47). Every keyset query ends in
+/// <c>ORDER BY</c>, which SQL Server rejects inside a bare derived table unless followed by
+/// <c>TOP</c>/<c>OFFSET</c>/<c>FETCH</c> — the same fix <c>AdoFilterTranslator</c> already
+/// established for filtered previews (D45/G7). Shared by <see cref="SqlKeysetSource{T}"/> and
+/// <see cref="SqlNamedSourceBuilder"/> so both SQL Server paths count correctly.
+/// </summary>
+internal static class SqlServerCount
+{
+    public const string InnerSuffix = " OFFSET 0 ROWS";
+}
 
 /// <summary>
 /// SQL Server batch source using keyset pagination. The query must expose a <c>@cursor</c>
@@ -15,7 +28,7 @@ namespace NeoReports.Sources.Sql;
 /// since this type has been published (v1.2.0) and consumers construct it directly.
 /// </summary>
 /// <typeparam name="T">The row type produced.</typeparam>
-public sealed class SqlKeysetSource<T> : IBatchSource<T>
+public sealed class SqlKeysetSource<T> : IBatchSource<T>, ISourceRowCounter
 {
     private readonly AdoKeysetSource<T> _inner;
 
@@ -54,7 +67,7 @@ public sealed class SqlKeysetSource<T> : IBatchSource<T>
         ArgumentNullException.ThrowIfNull(connectionString);
         _inner = new AdoKeysetSource<T>(
             () => new SqlConnection(connectionString), sql, keyColumn, pageSize, schema, materialize,
-            new AdoProviderOptions { Parameters = parameters });
+            new AdoProviderOptions { Parameters = parameters, CountInnerSuffix = SqlServerCount.InnerSuffix });
     }
 
     /// <inheritdoc />
@@ -63,4 +76,8 @@ public sealed class SqlKeysetSource<T> : IBatchSource<T>
     /// <inheritdoc />
     public Task<BatchResult<T>> ReadBatchAsync(BatchContext context, CancellationToken cancellationToken) =>
         _inner.ReadBatchAsync(context, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<long?> CountAsync(ReportExecutionContext execution, CancellationToken cancellationToken) =>
+        _inner.CountAsync(execution, cancellationToken);
 }

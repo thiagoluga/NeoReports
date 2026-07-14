@@ -18,5 +18,6 @@ public sealed class SqlConfigSourceProvider : IConfigSourceProvider
 
     /// <inheritdoc />
     public IBatchSource<ReportRecord> Create(SourceConfig source, ReportSchema schema, IServiceProvider services) =>
-        AdoConfigProperties.CreateAdoConfigSource(cs => new SqlConnection(cs), source, schema, "SQL");
+        AdoConfigProperties.CreateAdoConfigSource(
+            cs => new SqlConnection(cs), source, schema, "SQL", countInnerSuffix: SqlServerCount.InnerSuffix);
 }

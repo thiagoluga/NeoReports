@@ -28,7 +28,9 @@ public sealed class CompiledReport
         IFailureStrategy failureStrategy,
         AbortThresholdConfig? abortThresholds = null,
         ScheduleConfig? schedule = null,
-        string? sourceRef = null)
+        string? sourceRef = null,
+        bool trackProgress = true,
+        Func<ReportExecutionContext, IServiceProvider, CancellationToken, Task<long?>>? countRows = null)
     {
         Name = name;
         Schema = schema;
@@ -43,6 +45,8 @@ public sealed class CompiledReport
         AbortThresholds = abortThresholds;
         Schedule = schedule;
         SourceRef = sourceRef;
+        TrackProgress = trackProgress;
+        RowCountFactory = countRows;
 
         OutputFormats = outputs.Select(o => o.Factory.Format).ToArray();
         DestinationTypes = destinations.Select(d => d.Factory.Type).ToArray();
@@ -110,4 +114,19 @@ public sealed class CompiledReport
     /// name — no separate usage store exists; the number is always derivable truth.
     /// </summary>
     public string? SourceRef { get; }
+
+    /// <summary>
+    /// Whether progress tracking is enabled for this report (ADR D47) — declared via
+    /// <c>ReportBuilder&lt;T&gt;.TrackProgress(bool)</c> or the config document's
+    /// <c>TrackProgress</c>, default <c>true</c>. Does not by itself guarantee a real percentage:
+    /// <see cref="RowCountFactory"/> is also <c>null</c> when the source doesn't support counting.
+    /// </summary>
+    public bool TrackProgress { get; }
+
+    /// <summary>
+    /// Counts the source's total rows for this report (ADR D47), or <c>null</c> when progress
+    /// tracking is disabled or the source doesn't implement <c>ISourceRowCounter</c> — the runner
+    /// needs only this one check, not <see cref="TrackProgress"/> separately.
+    /// </summary>
+    internal Func<ReportExecutionContext, IServiceProvider, CancellationToken, Task<long?>>? RowCountFactory { get; }
 }

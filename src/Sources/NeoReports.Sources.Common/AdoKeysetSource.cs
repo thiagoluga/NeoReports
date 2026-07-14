@@ -2,6 +2,7 @@ using System.Data;
 using System.Data.Common;
 using System.Globalization;
 using NeoReports.Abstractions;
+using NeoReports.Core.Sources;
 
 namespace NeoReports.Sources.Common;
 
@@ -16,7 +17,7 @@ namespace NeoReports.Sources.Common;
 /// implementation to avoid an unnecessary break of its already-published public API (D43).
 /// </summary>
 /// <typeparam name="T">The row type produced.</typeparam>
-public sealed class AdoKeysetSource<T> : IBatchSource<T>
+public sealed class AdoKeysetSource<T> : IBatchSource<T>, ISourceRowCounter
 {
     private readonly Func<DbConnection> _connectionFactory;
     private readonly string _sql;
@@ -26,6 +27,7 @@ public sealed class AdoKeysetSource<T> : IBatchSource<T>
     private readonly Func<DbDataReader, IReadOnlyDictionary<string, int>, T> _materialize;
     private readonly string _parameterPrefix;
     private readonly Action<DbCommand>? _configureCommand;
+    private readonly string _countInnerSuffix;
 
     /// <summary>Creates the source.</summary>
     /// <param name="connectionFactory">Creates a new, unopened connection for each page.</param>
@@ -70,6 +72,7 @@ public sealed class AdoKeysetSource<T> : IBatchSource<T>
         _materialize = materialize ?? new RecordMaterializer<T>().Materialize;
         _parameterPrefix = string.IsNullOrEmpty(options.ParameterPrefix) ? "@" : options.ParameterPrefix;
         _configureCommand = options.ConfigureCommand;
+        _countInnerSuffix = options.CountInnerSuffix;
     }
 
     /// <inheritdoc />
@@ -122,6 +125,40 @@ public sealed class AdoKeysetSource<T> : IBatchSource<T>
         var hasMore = records.Count == _pageSize && lastKey is not null;
         var nextCursor = hasMore ? EncodeCursor(lastKey!) : null;
         return new BatchResult<T>(records, nextCursor, hasMore);
+    }
+
+    /// <summary>
+    /// Counts the rows a full run would read (ADR D47) by wrapping the report's own query as a
+    /// derived table — <c>SELECT COUNT(*) FROM (&lt;sql&gt;) q</c> — and binding the exact same
+    /// static/run-time parameters a real read would, with the cursor bound null (first-page/
+    /// count-everything semantics).
+    /// </summary>
+    public async Task<long?> CountAsync(ReportExecutionContext execution, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(execution);
+
+        await using DbConnection connection = _connectionFactory();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        // A trailing statement terminator is harmless standalone (ReadBatchAsync runs _sql as its
+        // own statement) but is a syntax error inside a derived table — trim the common case of a
+        // report author's copy-pasted trailing semicolon before wrapping.
+        ReadOnlySpan<char> innerSql = _sql.AsSpan().TrimEnd().TrimEnd(';');
+
+        await using DbCommand command = connection.CreateCommand();
+        command.CommandText = $"SELECT COUNT(*) FROM (\n{innerSql}{_countInnerSuffix}\n) q";
+        _configureCommand?.Invoke(command);
+
+        foreach (KeyValuePair<string, object?> kvp in _parameters)
+            AddParameter(command, kvp.Key, kvp.Value, _parameterPrefix);
+        foreach (KeyValuePair<string, object?> kvp in execution.Parameters)
+            AddParameter(command, kvp.Key, kvp.Value, _parameterPrefix);
+
+        AddParameter(command, "cursor", null, _parameterPrefix);
+        AddParameter(command, "pageSize", _pageSize, _parameterPrefix);
+
+        object? result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return Convert.ToInt64(result, CultureInfo.InvariantCulture);
     }
 
     private static Dictionary<string, int> BuildOrdinalMap(DbDataReader reader)

@@ -2,6 +2,7 @@ using MongoDB.Bson;
 using MongoDB.Bson.Serialization;
 using MongoDB.Driver;
 using NeoReports.Abstractions;
+using NeoReports.Core.Sources;
 
 namespace NeoReports.Sources.MongoDb;
 
@@ -18,7 +19,7 @@ namespace NeoReports.Sources.MongoDb;
 /// comparison.
 /// </summary>
 /// <typeparam name="T">The row type produced.</typeparam>
-public sealed class MongoDbKeysetSource<T> : IBatchSource<T>
+public sealed class MongoDbKeysetSource<T> : IBatchSource<T>, ISourceRowCounter
 {
     private readonly MongoClient _client;
     private readonly string _database;
@@ -91,6 +92,20 @@ public sealed class MongoDbKeysetSource<T> : IBatchSource<T>
         var hasMore = documents.Count == _pageSize && lastKey is not null;
         var nextCursor = hasMore ? EncodeCursor(lastKey!) : null;
         return new BatchResult<T>(records, nextCursor, hasMore);
+    }
+
+    /// <summary>
+    /// Counts the documents a full run would read (ADR D47) — an exact count, not the estimated/
+    /// approximate one: an estimate that lets the progress bar finish at 96% or overshoot 100% is
+    /// exactly the fabricated-telemetry pattern this feature exists to remove, and reads currently
+    /// have no user-supplied filter (a full collection scan ordered by the key), so <see cref="FilterDefinition{TDocument}.Empty"/> counts exactly what a run would read.
+    /// </summary>
+    public async Task<long?> CountAsync(ReportExecutionContext execution, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(execution);
+        IMongoCollection<BsonDocument> collection = _client.GetDatabase(_database).GetCollection<BsonDocument>(_collection);
+        return await collection.CountDocumentsAsync(FilterDefinition<BsonDocument>.Empty, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private static string EncodeCursor(BsonValue key) => key.ToJson();

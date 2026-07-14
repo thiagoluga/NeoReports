@@ -78,9 +78,14 @@ public static class AdoConfigProperties
     /// Server/Postgres/MySQL, <c>:</c> for Oracle).</param>
     /// <param name="configureCommand">Optional hook run on each page's command right after
     /// creation — e.g. Oracle needs <c>((OracleCommand)command).BindByName = true</c>.</param>
+    /// <param name="countInnerSuffix">Text appended after the wrapped query when
+    /// <see cref="AdoKeysetSource{T}.CountAsync"/> counts rows for progress tracking (ADR D47) —
+    /// SQL Server's dynamic (<c>type: "sql"</c>) provider passes <c>" OFFSET 0 ROWS"</c> here, the
+    /// same derived-table fix its typed path (<c>SqlKeysetSource</c>) uses, since every keyset query
+    /// ends in <c>ORDER BY</c>, which SQL Server rejects inside a bare derived table.</param>
     public static IBatchSource<ReportRecord> CreateAdoConfigSource(
         Func<string, DbConnection> connectionFactory, SourceConfig source, ReportSchema schema, string sourceTypeLabel,
-        string parameterPrefix = "@", Action<DbCommand>? configureCommand = null)
+        string parameterPrefix = "@", Action<DbCommand>? configureCommand = null, string countInnerSuffix = "")
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(schema);
@@ -94,6 +99,11 @@ public static class AdoConfigProperties
         return new AdoKeysetSource<ReportRecord>(
             () => connectionFactory(connectionString), sql, key, pageSize, schema,
             materialize: (reader, ordinals) => MaterializeReportRecord(reader, ordinals, schema),
-            new AdoProviderOptions { ParameterPrefix = parameterPrefix, ConfigureCommand = configureCommand });
+            new AdoProviderOptions
+            {
+                ParameterPrefix = parameterPrefix,
+                ConfigureCommand = configureCommand,
+                CountInnerSuffix = countInnerSuffix,
+            });
     }
 }

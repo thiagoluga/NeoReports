@@ -19,4 +19,14 @@ public sealed class AdoProviderOptions
 
     /// <summary>Static parameters bound on every page, besides the cursor.</summary>
     public IReadOnlyDictionary<string, object?>? Parameters { get; init; }
+
+    /// <summary>
+    /// Text appended right after the wrapped query when <see cref="AdoKeysetSource{T}"/> counts rows
+    /// for progress tracking (ADR D47) — <c>SELECT COUNT(*) FROM (&lt;sql&gt;&lt;suffix&gt;) q</c>. Every
+    /// keyset query ends in <c>ORDER BY</c>, which SQL Server rejects inside a bare derived table;
+    /// its provider sets this to <c>" OFFSET 0 ROWS"</c>, the same derived-table fix
+    /// <c>AdoFilterTranslator</c> already established for filtered previews (D45/G7). Postgres/MySQL/
+    /// Oracle accept a derived table ending in <c>ORDER BY</c> as-is, so they leave this empty.
+    /// </summary>
+    public string CountInnerSuffix { get; init; } = "";
 }

@@ -31,12 +31,17 @@ public enum ReportJobStatus
 /// <param name="BytesWritten">Total bytes written across outputs.</param>
 /// <param name="Retries">Number of batch retries performed.</param>
 /// <param name="BatchesProcessed">Number of batches processed.</param>
+/// <param name="TotalRecords">
+/// Total rows the source reported before the run (ADR D47), or null when progress tracking was
+/// disabled, unsupported by the source, or the count itself failed.
+/// </param>
 public sealed record JobStats(
     long RecordsRead = 0,
     long RecordsWritten = 0,
     long BytesWritten = 0,
     int Retries = 0,
-    int BatchesProcessed = 0);
+    int BatchesProcessed = 0,
+    long? TotalRecords = null);
 
 /// <summary>A request to enqueue a job for a registered report.</summary>
 public sealed class ReportJobRequest

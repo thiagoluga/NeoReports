@@ -31,6 +31,8 @@ public sealed class ReportBuilder<TRow>
     private int _pageSize = 1000;
     private ScheduleConfig? _schedule;
     private string? _sourceRef;
+    private bool _trackProgress = true;
+    private ISourceRowCounter? _rowCounter;
 
     /// <summary>
     /// True when <see cref="From(IBatchSource{TRow})"/> was given a named by-name source
@@ -55,6 +57,7 @@ public sealed class ReportBuilder<TRow>
         ArgumentNullException.ThrowIfNull(source);
         _batchSource = source;
         _streamingSource = null;
+        _rowCounter = source as ISourceRowCounter;
         if (source is INamedSourceResolver named)
         {
             RequiresSourceRegistry = true;
@@ -73,6 +76,7 @@ public sealed class ReportBuilder<TRow>
         ArgumentNullException.ThrowIfNull(map);
         _batchSource = new MappingBatchSource<TSource, TRow>(source, map);
         _streamingSource = null;
+        _rowCounter = _batchSource as ISourceRowCounter;
         return this;
     }
 
@@ -83,6 +87,7 @@ public sealed class ReportBuilder<TRow>
         ArgumentNullException.ThrowIfNull(source);
         _streamingSource = source;
         _batchSource = null;
+        _rowCounter = source as ISourceRowCounter;
         return this;
     }
 
@@ -96,6 +101,7 @@ public sealed class ReportBuilder<TRow>
         ArgumentNullException.ThrowIfNull(map);
         _streamingSource = new MappingStreamingSource<TSource, TRow>(source, map);
         _batchSource = null;
+        _rowCounter = _streamingSource as ISourceRowCounter;
         return this;
     }
 
@@ -105,6 +111,19 @@ public sealed class ReportBuilder<TRow>
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1);
         _pageSize = pageSize;
+        return this;
+    }
+
+    /// <summary>
+    /// Enables or disables progress tracking (ADR D47). When enabled (the default) and the source
+    /// can count itself (<c>ISourceRowCounter</c>), the engine counts the source's total rows once
+    /// before the run and reports a real completion percentage. When disabled, or when the source
+    /// cannot count, progress is indeterminate (counters remain exact either way).
+    /// </summary>
+    /// <param name="enabled">Whether to count the source before running. Default true.</param>
+    public ReportBuilder<TRow> TrackProgress(bool enabled = true)
+    {
+        _trackProgress = enabled;
         return this;
     }
 
@@ -307,6 +326,9 @@ public sealed class ReportBuilder<TRow>
             return new TypedBatchReader<TRow>(batchSource, streamingSource, execution, pageSize, projections, sectionedProjections);
         }
 
+        Func<ReportExecutionContext, IServiceProvider, CancellationToken, Task<long?>>? countRows =
+            BuildRowCountFactory(_trackProgress ? _rowCounter : null);
+
         return new CompiledReport(
             _name,
             reportSchema,
@@ -320,7 +342,9 @@ public sealed class ReportBuilder<TRow>
             _failure.Build(),
             _failure.AbortThresholds,
             _schedule,
-            _sourceRef);
+            _sourceRef,
+            _trackProgress,
+            countRows);
     }
 
     private (ReportSchema Schema, OutputProjection<TRow> Projection) ResolveView(OutputView<TRow>? view, string what)
@@ -339,6 +363,26 @@ public sealed class ReportBuilder<TRow>
         return (
             new ReportSchema(columns.Select(c => c.Column).ToList()),
             new OutputProjection<TRow>(filters, columns.Select(c => c.Getter).ToArray()));
+    }
+
+    /// <summary>
+    /// Composes the row-count delegate <see cref="CompiledReport"/> runs (ADR D47), or <c>null</c>
+    /// when tracking is disabled or the source doesn't implement <see cref="ISourceRowCounter"/>.
+    /// </summary>
+    private static Func<ReportExecutionContext, IServiceProvider, CancellationToken, Task<long?>>? BuildRowCountFactory(
+        ISourceRowCounter? rowCounter)
+    {
+        if (rowCounter is null)
+            return null;
+
+        return (execution, services, cancellationToken) =>
+        {
+            // Defensive: ReaderFactory (which attaches services to a by-name source) normally runs
+            // before the runner counts, but a named counter attached here too costs nothing.
+            if (rowCounter is INamedSourceResolver named)
+                named.AttachServices(services);
+            return rowCounter.CountAsync(execution, cancellationToken);
+        };
     }
 
     /// <summary>An output plus its optional per-output view (own filters/columns).</summary>

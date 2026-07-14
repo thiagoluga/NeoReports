@@ -54,6 +54,32 @@ public sealed class InMemorySource : IBatchSource<Sale>
     }
 }
 
+/// <summary>
+/// <see cref="InMemorySource"/> plus <see cref="NeoReports.Core.Sources.ISourceRowCounter"/> (ADR
+/// D47), for API tests that need to prove a real, non-null <c>totalRecords</c> round-trips through
+/// JSON — <see cref="InMemorySource"/> itself deliberately can't count, which exercises the other
+/// (degrade-to-null) half of the same tests.
+/// </summary>
+public sealed class CountingInMemorySource : IBatchSource<Sale>, NeoReports.Core.Sources.ISourceRowCounter
+{
+    private readonly InMemorySource _inner;
+    private readonly long _rows;
+
+    public CountingInMemorySource(long rows, int pageSize)
+    {
+        _inner = new InMemorySource(rows, pageSize);
+        _rows = rows;
+    }
+
+    public ReportSchema Schema => _inner.Schema;
+
+    public Task<BatchResult<Sale>> ReadBatchAsync(BatchContext context, CancellationToken cancellationToken) =>
+        _inner.ReadBatchAsync(context, cancellationToken);
+
+    public Task<long?> CountAsync(ReportExecutionContext execution, CancellationToken cancellationToken) =>
+        Task.FromResult<long?>(_rows);
+}
+
 /// <summary>Builds a TestServer host wired with NeoReports endpoints, in-memory jobs, and artifacts.</summary>
 public static class TestApp
 {

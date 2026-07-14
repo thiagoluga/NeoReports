@@ -59,7 +59,9 @@ public sealed class SqlNamedSourceBuilder
 
         var schema = new ReportSchema(new[] { new ReportColumn(keyColumn, ColumnType.String) });
 
-        return new AdoNamedKeysetSource<T>(_sourceName, _sql, keyColumn, pageSize, schema, cs => new SqlConnection(cs));
+        return new AdoNamedKeysetSource<T>(
+            _sourceName, _sql, keyColumn, pageSize, schema, cs => new SqlConnection(cs),
+            new AdoProviderOptions { CountInnerSuffix = SqlServerCount.InnerSuffix });
     }
 }
 
