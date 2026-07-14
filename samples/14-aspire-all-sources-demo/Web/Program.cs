@@ -79,6 +79,8 @@ const string Culture = "en-US"; // shared across every currency-formatted column
 const string MongoDatabaseName = "widetransactions";
 const string MongoCollectionName = "wide_transactions";
 const int SeedRowCount = 15_000; // smaller than the 500,000 single-source samples use — this demo seeds four databases at once
+const string LocalDestinationTemplate = "./out/{name}-{date:yyyy-MM-dd}.{ext}"; // shared across all four report registrations below
+const string ConnectionStringPropertyKey = "connectionString"; // shared across all four named-source registrations below
 
 // The exact column list every provider-specific SELECT below shares.
 const string SelectList =
@@ -103,7 +105,7 @@ builder.Services.AddReport<WideTransaction>("wide-transactions-postgres", b => b
     .Columns(WideTransactionColumns())
     .To(Csv(o => o.Delimiter(',')))
     .To(Xlsx())
-    .UploadTo(Destination.Local("./out/{name}-{date:yyyy-MM-dd}.{ext}")));
+    .UploadTo(Destination.Local(LocalDestinationTemplate)));
 
 builder.Services.AddReport<WideTransaction>("wide-transactions-mysql", b => b
     .From(MySqlSource.MySql(
@@ -114,7 +116,7 @@ builder.Services.AddReport<WideTransaction>("wide-transactions-mysql", b => b
     .Columns(WideTransactionColumns())
     .To(Csv(o => o.Delimiter(',')))
     .To(Xlsx())
-    .UploadTo(Destination.Local("./out/{name}-{date:yyyy-MM-dd}.{ext}")));
+    .UploadTo(Destination.Local(LocalDestinationTemplate)));
 
 builder.Services.AddReport<WideTransaction>("wide-transactions-sqlserver", b => b
     .From(SqlSource.Sql(
@@ -125,7 +127,7 @@ builder.Services.AddReport<WideTransaction>("wide-transactions-sqlserver", b => 
     .Columns(WideTransactionColumns())
     .To(Csv(o => o.Delimiter(',')))
     .To(Xlsx())
-    .UploadTo(Destination.Local("./out/{name}-{date:yyyy-MM-dd}.{ext}")));
+    .UploadTo(Destination.Local(LocalDestinationTemplate)));
 
 builder.Services.AddReport<WideTransaction>("wide-transactions-mongodb", b => b
     .From(MongoSource.MongoDb(mongoConnectionString, MongoDatabaseName, MongoCollectionName)
@@ -133,7 +135,7 @@ builder.Services.AddReport<WideTransaction>("wide-transactions-mongodb", b => b
     .Columns(WideTransactionColumns())
     .To(Csv(o => o.Delimiter(',')))
     .To(Xlsx())
-    .UploadTo(Destination.Local("./out/{name}-{date:yyyy-MM-dd}.{ext}")));
+    .UploadTo(Destination.Local(LocalDestinationTemplate)));
 
 // Registers a config-source provider for every source type this demo has — GET /api/capabilities
 // is never empty, so the UI's "Demo mode" fallback never shows and the Builder wizard's "Save"
@@ -250,24 +252,24 @@ static async Task RegisterNamedSourcesAsync(
 
     await registry.SaveAsync(new SourceDefinition(
         "postgres-demo", "postgres",
-        new Dictionary<string, object?> { ["connectionString"] = pgConnectionString },
+        new Dictionary<string, object?> { [ConnectionStringPropertyKey] = pgConnectionString },
         "Aspire-provisioned PostgreSQL — wide_transactions table"), CancellationToken.None);
 
     await registry.SaveAsync(new SourceDefinition(
         "mysql-demo", "mysql",
-        new Dictionary<string, object?> { ["connectionString"] = mysqlConnectionString },
+        new Dictionary<string, object?> { [ConnectionStringPropertyKey] = mysqlConnectionString },
         "Aspire-provisioned MySQL — wide_transactions table"), CancellationToken.None);
 
     await registry.SaveAsync(new SourceDefinition(
         "sqlserver-demo", "sql",
-        new Dictionary<string, object?> { ["connectionString"] = sqlServerConnectionString },
+        new Dictionary<string, object?> { [ConnectionStringPropertyKey] = sqlServerConnectionString },
         "Aspire-provisioned SQL Server — wide_transactions table"), CancellationToken.None);
 
     await registry.SaveAsync(new SourceDefinition(
         "mongodb-demo", "mongodb",
         new Dictionary<string, object?>
         {
-            ["connectionString"] = mongoConnectionString,
+            [ConnectionStringPropertyKey] = mongoConnectionString,
             ["database"] = MongoDatabaseName,
             ["collection"] = MongoCollectionName,
         },
