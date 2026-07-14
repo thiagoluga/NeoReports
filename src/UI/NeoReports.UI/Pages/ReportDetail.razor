@@ -28,6 +28,12 @@
             <p class="sub" style="max-width:480px;margin-top:8px;line-height:1.5">@Description</p>
         </div>
         <div style="display:flex;gap:8px;align-self:flex-start;margin-top:6px">
+            @* Only offered for dynamic (config-origin) reports — code-registered ones can't be
+               deleted either, so there's no way to replace them (no PUT /api/reports/{name}). *@
+            @if (_detail.Deletable)
+            {
+                <Button Variant="outline" Icon="pencil" OnClick="@(() => Nav.NavigateTo($"builder?edit={Uri.EscapeDataString(_detail.Name)}"))">Edit</Button>
+            }
             <Button Variant="outline" Icon="eye" OnClick="@(() => Nav.NavigateTo($"reports/{_detail.Name}/preview"))">Preview</Button>
             <Button Variant="primary" Icon="player-play" OnClick="RunNowAsync">Run now</Button>
             @if (_detail.Deletable)

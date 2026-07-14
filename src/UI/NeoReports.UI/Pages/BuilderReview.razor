@@ -10,10 +10,17 @@
     <div class="page-head">
         <div class="title">
             <h1>Review and save</h1>
-            <div class="sub">Confirm the configuration · step 5 of 5</div>
+            <div class="sub">@(Wizard.IsEditing ? $"Editing \"{Wizard.EditingOriginalName}\" · step 5 of 5" : "Confirm the configuration · step 5 of 5")</div>
         </div>
     </div>
 
+    @if (Wizard.IsEditing)
+    {
+        <Banner Variant="info" Icon="info-circle">
+            <b>Saving replaces "@Wizard.EditingOriginalName".</b>
+            <span style="font-size:12px">There is no in-place update — saving deletes the current report and re-creates it under this configuration. Run history stays intact (jobs aren't tied to the report record).</span>
+        </Banner>
+    }
     @if (!Wizard.EngineAvailable)
     {
         <Banner Variant="info" Icon="info-circle">
@@ -44,7 +51,14 @@
        card; editable again here for convenience before saving. *@
     <Card Title="Report name">
         <div class="grid-2">
-            <div class="field"><span class="label-sm">Name</span><span class="input mono"><input class="mono" @bind="Wizard.ReportName" @bind:event="oninput" placeholder="monthly-sales" style="width:100%" /></span></div>
+            <div class="field">
+                <span class="label-sm">Name</span>
+                <span class="input mono"><input class="mono" @bind="Wizard.ReportName" @bind:event="oninput" placeholder="monthly-sales" readonly="@Wizard.IsEditing" style="width:100%" /></span>
+                @if (Wizard.IsEditing)
+                {
+                    <span class="mono muted" style="font-size:11px">locked while editing — delete and re-create separately to rename</span>
+                }
+            </div>
             <div class="field"><span class="label-sm">URL identifier</span><span class="input"><span class="mono muted" style="font-size:11px">/reports/</span><input class="mono" value="@Wizard.ReportName" readonly style="flex:1" /></span></div>
         </div>
     </Card>
@@ -92,7 +106,7 @@
         _saveError = null;
         try
         {
-            ApiCreateResult result = await Api.TryCreateReportAsync(BuilderConfigMapper.ToConfigJson(Wizard));
+            ApiCreateResult result = await PersistAsync();
             if (result.Outcome == ApiCreateOutcome.Created)
                 Nav.NavigateTo($"reports/{result.Name ?? Wizard.ReportName}");
             else
@@ -110,7 +124,7 @@
         _saveError = null;
         try
         {
-            ApiCreateResult created = await Api.TryCreateReportAsync(BuilderConfigMapper.ToConfigJson(Wizard));
+            ApiCreateResult created = await PersistAsync();
             if (created.Outcome != ApiCreateOutcome.Created)
             {
                 _saveError = created.Error ?? DescribeFailure(created.Outcome);
@@ -131,6 +145,46 @@
         {
             _running = false;
         }
+    }
+
+    /// <summary>
+    /// Creates a new report, or — in edit mode — replaces the one being edited. There is no
+    /// <c>PUT /api/reports/{name}</c>, only create + delete, so "editing" is validate (to keep a
+    /// bad config from costing the user their existing report; <c>NameTaken</c> is expected here,
+    /// since it's the report's own current name, and intentionally ignored) → delete the original →
+    /// create the replacement.
+    /// </summary>
+    private async Task<ApiCreateResult> PersistAsync()
+    {
+        string configJson = BuilderConfigMapper.ToConfigJson(Wizard);
+        if (!Wizard.IsEditing)
+            return await Api.TryCreateReportAsync(configJson);
+
+        ApiValidationResult? validation = await Api.TryValidateReportAsync(configJson);
+        if (validation is null)
+            return new ApiCreateResult(ApiCreateOutcome.Unavailable, null, null);
+        if (!validation.Valid)
+            return new ApiCreateResult(ApiCreateOutcome.Invalid, null, validation.Error);
+
+        bool deleted = await Api.TryDeleteReportAsync(Wizard.EditingOriginalName);
+        if (!deleted)
+            return new ApiCreateResult(ApiCreateOutcome.Unavailable, null,
+                $"Could not remove the existing \"{Wizard.EditingOriginalName}\" report to replace it. Nothing was changed.");
+
+        ApiCreateResult created = await Api.TryCreateReportAsync(configJson);
+        if (created.Outcome != ApiCreateOutcome.Created)
+        {
+            // The old report is already gone by this point — the earlier validate call was
+            // specifically meant to make this rare, but say so plainly rather than implying
+            // nothing happened.
+            return created with
+            {
+                Error = $"\"{Wizard.EditingOriginalName}\" was removed but the replacement could not be created: " +
+                        (created.Error ?? DescribeFailure(created.Outcome)) + " Recreate it from the Builder.",
+            };
+        }
+
+        return created;
     }
 
     private static string DescribeFailure(ApiCreateOutcome outcome) => outcome switch
