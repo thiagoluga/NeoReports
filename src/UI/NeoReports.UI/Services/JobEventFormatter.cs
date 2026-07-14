@@ -99,8 +99,7 @@ public static class JobEventFormatter
 
         return events
             .Select(e => TryParseDatum(e, key))
-            .Where(value => value is not null)
-            .LastOrDefault();
+            .LastOrDefault(value => value is not null);
     }
 
     private static long? TryParseDatum(ApiJobEvent e, string key) =>
