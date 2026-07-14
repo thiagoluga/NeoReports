@@ -1,0 +1,11 @@
+@* PageLoading — spinner shown during a page's first async fetch, before it's known whether the
+   resource exists. Blazor Server renders a component synchronously once, before an awaited
+   OnParametersSetAsync/OnInitializedAsync completes; gating a page directly on "detail is null"
+   (found during a 2026-07 UI audit on ReportPreview.razor) makes that first render show a "not
+   found" EmptyState even for a report/job that loads fine a moment later.
+   Usage: @if (_loading) { <PageLoading /> } else if (_detail is null) { <EmptyState ... /> } else { ... } *@
+
+<div class="empty-state">
+    <i class="ti ti-loader-2" style="font-size:28px;color:var(--fg-faint);animation:spin 0.9s linear infinite"></i>
+    <div class="es-title">Loading…</div>
+</div>
