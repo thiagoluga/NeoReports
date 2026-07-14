@@ -97,15 +97,14 @@ public static class JobEventFormatter
     {
         ArgumentNullException.ThrowIfNull(events);
 
-        long? latest = null;
-        foreach (ApiJobEvent e in events)
-        {
-            if (e.Data is not null && e.Data.TryGetValue(key, out var raw) && long.TryParse(raw, out var value))
-                latest = value;
-        }
-
-        return latest;
+        return events
+            .Select(e => TryParseDatum(e, key))
+            .Where(value => value is not null)
+            .LastOrDefault();
     }
+
+    private static long? TryParseDatum(ApiJobEvent e, string key) =>
+        e.Data is not null && e.Data.TryGetValue(key, out var raw) && long.TryParse(raw, out var value) ? value : null;
 
     private static string Get(IReadOnlyDictionary<string, string>? data, string key) =>
         data is not null && data.TryGetValue(key, out var value) ? value : "?";
