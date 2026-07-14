@@ -3,6 +3,11 @@
 @inject NavigationManager Nav
 @inject INeoReportsApiClient Api
 
+@if (_detailLoading)
+{
+    <div class="page"><PageLoading /></div>
+    return;
+}
 @if (_detail is null)
 {
     <div class="page">
@@ -138,6 +143,7 @@
         { "Equals", "NotEquals", "GreaterThan", "GreaterThanOrEqual", "LessThan", "LessThanOrEqual", "Contains", "StartsWith" };
     private static readonly int[] PageSizes = { 10, 25, 50, 100, 200 };
 
+    private bool _detailLoading = true;
     private ApiReportDetail? _detail;
     private readonly List<FilterRow> _filters = new();
     private IReadOnlyList<object?[]> _rows = Array.Empty<object?[]>();
@@ -163,7 +169,15 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        _detail = await Api.TryGetReportDetailAsync(Name);
+        _detailLoading = true;
+        try
+        {
+            _detail = await Api.TryGetReportDetailAsync(Name);
+        }
+        finally
+        {
+            _detailLoading = false;
+        }
         _filters.Clear();
         _filterNote = null;
         _activeFilters = false;

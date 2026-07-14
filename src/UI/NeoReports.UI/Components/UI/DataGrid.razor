@@ -8,6 +8,7 @@
        <EmptyContent>Trigger a report to see runs here.</EmptyContent>
      </DataGrid> *@
 
+<div class="tbl-wrap">
 <table class="tbl @Class">
     <thead>@Head</thead>
     <tbody>
@@ -47,6 +48,7 @@
         }
     </tbody>
 </table>
+</div>
 
 @code {
     [Parameter] public RenderFragment? Head { get; set; }

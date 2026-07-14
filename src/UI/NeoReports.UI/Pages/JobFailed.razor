@@ -5,6 +5,11 @@
 @inject NavigationManager Nav
 @inject INeoReportsApiClient Api
 
+@if (_loading)
+{
+    <div class="page"><PageLoading /></div>
+    return;
+}
 @if (_job is null)
 {
     <div class="page">
@@ -141,6 +146,7 @@
 
 @code {
     [Parameter] public string? Id { get; set; }
+    private bool _loading;
     private ApiJobView? _job;
     private IReadOnlyList<ApiJobEvent> _events = Array.Empty<ApiJobEvent>();
     private IReadOnlyList<ApiJobEvent> _retryEvents = Array.Empty<ApiJobEvent>();
@@ -160,7 +166,15 @@
         if (string.IsNullOrEmpty(Id))
             return;
 
-        _job = await Api.TryGetJobAsync(Id);
+        _loading = true;
+        try
+        {
+            _job = await Api.TryGetJobAsync(Id);
+        }
+        finally
+        {
+            _loading = false;
+        }
         if (_job is not null)
         {
             var events = await Api.TryGetJobEventsAsync(Id);

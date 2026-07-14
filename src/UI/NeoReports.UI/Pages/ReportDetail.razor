@@ -4,6 +4,11 @@
 @inject NavigationManager Nav
 @inject INeoReportsApiClient Api
 
+@if (_loading)
+{
+    <div class="page"><PageLoading /></div>
+    return;
+}
 @if (_detail is null)
 {
     <div class="page">
@@ -205,6 +210,7 @@
 
 @code {
     [Parameter] public string Slug { get; set; } = "";
+    private bool _loading = true;
     private ApiReportDetail? _detail;
     private bool _deleting;
     private bool _confirmingDelete;
@@ -358,7 +364,15 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        _detail = await Api.TryGetReportDetailAsync(Slug);
+        _loading = true;
+        try
+        {
+            _detail = await Api.TryGetReportDetailAsync(Slug);
+        }
+        finally
+        {
+            _loading = false;
+        }
         _metrics = ReportMetrics.Unavailable;
         _history = Array.Empty<HistoryRow>();
         _capabilities = await Api.TryGetCapabilitiesAsync();

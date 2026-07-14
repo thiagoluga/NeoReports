@@ -213,6 +213,11 @@
 .muted { color: var(--fg-muted); }
 
 /* ---------- Table ---------- */
+/* Found during a 2026-07 UI audit: a report with enough columns (e.g. a "wide" seed report) made
+   the bare <table> overflow past its Card/page, breaking the whole page's layout — the existing
+   overflow-x rule only applied inside the mobile media query below, never on desktop. The table
+   itself now scrolls within this wrapper on every viewport, while the rest of the page stays put. */
+.tbl-wrap { overflow-x: auto; }
 .tbl { width: 100%; border-collapse: collapse; }
 .tbl th, .tbl td { padding: 10px 12px; text-align: left; font-size: 13px; vertical-align: middle; }
 .tbl th { font-size: 11px; font-weight: 500; color: var(--fg-muted); letter-spacing: 0.04em; text-transform: uppercase; background: var(--bg2); }
@@ -1351,9 +1356,9 @@ body {
   /* Report/source card body grids stack to a single column. */
   .report-card .rc-body, .src-card .sc-body { grid-template-columns: 1fr; }
 
-  /* Tables scroll horizontally instead of squeezing columns; mono/numeric
-     cells stay on one line so they scroll rather than wrap. */
-  .tbl, .preview-tbl { display: block; overflow-x: auto; }
+  /* .tbl's own horizontal scroll is now handled by .tbl-wrap on every viewport, not just here —
+     mono/numeric cells still need to stay on one line so they scroll rather than wrap. */
+  .preview-tbl { display: block; overflow-x: auto; }
   .tbl td.mono, .tbl th.mono { white-space: nowrap; }
 
   /* Minimum touch target size. */
