@@ -888,3 +888,24 @@ engine-side work before its UI.
   real, clamped percentage from polled events (`JobEventFormatter.LatestRecordsRead`/
   `LatestTotalRecords`), falling back to the indeterminate bar when no total is known (tracking off,
   unsupported source, or the count failed).
+
+## Epic J — Combined all-sources Aspire demo (D48)
+
+Requested directly by the maintainer (2026-07): a single demo with every source type and every
+feature working end to end, with no "Demo mode" fallback anywhere in the flow. An intentional,
+additive exception to D46's "one provider per sample" rule — samples 10-13 are untouched.
+
+- [x] **J1 — `samples/14-aspire-all-sources-demo`.** One `AppHost` provisioning all four databases
+  (Postgres/MySQL/SQL Server/MongoDB, each `WithDataVolume()` + a uniquely-named `AddDatabase(...)`
+  to avoid connection-string-key collisions in one host) and one `Web` project mounting the full
+  UI. `Web/Program.cs` calls all four `Add<Provider>ConfigSource()` so `GET /api/capabilities` is
+  never empty (kills "Demo mode" for good); `AddSourceRegistry()` pre-registers all four databases
+  as named sources (`postgres-demo`/`mysql-demo`/`sqlserver-demo`/`mongodb-demo`) so the Builder
+  wizard can build new reports against any of them by name; `AddDynamicReports()`/`AddScheduling()`
+  registered so both work; one ready-to-run typed report per database
+  (`wide-transactions-{postgres,mysql,sqlserver,mongodb}`) ships pre-registered. Seeds all four in
+  parallel at 15,000 rows each (smaller than the single-sample 500,000 default, since this sample
+  seeds four databases at once). Verified end to end in a real browser: no "Demo mode" banner on
+  the Builder, all four named sources listed on the Sources screen, `wide-transactions-mongodb` run
+  to completion (100%, 15,000 records, CSV + XLSX artifacts generated) with the real D47 progress
+  percentage live on the running-job page.

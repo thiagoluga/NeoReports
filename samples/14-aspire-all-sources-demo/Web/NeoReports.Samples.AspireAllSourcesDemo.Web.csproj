@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\UI\NeoReports.UI\NeoReports.UI.csproj" />
+    <ProjectReference Include="..\..\..\src\NeoReports.Core\NeoReports.Core.csproj" />
+    <ProjectReference Include="..\..\..\src\Integrations\NeoReports.AspNetCore\NeoReports.AspNetCore.csproj" />
+    <ProjectReference Include="..\..\..\src\Jobs\NeoReports.Jobs\NeoReports.Jobs.csproj" />
+    <ProjectReference Include="..\..\..\src\Sources\NeoReports.Sources.Postgres\NeoReports.Sources.Postgres.csproj" />
+    <ProjectReference Include="..\..\..\src\Sources\NeoReports.Sources.MySql\NeoReports.Sources.MySql.csproj" />
+    <ProjectReference Include="..\..\..\src\Sources\NeoReports.Sources.Sql\NeoReports.Sources.Sql.csproj" />
+    <ProjectReference Include="..\..\..\src\Sources\NeoReports.Sources.MongoDb\NeoReports.Sources.MongoDb.csproj" />
+    <ProjectReference Include="..\..\..\src\Formats\NeoReports.Formats.Csv\NeoReports.Formats.Csv.csproj" />
+    <ProjectReference Include="..\..\..\src\Formats\NeoReports.Formats.Xlsx\NeoReports.Formats.Xlsx.csproj" />
+    <ProjectReference Include="..\..\..\src\Destinations\NeoReports.Destinations.Local\NeoReports.Destinations.Local.csproj" />
+    <ProjectReference Include="..\..\NeoReports.Samples.Shared\NeoReports.Samples.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="MySqlConnector" />
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="MongoDB.Driver" />
+  </ItemGroup>
+
+</Project>

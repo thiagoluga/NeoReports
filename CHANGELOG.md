@@ -9,6 +9,18 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 ## [Unreleased]
 
 ### Added
+- **`samples/14-aspire-all-sources-demo` — combined all-sources Aspire demo (D48).** A new,
+  additive sample orchestrating all four database types (PostgreSQL, MySQL, SQL Server, MongoDB)
+  from one Aspire `AppHost` and mounting one `NeoReports.UI` in front of all of them —
+  `dotnet run --project samples/14-aspire-all-sources-demo/AppHost`. Registers a config-source
+  provider for every type (`AddSqlConfigSource`/`AddPostgresConfigSource`/`AddMySqlConfigSource`/
+  `AddMongoDbConfigSource`), so `GET /api/capabilities` is never empty and the UI's "Demo mode"
+  banner never appears; pre-registers all four databases as named sources in the Source Registry
+  (D42) so the Builder wizard can build new reports against any of them by name; registers dynamic
+  reports (`AddDynamicReports`) and scheduling (`AddScheduling`) so both work end to end; ships one
+  ready-to-run typed report per database (`wide-transactions-{postgres,mysql,sqlserver,mongodb}`).
+  Seeds all four databases in parallel at 15,000 rows each. The four existing single-provider
+  samples (`10`-`13`) are unchanged.
 - **Real progress percentage (D47).** Reports can now report a real completion percentage instead
   of the previous decorative animation: `ReportConfig.TrackProgress` / typed
   `ReportBuilder<T>.TrackProgress(bool)` — **enabled by default** — makes the engine count the
