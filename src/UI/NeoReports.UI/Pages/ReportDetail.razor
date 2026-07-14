@@ -28,7 +28,6 @@
             <p class="sub" style="max-width:480px;margin-top:8px;line-height:1.5">@Description</p>
         </div>
         <div style="display:flex;gap:8px;align-self:flex-start;margin-top:6px">
-            <Button Variant="outline" Icon="pencil" OnClick="@(() => Nav.NavigateTo("builder"))">Edit</Button>
             <Button Variant="outline" Icon="eye" OnClick="@(() => Nav.NavigateTo($"reports/{_detail.Name}/preview"))">Preview</Button>
             <Button Variant="primary" Icon="player-play" OnClick="RunNowAsync">Run now</Button>
             @if (_detail.Deletable)
@@ -184,7 +183,7 @@
                 {
                     <tr class="clickable" @onclick="@(() => Nav.NavigateTo(h.Route))">
                         <td class="mono">@h.When</td>
-                        <td><JobStatusBadge Status="h.Status" LabelOverride="@(h.Status == JobStatus.Ok ? "Completed" : null)" /></td>
+                        <td><JobStatusBadge Status="h.Status" LabelOverride="@h.StatusLabel" /></td>
                         <td class="mono">@h.Duration</td>
                         <td class="mono">@h.Rows</td>
                         <td>@h.By</td>
@@ -329,29 +328,18 @@
         }
     }
 
-    private sealed record HistoryRow(string When, JobStatus Status, string Duration, string Rows, string By, string Route);
+    private sealed record HistoryRow(string When, JobStatus Status, string? StatusLabel, string Duration, string Rows, string By, string Route);
 
     private IReadOnlyList<HistoryRow> _history = Array.Empty<HistoryRow>();
 
     private static HistoryRow ToHistoryRow(ApiJobView j) => new(
         When: j.CreatedAt.ToLocalTime().ToString("MMM d · HH:mm"),
-        Status: j.Status switch
-        {
-            "Completed" => JobStatus.Ok,
-            "Failed" => JobStatus.Failed,
-            "Running" or "Retrying" => JobStatus.Running,
-            "Paused" => JobStatus.Paused,
-            _ => JobStatus.Queued,
-        },
+        Status: JobRowFormatter.MapStatus(j.Status),
+        StatusLabel: JobRowFormatter.StatusLabelFor(j.Status),
         Duration: FormatDuration(j.StartedAt, j.CompletedAt),
         Rows: j.Stats.RecordsWritten > 0 ? j.Stats.RecordsWritten.ToString("N0") : "—",
         By: "—",
-        Route: j.Status switch
-        {
-            "Completed" => $"jobs/completed/{j.Id}",
-            "Failed" => $"jobs/failed/{j.Id}",
-            _ => $"jobs/{j.Id}",
-        });
+        Route: JobRowFormatter.MapRoute(j.Id, j.Status));
 
     private static string FormatDuration(DateTimeOffset? started, DateTimeOffset? completed)
     {

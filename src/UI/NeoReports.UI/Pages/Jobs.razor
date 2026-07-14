@@ -1,0 +1,99 @@
+@page "/jobs"
+@using NeoReports.UI.Models
+@using NeoReports.UI.Services
+@inject NavigationManager Nav
+@inject INeoReportsApiClient Api
+
+<div class="page">
+    <div class="page-head">
+        <div class="title">
+            <h1>Jobs</h1>
+            <div class="sub">Every run, newest first · @_jobs.Count shown</div>
+        </div>
+        <select class="input mono" style="min-width:160px" value="@_statusFilter" @onchange="OnStatusChanged">
+            <option value="">All statuses</option>
+            <option value="Running">Running</option>
+            <option value="Retrying">Retrying</option>
+            <option value="Queued">Queued</option>
+            <option value="Completed">Completed</option>
+            <option value="Failed">Failed</option>
+            <option value="Cancelled">Cancelled</option>
+        </select>
+    </div>
+
+    <Card Flat="true">
+        @if (!_isLive)
+        {
+            <EmptyState Icon="report-off" Title="Engine unreachable">
+                <ChildContent>Jobs will show up here once the engine API is reachable.</ChildContent>
+            </EmptyState>
+        }
+        else if (_jobs.Count == 0)
+        {
+            <EmptyState Icon="report-off" Title="No jobs match this filter">
+                <ChildContent>Trigger a report from the builder or the reports list to see it here.</ChildContent>
+            </EmptyState>
+        }
+        else
+        {
+            <DataGrid Columns="5" Empty="false">
+                <Head>
+                    <tr>
+                        <th>Report</th>
+                        <th>Status</th>
+                        <th>Progress</th>
+                        <th>Started</th>
+                        <th>Duration</th>
+                    </tr>
+                </Head>
+                <Body>
+                    @foreach (var r in _jobs)
+                    {
+                        <tr class="clickable" @onclick="@(() => Nav.NavigateTo(r.Route))">
+                            <td>
+                                <div style="display:flex;align-items:center;gap:10px">
+                                    <CatTile Kind="gray" Icon="report" Sm="true" />
+                                    <div style="font-weight:500">@r.ReportName</div>
+                                </div>
+                            </td>
+                            <td><JobStatusBadge Status="r.Status" LabelOverride="@r.StatusLabel" /></td>
+                            <td><span class="muted" style="font-size:12px">@r.ProgressLabel</span></td>
+                            <td class="mono">@r.Started</td>
+                            <td class="mono">@r.Duration</td>
+                        </tr>
+                    }
+                </Body>
+            </DataGrid>
+        }
+    </Card>
+</div>
+
+@code {
+    private bool _isLive;
+    private string _statusFilter = "";
+    private IReadOnlyList<JobRowFormatter.Row> _jobs = Array.Empty<JobRowFormatter.Row>();
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task OnStatusChanged(ChangeEventArgs e)
+    {
+        _statusFilter = e.Value?.ToString() ?? "";
+        await LoadAsync();
+    }
+
+    // Guards against a slower, now-stale response overwriting a newer one when the filter is
+    // changed again before the first request returns.
+    private int _loadSequence;
+
+    private async Task LoadAsync()
+    {
+        var sequence = ++_loadSequence;
+        IReadOnlyList<ApiJobView>? jobs = await Api.TryListJobsAsync(
+            status: string.IsNullOrEmpty(_statusFilter) ? null : _statusFilter, limit: 200);
+        if (sequence != _loadSequence)
+            return;
+
+        _isLive = jobs is not null;
+        _jobs = (jobs ?? Array.Empty<ApiJobView>()).Select(JobRowFormatter.ToRow).ToArray();
+    }
+}
