@@ -919,3 +919,24 @@ the OSS repo (a distribution/business call, not an engineering one).
 - [ ] **L1 — Get the maintainer's decision** on whether a sample may reference a `.Pro` project, then
   record it as a proper DECISIONS.md entry (superseding D50's "open question" status) before any
   sample actually does so.
+
+## Epic N — Report detail page: show all real detail (D52) — not started
+
+Requested directly by the maintainer (2026-07-15), from real use of the D48 demo: `ReportDetail.razor`
+is missing real fields it should show — the source, for a start. Full detail and scope split
+(pure-UI vs. needs-a-small-API-field vs. needs-new-engine-plumbing) in D52.
+
+- [ ] **N1 — Render what's already returned (pure UI, no API change).** `ReportDetail.razor` doesn't
+  show `PageSize`, `FailureStrategy`, or the retry/abort-threshold fields at all, despite
+  `GET /reports/{name}` already returning every one of them. Reuse the existing `ResilienceFormatter`
+  helper (already used on `JobCompleted.razor`'s "Configuration" card) rather than reinventing it.
+- [ ] **N2 — Expose `CompiledReport.SourceRef` through the API.** Already captured by the compiler
+  for `Ref`-based dynamic reports, never leaves `GetReportDetailAsync` today. Add it to
+  `ReportDetailView`/`ApiReportDetail`, then show it on `ReportDetail.razor` (e.g. next to the
+  existing `origin: code`/`origin: config` chip).
+- [ ] **N3 — Design: source-type label for code-first and inline-type reports** (bigger, separate
+  from N1/N2). No source-type string is tracked on `CompiledReport` at all for typed reports or
+  dynamic reports with an inline (non-`ref`) source — sources are fully type-erased at compile time.
+  Showing "reads from Postgres" for those cases needs `CompiledReport` to carry a declared
+  source-type string through compilation — real engine plumbing, needs its own design pass on
+  whether the surface is worth adding for every future source type before implementing.
