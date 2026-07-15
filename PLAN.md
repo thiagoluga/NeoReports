@@ -888,3 +888,34 @@ engine-side work before its UI.
   real, clamped percentage from polled events (`JobEventFormatter.LatestRecordsRead`/
   `LatestTotalRecords`), falling back to the indeterminate bar when no total is known (tracking off,
   unsupported source, or the count failed).
+
+## Epic K — Interactive source explorer + visual query builder (Pro, D49) — not started
+
+Requested directly by the maintainer (2026-07-15). Recorded here as the next thing to pick up, but
+**no code until the follow-up ADR D49 calls for is written and settled** — this is exactly the
+feature D36 flagged as needing its own ADR before any code, back when the mocked
+`SourceExplorer.razor` was removed.
+
+- [ ] **K1 — Design ADR.** Before any implementation: settle how far schema introspection reaches
+  per provider (system catalogs/`information_schema`, never the report's own already-declared SQL),
+  the row-preview cap (maintainer asked for "top 50") and any column masking, how a
+  visually-composed query (including inner join across tables) gets validated/parameterized before
+  becoming a report's persisted SQL, and how this relates to D45's existing preview mechanism and
+  D42's named-source model. Likely Pro-tier (D49), alongside `NeoReports.Sources.Join.Pro`.
+- [ ] **K2 — Implementation** (blocked on K1). In the Builder wizard, after selecting a source: an
+  interactive view of every table/column in the underlying database (not just the report's own
+  declared columns), a top-50-row preview per table, a way to compose the actual report query
+  visually — including inner join — and a live preview of the resulting report output.
+
+## Epic L — Investigate: Pro packages in samples/demos (D50) — open question, not started
+
+Requested directly by the maintainer (2026-07-15): can `NeoReports.Sources.Join.Pro`/
+`NeoReports.Xlsx.Pro` be wired into a sample (e.g. the D48 all-sources demo) to showcase Pro
+capabilities in a demo? Per D49/D50: **not a coding blocker** — no runtime license enforcement
+exists (D29/D30), so a `ProjectReference` to either Pro project would compile and run today. What's
+unresolved is whether the maintainer *wants* Pro-licensed source bundled into a sample that ships in
+the OSS repo (a distribution/business call, not an engineering one).
+
+- [ ] **L1 — Get the maintainer's decision** on whether a sample may reference a `.Pro` project, then
+  record it as a proper DECISIONS.md entry (superseding D50's "open question" status) before any
+  sample actually does so.
