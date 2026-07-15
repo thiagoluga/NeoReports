@@ -10,6 +10,7 @@ using NeoReports.AspNetCore;
 using NeoReports.AspNetCore.DependencyInjection;
 using NeoReports.Core.Configuration;
 using NeoReports.Core.DependencyInjection;
+using NeoReports.Core.SourceRegistry;
 using NeoReports.Formats.Csv;
 using Shouldly;
 using Xunit;
@@ -180,6 +181,59 @@ public class ReportDetailEndpointTests
 
         body.TryGetProperty("abortAfterConsecutiveFailures", out var consecutive).ShouldBeTrue();
         consecutive.ValueKind.ShouldBe(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task Detail_omits_SourceRef_for_a_code_first_report()
+    {
+        using var host = await TestApp.StartAsync();
+        var client = host.GetTestClient();
+
+        var body = await client.GetFromJsonAsync<JsonElement>("/api/reports/sales", Json);
+
+        body.TryGetProperty("sourceRef", out var sourceRef).ShouldBeTrue();
+        sourceRef.ValueKind.ShouldBe(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task Detail_exposes_SourceRef_for_a_Ref_based_dynamic_report()
+    {
+        var configDir = Path.Join(Path.GetTempPath(), "nr-d52-n2-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            using var host = await TestApp.StartAsync(services =>
+            {
+                services.AddDynamicReports(o => o.Directory = configDir);
+                services.AddInMemorySourceRegistry();
+                services.AddSingleton<IConfigSourceProvider>(new FakeConfigSourceProvider(
+                    new[] { new object?[] { 1L } }));
+                services.AddSingleton<IWriterFactory>(new CsvWriterFactory(new CsvOptions()));
+            });
+
+            ISourceRegistry registry = host.Services.GetRequiredService<ISourceRegistry>();
+            await registry.SaveAsync(new SourceDefinition("sales-db", "inmemory"), CancellationToken.None);
+
+            IReportConfigStore store = host.Services.GetRequiredService<IReportConfigStore>();
+            const string config = """
+            {
+              "name": "ref-based-one",
+              "source": { "ref": "sales-db" },
+              "columns": [ { "name": "Id", "type": "Integer" } ],
+              "outputs": [ { "format": "csv" } ]
+            }
+            """;
+            await store.SaveAsync("ref-based-one", config, CancellationToken.None);
+
+            var client = host.GetTestClient();
+            var body = await client.GetFromJsonAsync<JsonElement>("/api/reports/ref-based-one", Json);
+
+            body.GetProperty("sourceRef").GetString().ShouldBe("sales-db");
+        }
+        finally
+        {
+            if (Directory.Exists(configDir))
+                Directory.Delete(configDir, recursive: true);
+        }
     }
 
     [Fact]

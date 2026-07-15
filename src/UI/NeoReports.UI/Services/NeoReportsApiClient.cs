@@ -78,7 +78,8 @@ public sealed record ApiReportDetail(
     double? AbortAtFailureRate = null,
     string? ScheduleCron = null,
     DateTimeOffset? NextRunAt = null,
-    bool ScheduleOverridden = false);
+    bool ScheduleOverridden = false,
+    string? SourceRef = null);
 
 /// <summary>A finished output file of a completed job, as returned by <c>GET /api/jobs/{id}/artifacts</c>.</summary>
 public sealed record ApiArtifact(string FileName, string MimeType, long SizeBytes);

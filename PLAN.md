@@ -961,7 +961,7 @@ review) mapped every free-text field and which are real helper candidates — fu
   `RunReportRequest.Parameters` key) already being fully implemented and richer than its own
   placeholder text suggests.
 
-## Epic N — Report detail page: show all real detail (D52) — N1 done, N2/N3 not started
+## Epic N — Report detail page: show all real detail (D52) — N1/N2 done, N3 not started
 
 Requested directly by the maintainer (2026-07-15), from real use of the D48 demo: `ReportDetail.razor`
 is missing real fields it should show — the source, for a start. Full detail and scope split
@@ -972,10 +972,11 @@ is missing real fields it should show — the source, for a start. Full detail a
   `ResilienceFormatter.Format`/`FormatAbortThresholds` (added back in D37, commit `8c5451e`) — only
   `PageSize` was genuinely missing. Added a "Buffer" row (`{PageSize:N0} rows/page`, matching
   `JobCompleted.razor`'s own Configuration card wording) to `ReportDetail.razor`'s Configuration card.
-- [ ] **N2 — Expose `CompiledReport.SourceRef` through the API.** Already captured by the compiler
-  for `Ref`-based dynamic reports, never leaves `GetReportDetailAsync` today. Add it to
-  `ReportDetailView`/`ApiReportDetail`, then show it on `ReportDetail.razor` (e.g. next to the
-  existing `origin: code`/`origin: config` chip).
+- [x] **N2 — Expose `CompiledReport.SourceRef` through the API.** Added `SourceRef` to
+  `ReportDetailView` (AspNetCore) and `ApiReportDetail` (UI), populated from
+  `CompiledReport.SourceRef` in `GetReportDetailAsync`; `null` for code-first and inline-type
+  reports. Shown on `ReportDetail.razor` as a `source: {ref}` chip next to the existing
+  `origin: code`/`origin: config` chip, only when non-null.
 - [ ] **N3 — Design: source-type label for code-first and inline-type reports** (bigger, separate
   from N1/N2). No source-type string is tracked on `CompiledReport` at all for typed reports or
   dynamic reports with an inline (non-`ref`) source — sources are fully type-erased at compile time.

@@ -9,6 +9,13 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 ## [Unreleased]
 
 ### Added
+- **Report detail: show the referenced named source (D52/N2).** `GET /reports/{name}` now returns
+  `sourceRef` — the named source's name (ADR D42) whenever a report references one (a `Ref`-based
+  dynamic source, or a code-first report built with `Source.SqlNamed`/its equivalents), `null` for
+  an inline connection — additive on `ReportDetailView`. `ReportDetail.razor` shows it as a
+  `source: {ref}` chip next to the existing `origin` chip. `CompiledReport.SourceRef` was already
+  captured by the compiler; this just exposes it. Not a secret (D42's write-only rule applies to
+  the registry's property bag, not to which named source a report references).
 - **Report detail: show the real buffer/page size (D52/N1).** `ReportDetail.razor`'s Configuration
   card now shows `PageSize` ("N rows/page", matching `JobCompleted.razor`'s own wording). Retry
   policy and abort-threshold fields were already shown via `ResilienceFormatter` — D52's original
