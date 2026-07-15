@@ -981,3 +981,28 @@ is missing real fields it should show — the source, for a start. Full detail a
   Showing "reads from Postgres" for those cases needs `CompiledReport` to carry a declared
   source-type string through compilation — real engine plumbing, needs its own design pass on
   whether the surface is worth adding for every future source type before implementing.
+
+## Epic O — bUnit component test suite for the Blazor UI (D53) — done
+
+Requested directly by the maintainer (2026-07-15): "me diga que tipo de testes voce pode criar
+para deixar 100% tudo testado na ui" — after a report showed the Preview screen's "This source
+type doesn't support server-side filters" banner on a Postgres-sourced report.
+
+- [x] **O1 — Test infrastructure.** `bunit` added to `build/Directory.Packages.props`;
+  `tests/NeoReports.UI.UnitTests/NeoReportsTestContext.cs` (a `Bunit.BunitContext` subclass
+  registering a fresh `FakeNeoReportsApiClient` and `BuilderState` per test); a hand-written
+  `Fakes/FakeNeoReportsApiClient.cs` implementing all of `INeoReportsApiClient`.
+- [x] **O2 — Shared UI component tests.** `DataGrid`, `FilterBar`, `Switch`, `ProgressBar`,
+  `WizardStepper`, `JobStatusBadge`.
+- [x] **O3 — Page tests, every one of the 15 pages.** `Dashboard`, `Reports`, `ReportDetail`,
+  `ReportPreview` (including the filter-banner investigation below), `Builder` +
+  `BuilderConfigure`/`BuilderFormat`/`BuilderDestination`/`BuilderReview`, `Jobs`, `JobRunning`,
+  `JobCompleted`, `JobFailed`, `SourcesList`, `SystemMemory`. 138 new tests across 23 new files
+  (198 tests total in the project, including 45 pre-existing pure-logic tests this PR doesn't
+  touch), all green.
+- [x] **Filter-banner finding.** `ReportPreviewTests.cs` proves the "doesn't support server-side
+  filters" banner is driven purely by the engine's own `ApiPreviewData.FiltersApplied` flag on the
+  preview response — never by any source-type check in the Blazor page. If that banner shows up for
+  a report whose source has a registered `IFilterTranslator` (e.g. Postgres, D45), the defect is in
+  the engine's preview endpoint / filter-translator resolution for that source, not in this UI —
+  worth a separate, targeted investigation (not filed as its own epic yet; flag to the maintainer).
