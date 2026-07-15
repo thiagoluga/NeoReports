@@ -294,6 +294,20 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   07-09. Minimal READMEs added to 01/02/03 (the only samples with none).
 
 ### Fixed
+- `NeoReports.AspNetCore` — a dynamic (config-registered) report that references a **named source**
+  (`"source": {"ref": "..."}`, ADR D42) always failed its first async job run with
+  `Cannot access a disposed object. Object name: 'IServiceProvider'.` (never on a `?mode=sync` run,
+  since that completes inside the same request). `POST /reports` compiled the report using
+  `http.RequestServices` — a per-HTTP-request scoped provider — and the compiled report's
+  `RefBatchSource` captured that same provider for later, lazy per-run source resolution; but the
+  compiled report is registered into the singleton report registry and an async job runs on its own
+  background task, well after the triggering request (and its DI scope) has ended. Fixed by
+  resolving reports through the app's root `IServiceProvider`
+  (`IEndpointRouteBuilder.ServiceProvider`, captured once in `MapNeoReports`) instead of the
+  request-scoped one, in both `POST /reports` and `POST /reports/validate`. New regression test
+  (`DynamicReportEndpointsTests.Ref_based_report_runs_to_completion_on_an_async_job_after_the_creating_request_ends`)
+  creates a named source, registers a report referencing it, and runs it asynchronously to
+  completion — reproduced the exact reported error before the fix.
 - `NeoReports.Core` — `PrimitiveObjectConverter` (the JSON reader for `object?` property-bag
   values used by dynamic report/source-registry config) silently re-boxed every whole JSON number
   as `double`, never `long`, even though `Utf8JsonReader.TryGetInt64` correctly succeeded — the
