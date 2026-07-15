@@ -73,3 +73,11 @@ _*/
 
 # Dynamic report configs persisted locally by AddDynamicReports() (default directory)
 neoreports-configs/
+
+# Named source definitions persisted locally by AddSourceRegistry() (default directory) — contains
+# real connection strings/passwords in plaintext (D42's ${VAR} placeholder convention is opt-in,
+# not enforced), so these must never be committed.
+neoreports-sources/
+
+# Runtime schedule overrides persisted locally by AddScheduling() (default directory)
+neoreports-schedules/
