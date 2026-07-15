@@ -9,6 +9,13 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 ## [Unreleased]
 
 ### Added
+- **bUnit component test suite for the Blazor UI (D53).** All 15 pages and the interactive shared
+  components in `NeoReports.UI` now have bUnit coverage (138 new tests; 198 in the whole project
+  including pre-existing pure-logic tests) — engine-unreachable vs.
+  live-empty vs. populated states, two-click delete confirmation, the Builder wizard's
+  create-vs-edit persist logic, the Jobs list's stale-response guard, and the Preview screen's
+  filter wiring. Test-only change (`tests/NeoReports.UI.UnitTests`); no production code changed.
+  `bunit` added to `build/Directory.Packages.props`.
 - **`samples/14-aspire-all-sources-demo` — combined all-sources Aspire demo (D48).** A new,
   additive sample orchestrating all four database types (PostgreSQL, MySQL, SQL Server, MongoDB)
   from one Aspire `AppHost` and mounting one `NeoReports.UI` in front of all of them —
