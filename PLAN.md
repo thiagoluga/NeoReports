@@ -941,6 +941,26 @@ the OSS repo (a distribution/business call, not an engineering one).
   record it as a proper DECISIONS.md entry (superseding D50's "open question" status) before any
   sample actually does so.
 
+## Epic M — Builder wizard: token/value helpers (D51) — not started
+
+Requested directly by the maintainer (2026-07-15): "add helpers in the Builder, e.g. to generate the
+output filename — helpers that help with the generated name, e.g. to put date and time in the file."
+A full screen-by-screen audit of all 5 Builder steps (source, configure, format, destination,
+review) mapped every free-text field and which are real helper candidates — full detail in D51.
+
+- [ ] **M1 — Design.** Before any implementation: what the destination-path helper UI actually looks
+  like (insert-token dropdown/menu, common date-format presets, live-resolved-filename preview) —
+  the preview must reuse `PathTemplate.Expand`'s exact substitution logic (`NeoReports.Destinations.Local`)
+  so it can never drift from what a real run would produce. Decide whether the weaker candidates
+  found in the same audit (report-name availability check, a column pick-list once `Validate` has
+  run, a fuller cron builder beyond the existing Hourly/Daily/Weekly presets) are in scope for this
+  epic or split out separately.
+- [ ] **M2 — Implementation** (blocked on M1). Primary target: `BuilderDestination.razor`'s
+  `Wizard.DestinationPath` field — currently a bare `<input>` with no token assistance at all,
+  despite the underlying token system (`{name}`, `{ext}`, `{date}`/`{date:FORMAT}`, and any
+  `RunReportRequest.Parameters` key) already being fully implemented and richer than its own
+  placeholder text suggests.
+
 ## Epic N — Report detail page: show all real detail (D52) — not started
 
 Requested directly by the maintainer (2026-07-15), from real use of the D48 demo: `ReportDetail.razor`
