@@ -9,6 +9,10 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 ## [Unreleased]
 
 ### Added
+- **Report detail: show the real buffer/page size (D52/N1).** `ReportDetail.razor`'s Configuration
+  card now shows `PageSize` ("N rows/page", matching `JobCompleted.razor`'s own wording). Retry
+  policy and abort-threshold fields were already shown via `ResilienceFormatter` — D52's original
+  audit predated that (D37) and was stale on that point.
 - **Regression test for `Ref`-based preview filtering (D54).** Added
   `PreviewEndpointTests.Filters_against_a_Ref_based_source_resolve_the_translator_from_the_registered_type`,
   closing a real coverage gap: every existing filter-translator test used an inline source `type`,

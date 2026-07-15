@@ -101,6 +101,11 @@
                     <button class="edit-link">edit</button>
                 </div>
                 <div class="cfg-row">
+                    <span class="lbl"><i class="ti ti-stack-2"></i>Buffer</span>
+                    <div class="val"><span class="mono" style="font-size:12px">@($"{_detail.PageSize:N0} rows/page")</span></div>
+                    <span></span>
+                </div>
+                <div class="cfg-row">
                     <span class="lbl"><i class="ti ti-shield-check"></i>Resilience</span>
                     <div class="val"><span class="mono" style="font-size:12px">@ResilienceFormatter.Format(_detail)</span></div>
                     <span></span>

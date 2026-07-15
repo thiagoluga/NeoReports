@@ -140,6 +140,18 @@ public sealed class ReportDetailTests : NeoReportsTestContext
     }
 
     [Fact]
+    public void Configuration_card_shows_the_reports_real_page_size()
+    {
+        // A PageSize under 1000 avoids a thousands separator, which is culture-dependent (the app
+        // itself formats with the current culture, same as JobCompleted.razor's BufferText).
+        SetupLiveWithNoHistory(Detail() with { PageSize = 500 });
+
+        var cut = Render<ReportDetail>(p => p.Add(x => x.Slug, "clientsVip"));
+
+        cut.Markup.ShouldContain("500 rows/page");
+    }
+
+    [Fact]
     public void Set_schedule_sends_the_trimmed_cron_and_reloads_the_detail_on_success()
     {
         SetupLiveWithNoHistory(Detail(scheduleCron: null));
