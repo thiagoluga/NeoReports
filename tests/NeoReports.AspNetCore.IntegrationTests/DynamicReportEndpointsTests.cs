@@ -11,6 +11,7 @@ using NeoReports.AspNetCore;
 using NeoReports.AspNetCore.DependencyInjection;
 using NeoReports.Core.Configuration;
 using NeoReports.Core.DependencyInjection;
+using NeoReports.Core.SourceRegistry;
 using NeoReports.Formats.Csv;
 using NeoReports.Jobs.DependencyInjection;
 using Shouldly;
@@ -82,6 +83,57 @@ public class DynamicReportEndpointsTests : IDisposable
         var run = await client.PostAsJsonAsync("/api/reports/alpha/run?mode=sync", new { }, Json);
         run.StatusCode.ShouldBe(HttpStatusCode.OK);
         (await run.Content.ReadAsStringAsync()).ShouldContain("Globex");
+    }
+
+    [Fact]
+    public async Task Ref_based_report_runs_to_completion_on_an_async_job_after_the_creating_request_ends()
+    {
+        // Regression: RefBatchSource must resolve its inner source through the app's root
+        // IServiceProvider, never the scoped one from the HTTP request that registered the report
+        // (see the fix in NeoReportsEndpointRouteBuilderExtensions.CreateReportAsync). An async job
+        // (unlike ?mode=sync) genuinely outlives the triggering request, so this is the only way to
+        // reproduce "Cannot access a disposed object. Object name: 'IServiceProvider'." — a sync run
+        // completes inside the same request whose scope hasn't been disposed yet.
+        using var host = await TestApp.StartAsync(services =>
+        {
+            services.AddDynamicReports(o => o.Directory = _configDir);
+            services.AddInMemorySourceRegistry();
+            services.AddSingleton<IConfigSourceProvider>(new FakeConfigSourceProvider(
+                new[] { new object?[] { 1L, "Acme" }, new object?[] { 2L, "Globex" } }));
+            services.AddSingleton<IWriterFactory>(new CsvWriterFactory(new CsvOptions()));
+        });
+        var client = host.GetTestClient();
+
+        await client.PostAsJsonAsync("/api/sources", new { name = "sales-db", type = "inmemory" }, Json);
+
+        const string document = """
+        {
+          "name": "clientsVip",
+          "source": { "ref": "sales-db" },
+          "columns": [
+            { "name": "Id", "type": "Integer" },
+            { "name": "Customer", "type": "String" }
+          ],
+          "outputs": [ { "format": "csv" } ]
+        }
+        """;
+        var created = await PostJsonAsync(client, "/api/reports", document);
+        created.StatusCode.ShouldBe(HttpStatusCode.Created);
+
+        var run = await client.PostAsJsonAsync("/api/reports/clientsVip/run", new { }, Json);
+        var jobId = (await run.Content.ReadFromJsonAsync<JsonElement>(Json)).GetProperty("jobId").GetString()!;
+
+        JsonElement job = default;
+        for (var i = 0; i < 100; i++)
+        {
+            job = await client.GetFromJsonAsync<JsonElement>($"/api/jobs/{jobId}", Json);
+            if (job.GetProperty("status").GetString() is "Completed" or "Failed")
+                break;
+            await Task.Delay(20);
+        }
+
+        job.GetProperty("status").GetString().ShouldBe("Completed", job.GetProperty("error").ToString());
+        job.GetProperty("stats").GetProperty("recordsWritten").GetInt64().ShouldBe(2);
     }
 
     [Fact]
