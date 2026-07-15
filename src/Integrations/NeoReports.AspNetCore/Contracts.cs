@@ -92,6 +92,7 @@ public sealed record ReportColumnView(string Name, string Type, string? DisplayN
 /// <param name="ScheduleCron">The report's effective recurring-run cron expression (override if present, else declared), or <c>null</c> when not scheduled (ADR D41).</param>
 /// <param name="NextRunAt">The next occurrence in UTC, computed via Cronos from the active registration — never fabricated; <c>null</c> when not scheduled or no recurring scheduler is registered.</param>
 /// <param name="ScheduleOverridden">True when a runtime override (including an "unscheduled" tombstone) is in effect, overriding the report's own declared schedule.</param>
+/// <param name="SourceRef">The named source's name (ADR D42), when this report references one — a <c>Ref</c>-based dynamic source, or a code-first report built with <c>Source.SqlNamed</c>/its equivalents; <c>null</c> when the source is an inline connection. Not a secret — same reasoning as <c>GET /sources</c> listing source names freely (D33 only hides the property bag).</param>
 public sealed record ReportDetailView(
     string Name,
     IReadOnlyList<ReportColumnView> Columns,
@@ -110,7 +111,8 @@ public sealed record ReportDetailView(
     double? AbortAtFailureRate = null,
     string? ScheduleCron = null,
     DateTimeOffset? NextRunAt = null,
-    bool ScheduleOverridden = false);
+    bool ScheduleOverridden = false,
+    string? SourceRef = null);
 
 /// <summary>Response returned when a dynamic report is registered.</summary>
 /// <param name="Name">The report name.</param>

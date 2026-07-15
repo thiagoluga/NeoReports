@@ -12,7 +12,7 @@ public sealed class ReportDetailTests : NeoReportsTestContext
 {
     private static ApiReportDetail Detail(
         string name = "clientsVip", bool deletable = true, string origin = "config",
-        string? scheduleCron = null, bool scheduleOverridden = false) => new(
+        string? scheduleCron = null, bool scheduleOverridden = false, string? sourceRef = null) => new(
         Name: name,
         Columns: [new ApiReportColumn("Id", "Integer", null, null, false)],
         PageSize: 1000,
@@ -26,7 +26,8 @@ public sealed class ReportDetailTests : NeoReportsTestContext
         Origin: origin,
         Deletable: deletable,
         ScheduleCron: scheduleCron,
-        ScheduleOverridden: scheduleOverridden);
+        ScheduleOverridden: scheduleOverridden,
+        SourceRef: sourceRef);
 
     private void SetupLiveWithNoHistory(ApiReportDetail detail)
     {
@@ -57,6 +58,18 @@ public sealed class ReportDetailTests : NeoReportsTestContext
 
         cut.Find(".es-title").TextContent.ShouldBe("Report not found");
         cut.Markup.ShouldContain("missingReport");
+    }
+
+    [Fact]
+    public void SourceRef_chip_shows_only_for_a_Ref_based_report()
+    {
+        SetupLiveWithNoHistory(Detail(sourceRef: "sales-db"));
+        var withRef = Render<ReportDetail>(p => p.Add(x => x.Slug, "clientsVip"));
+        withRef.Markup.ShouldContain("source: sales-db");
+
+        SetupLiveWithNoHistory(Detail(sourceRef: null));
+        var withoutRef = Render<ReportDetail>(p => p.Add(x => x.Slug, "clientsVip"));
+        withoutRef.Markup.ShouldNotContain("source:");
     }
 
     [Fact]

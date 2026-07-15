@@ -29,6 +29,10 @@
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                 <h1 style="font-size:24px">@_detail.Name</h1>
                 <Chip Kind="token">origin: @_detail.Origin</Chip>
+                @if (!string.IsNullOrEmpty(_detail.SourceRef))
+                {
+                    <Chip Kind="token">source: @_detail.SourceRef</Chip>
+                }
             </div>
             <p class="sub" style="max-width:480px;margin-top:8px;line-height:1.5">@Description</p>
         </div>

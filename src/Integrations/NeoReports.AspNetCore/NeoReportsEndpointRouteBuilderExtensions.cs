@@ -293,7 +293,8 @@ public static class NeoReportsEndpointRouteBuilderExtensions
             AbortAtFailureRate: report.AbortThresholds?.FailureRate,
             ScheduleCron: scheduleCron,
             NextRunAt: nextRunAt,
-            ScheduleOverridden: scheduleOverridden);
+            ScheduleOverridden: scheduleOverridden,
+            SourceRef: report.SourceRef);
 
         return Results.Ok(detail);
     }
