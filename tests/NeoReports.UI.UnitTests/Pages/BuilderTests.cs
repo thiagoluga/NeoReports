@@ -70,6 +70,7 @@ public sealed class BuilderTests : NeoReportsTestContext
         var cut = Render<Builder>();
         cut.FindAll(".sel-card").First(c => c.TextContent.Contains("postgres-demo")).Click();
 
+        Wizard.SourceRef.ShouldBe("postgres-demo");
         cut.WaitForState(() => !cut.Markup.Contains("Engine source type"), TimeSpan.FromSeconds(2));
     }
 

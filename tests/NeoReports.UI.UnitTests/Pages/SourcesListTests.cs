@@ -102,7 +102,7 @@ public sealed class SourcesListTests : NeoReportsTestContext
         {
             var result = reloaded
                 ? new List<ApiSourceView> { Source("sales-db") }
-                : new List<ApiSourceView>();
+                : [];
             reloaded = true;
             return Task.FromResult<IReadOnlyList<ApiSourceView>?>(result);
         };
