@@ -76,12 +76,25 @@ public static class NeoReportsEndpointRouteBuilderExtensions
                 group.RequireAuthorization(options.AuthorizationPolicy);
         }
 
+        // Compiling a report — Create and Validate below — must resolve IConfigSourceProvider
+        // (and, for a Ref-based source, ISourceRegistry) through the app's ROOT provider, never
+        // http.RequestServices: Create's compiled report is registered into the singleton
+        // IMutableReportRegistry and outlives the request, so a RefBatchSource that captured the
+        // request's scoped IServiceProvider throws ObjectDisposedException the first time a later,
+        // fully-async job run tries to resolve its source — the scope is long gone by then.
+        // IEndpointRouteBuilder.ServiceProvider is the app's root provider, captured once here.
+        IServiceProvider rootServices = endpoints.ServiceProvider;
+
         group.MapPost("/reports/{name}/run", RunReportAsync);
         group.MapPost("/reports/{name}/preview", PreviewReportAsync);
         group.MapGet("/reports", ListReports);
         group.MapGet("/reports/{name}", GetReportDetailAsync);
-        group.MapPost("/reports", CreateReportAsync);
-        group.MapPost("/reports/validate", ValidateReportAsync);
+        group.MapPost("/reports", (HttpContext http, [FromServices] IMutableReportRegistry registry,
+                [FromServices] IReportConfigStore configStore, CancellationToken cancellationToken) =>
+            CreateReportAsync(http, registry, configStore, rootServices, cancellationToken));
+        group.MapPost("/reports/validate", (HttpContext http, [FromServices] IReportRegistry registry,
+                CancellationToken cancellationToken) =>
+            ValidateReportAsync(http, registry, rootServices, cancellationToken));
         group.MapDelete("/reports/{name}", DeleteReportAsync);
         group.MapGet("/capabilities", GetCapabilities);
         group.MapGet("/jobs", ListJobsAsync);
@@ -312,8 +325,9 @@ public static class NeoReportsEndpointRouteBuilderExtensions
 
     private static async Task<IResult> CreateReportAsync(
         HttpContext http,
-        [FromServices] IMutableReportRegistry registry,
-        [FromServices] IReportConfigStore configStore,
+        IMutableReportRegistry registry,
+        IReportConfigStore configStore,
+        IServiceProvider rootServices,
         CancellationToken cancellationToken)
     {
         string document = await ReadBodyAsync(http, cancellationToken).ConfigureAwait(false);
@@ -352,7 +366,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         try
         {
             ReportConfig substituted = ReportConfigEnvironment.Substitute(config);
-            compiled = ReportConfigCompiler.Compile(substituted, http.RequestServices);
+            compiled = ReportConfigCompiler.Compile(substituted, rootServices);
         }
         catch (ConfigurationException ex)
         {
@@ -400,7 +414,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
     }
 
     private static async Task<IResult> ValidateReportAsync(
-        HttpContext http, [FromServices] IReportRegistry registry, CancellationToken cancellationToken)
+        HttpContext http, IReportRegistry registry, IServiceProvider rootServices, CancellationToken cancellationToken)
     {
         string document = await ReadBodyAsync(http, cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(document))
@@ -423,7 +437,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
             }
 
             ReportConfig substituted = ReportConfigEnvironment.Substitute(config);
-            CompiledReport compiled = ReportConfigCompiler.Compile(substituted, http.RequestServices);
+            CompiledReport compiled = ReportConfigCompiler.Compile(substituted, rootServices);
             var columns = compiled.Schema.Columns.Select(c => c.Name).ToArray();
 
             return Results.Ok(new ValidateReportResponse(
