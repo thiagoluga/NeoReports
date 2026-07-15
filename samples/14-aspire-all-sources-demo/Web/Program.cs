@@ -5,12 +5,15 @@ using MongoDB.Bson.Serialization;
 using MongoDB.Bson.Serialization.Serializers;
 using MongoDB.Driver;
 using MySqlConnector;
+using NeoReports.Abstractions;
 using NeoReports.AspNetCore;
 using NeoReports.AspNetCore.DependencyInjection;
 using NeoReports.Core.Building;
 using NeoReports.Core.DependencyInjection;
 using NeoReports.Core.SourceRegistry;
 using NeoReports.Destinations.Local;
+using NeoReports.Formats.Csv;
+using NeoReports.Formats.Xlsx;
 using NeoReports.Jobs.DependencyInjection;
 using NeoReports.Samples.Shared;
 using NeoReports.Sources.MongoDb;
@@ -145,6 +148,15 @@ builder.Services.AddPostgresConfigSource();
 builder.Services.AddMySqlConfigSource();
 builder.Services.AddMongoDbConfigSource();
 
+// Same reasoning for output formats and destinations: GET /api/capabilities.Formats/Destinations
+// come from IWriterFactory/IDestinationFactory DI registrations, independent of the typed
+// .To(...)/.UploadTo(...) calls above — without these the Builder wizard's Format/Destination
+// steps would show "No output formats registered" even though CSV/XLSX/Local work fine for the
+// four typed reports.
+builder.Services.AddSingleton<IWriterFactory>(new CsvWriterFactory(new CsvOptions()));
+builder.Services.AddSingleton<IWriterFactory>(new XlsxWriterFactory(new XlsxOptions()));
+builder.Services.AddSingleton<IDestinationFactory>(new LocalDestinationFactory(LocalDestinationTemplate));
+
 // The Source Registry (D42): four named sources, seeded below once the databases exist, so the
 // Builder wizard can build brand-new reports against any of them by name instead of pasting a
 // raw connection string.
@@ -156,6 +168,7 @@ builder.Services.AddScheduling();
 
 builder.Services.AddNeoReportsInMemoryJobs();
 builder.Services.AddNeoReportsArtifacts();
+builder.Services.AddPartialArtifacts(); // ADR D40 — best-effort output capture for failed/cancelled jobs
 builder.Services.AddInMemoryJobEvents(); // ADR D38 — powers the job Timeline/Retries/rate cards
 
 var app = builder.Build();

@@ -19,6 +19,9 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   (D42) so the Builder wizard can build new reports against any of them by name; registers dynamic
   reports (`AddDynamicReports`) and scheduling (`AddScheduling`) so both work end to end; ships one
   ready-to-run typed report per database (`wide-transactions-{postgres,mysql,sqlserver,mongodb}`).
+  Also registers `IWriterFactory`/`IDestinationFactory` (CSV, XLSX, Local) and `AddPartialArtifacts`
+  (D40) — the same "empty capabilities" gap that hid sources also hid output formats and
+  destinations from the Builder wizard, independent of the typed reports' own `.To(...)` calls.
   Seeds all four databases in parallel at 15,000 rows each. The four existing single-provider
   samples (`10`-`13`) are unchanged.
 - **Real progress percentage (D47).** Reports can now report a real completion percentage instead
