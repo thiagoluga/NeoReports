@@ -961,16 +961,17 @@ review) mapped every free-text field and which are real helper candidates — fu
   `RunReportRequest.Parameters` key) already being fully implemented and richer than its own
   placeholder text suggests.
 
-## Epic N — Report detail page: show all real detail (D52) — not started
+## Epic N — Report detail page: show all real detail (D52) — N1 done, N2/N3 not started
 
 Requested directly by the maintainer (2026-07-15), from real use of the D48 demo: `ReportDetail.razor`
 is missing real fields it should show — the source, for a start. Full detail and scope split
 (pure-UI vs. needs-a-small-API-field vs. needs-new-engine-plumbing) in D52.
 
-- [ ] **N1 — Render what's already returned (pure UI, no API change).** `ReportDetail.razor` doesn't
-  show `PageSize`, `FailureStrategy`, or the retry/abort-threshold fields at all, despite
-  `GET /reports/{name}` already returning every one of them. Reuse the existing `ResilienceFormatter`
-  helper (already used on `JobCompleted.razor`'s "Configuration" card) rather than reinventing it.
+- [x] **N1 — Render what's already returned (pure UI, no API change).** D52's original audit was
+  stale: `FailureStrategy` and the full retry/abort-threshold fields were already rendered via
+  `ResilienceFormatter.Format`/`FormatAbortThresholds` (added back in D37, commit `8c5451e`) — only
+  `PageSize` was genuinely missing. Added a "Buffer" row (`{PageSize:N0} rows/page`, matching
+  `JobCompleted.razor`'s own Configuration card wording) to `ReportDetail.razor`'s Configuration card.
 - [ ] **N2 — Expose `CompiledReport.SourceRef` through the API.** Already captured by the compiler
   for `Ref`-based dynamic reports, never leaves `GetReportDetailAsync` today. Add it to
   `ReportDetailView`/`ApiReportDetail`, then show it on `ReportDetail.razor` (e.g. next to the
