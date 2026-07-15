@@ -8,6 +8,7 @@ using NeoReports.Abstractions;
 using NeoReports.Core.Configuration;
 using NeoReports.Core.DependencyInjection;
 using NeoReports.Core.Preview;
+using NeoReports.Core.SourceRegistry;
 using NeoReports.Formats.Csv;
 using Shouldly;
 using Xunit;
@@ -147,6 +148,51 @@ public class PreviewEndpointTests : IDisposable
 
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         translator.LastValue.ShouldBe("12.25");
+    }
+
+    [Fact]
+    public async Task Filters_against_a_Ref_based_source_resolve_the_translator_from_the_registered_type()
+    {
+        // Regression coverage for a maintainer-reported scenario (2026-07-15, ADR D53): a report
+        // whose SourceConfig.Ref points at a named registry source — never SourceConfig.Type
+        // directly (D42/BuilderConfigMapper never sets both) — must still resolve its filter
+        // translator from the registry's own registered Type, not silently degrade to unfiltered.
+        using var host = await TestApp.StartAsync(services =>
+        {
+            services.AddDynamicReports(o => o.Directory = _configDir);
+            services.AddInMemorySourceRegistry();
+            services.AddSingleton<IConfigSourceProvider>(new FakeFilterableProvider("fake-sql"));
+            services.AddSingleton<IWriterFactory>(new CsvWriterFactory(new CsvOptions()));
+            services.AddSingleton<IFilterTranslator>(new FakeFilterTranslator("fake-sql"));
+        });
+
+        ISourceRegistry registry = host.Services.GetRequiredService<ISourceRegistry>();
+        await registry.SaveAsync(
+            new SourceDefinition("sales-db", "fake-sql", new Dictionary<string, object?> { ["sql"] = "SELECT * FROM Sales", ["key"] = "Id" }),
+            CancellationToken.None);
+
+        IReportConfigStore store = host.Services.GetRequiredService<IReportConfigStore>();
+        const string config = """
+        {
+          "name": "dynRef",
+          "source": { "ref": "sales-db" },
+          "columns": [
+            { "name": "Id", "type": "Integer" },
+            { "name": "Customer", "type": "String" }
+          ],
+          "outputs": [ { "format": "csv" } ]
+        }
+        """;
+        await store.SaveAsync("dynRef", config, CancellationToken.None);
+
+        var client = host.GetTestClient();
+        var response = await PostJsonAsync(client, "/api/reports/dynRef/preview",
+            """{ "filters": [ { "column": "Customer", "operator": "Equals", "value": "Acme" } ] }""");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(Json);
+        body.GetProperty("filtersApplied").GetBoolean().ShouldBeTrue();
+        body.GetProperty("rows").GetArrayLength().ShouldBe(1); // filtered canned data
     }
 
     [Fact]

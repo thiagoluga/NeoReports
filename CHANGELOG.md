@@ -9,6 +9,12 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 ## [Unreleased]
 
 ### Added
+- **Regression test for `Ref`-based preview filtering (D54).** Added
+  `PreviewEndpointTests.Filters_against_a_Ref_based_source_resolve_the_translator_from_the_registered_type`,
+  closing a real coverage gap: every existing filter-translator test used an inline source `type`,
+  never `ref`. Investigated a maintainer-reported "doesn't support server-side filters" banner on a
+  Postgres-sourced report — the engine's `Ref` → registered-type → translator resolution is proven
+  correct by this test; no engine defect found.
 - **bUnit component test suite for the Blazor UI (D53).** All 15 pages and the interactive shared
   components in `NeoReports.UI` now have bUnit coverage (138 new tests; 198 in the whole project
   including pre-existing pure-logic tests) — engine-unreachable vs.
