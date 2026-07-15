@@ -1002,7 +1002,9 @@ type doesn't support server-side filters" banner on a Postgres-sourced report.
   touch), all green.
 - [x] **Filter-banner finding.** `ReportPreviewTests.cs` proves the "doesn't support server-side
   filters" banner is driven purely by the engine's own `ApiPreviewData.FiltersApplied` flag on the
-  preview response — never by any source-type check in the Blazor page. If that banner shows up for
-  a report whose source has a registered `IFilterTranslator` (e.g. Postgres, D45), the defect is in
-  the engine's preview endpoint / filter-translator resolution for that source, not in this UI —
-  worth a separate, targeted investigation (not filed as its own epic yet; flag to the maintainer).
+  preview response — never by any source-type check in the Blazor page. **Follow-up investigation
+  (D54) closed this**: the engine's `Ref`-based filter-translator resolution was traced end to end
+  and proven correct by a new regression test (`PreviewEndpointTests.Filters_against_a_Ref_based_source_resolve_the_translator_from_the_registered_type`)
+  — no engine defect found in this code path. The originally reported banner remains unexplained;
+  reproducing it again needs the report's actual persisted source config or the named source's
+  registered type from the live session where it was seen.
