@@ -9,6 +9,21 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 ## [Unreleased]
 
 ### Added
+- **`samples/14-aspire-all-sources-demo` — combined all-sources Aspire demo (D48).** A new,
+  additive sample orchestrating all four database types (PostgreSQL, MySQL, SQL Server, MongoDB)
+  from one Aspire `AppHost` and mounting one `NeoReports.UI` in front of all of them —
+  `dotnet run --project samples/14-aspire-all-sources-demo/AppHost`. Registers a config-source
+  provider for every type (`AddSqlConfigSource`/`AddPostgresConfigSource`/`AddMySqlConfigSource`/
+  `AddMongoDbConfigSource`), so `GET /api/capabilities` is never empty and the UI's "Demo mode"
+  banner never appears; pre-registers all four databases as named sources in the Source Registry
+  (D42) so the Builder wizard can build new reports against any of them by name; registers dynamic
+  reports (`AddDynamicReports`) and scheduling (`AddScheduling`) so both work end to end; ships one
+  ready-to-run typed report per database (`wide-transactions-{postgres,mysql,sqlserver,mongodb}`).
+  Also registers `IWriterFactory`/`IDestinationFactory` (CSV, XLSX, Local) and `AddPartialArtifacts`
+  (D40) — the same "empty capabilities" gap that hid sources also hid output formats and
+  destinations from the Builder wizard, independent of the typed reports' own `.To(...)` calls.
+  Seeds all four databases in parallel at 15,000 rows each. The four existing single-provider
+  samples (`10`-`13`) are unchanged.
 - **Real progress percentage (D47).** Reports can now report a real completion percentage instead
   of the previous decorative animation: `ReportConfig.TrackProgress` / typed
   `ReportBuilder<T>.TrackProgress(bool)` — **enabled by default** — makes the engine count the
@@ -279,6 +294,20 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   07-09. Minimal READMEs added to 01/02/03 (the only samples with none).
 
 ### Fixed
+- `NeoReports.AspNetCore` — a dynamic (config-registered) report that references a **named source**
+  (`"source": {"ref": "..."}`, ADR D42) always failed its first async job run with
+  `Cannot access a disposed object. Object name: 'IServiceProvider'.` (never on a `?mode=sync` run,
+  since that completes inside the same request). `POST /reports` compiled the report using
+  `http.RequestServices` — a per-HTTP-request scoped provider — and the compiled report's
+  `RefBatchSource` captured that same provider for later, lazy per-run source resolution; but the
+  compiled report is registered into the singleton report registry and an async job runs on its own
+  background task, well after the triggering request (and its DI scope) has ended. Fixed by
+  resolving reports through the app's root `IServiceProvider`
+  (`IEndpointRouteBuilder.ServiceProvider`, captured once in `MapNeoReports`) instead of the
+  request-scoped one, in both `POST /reports` and `POST /reports/validate`. New regression test
+  (`DynamicReportEndpointsTests.Ref_based_report_runs_to_completion_on_an_async_job_after_the_creating_request_ends`)
+  creates a named source, registers a report referencing it, and runs it asynchronously to
+  completion — reproduced the exact reported error before the fix.
 - `NeoReports.Core` — `PrimitiveObjectConverter` (the JSON reader for `object?` property-bag
   values used by dynamic report/source-registry config) silently re-boxed every whole JSON number
   as `double`, never `long`, even though `Utf8JsonReader.TryGetInt64` correctly succeeded — the

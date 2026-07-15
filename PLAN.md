@@ -889,6 +889,27 @@ engine-side work before its UI.
   `LatestTotalRecords`), falling back to the indeterminate bar when no total is known (tracking off,
   unsupported source, or the count failed).
 
+## Epic J — Combined all-sources Aspire demo (D48)
+
+Requested directly by the maintainer (2026-07): a single demo with every source type and every
+feature working end to end, with no "Demo mode" fallback anywhere in the flow. An intentional,
+additive exception to D46's "one provider per sample" rule — samples 10-13 are untouched.
+
+- [x] **J1 — `samples/14-aspire-all-sources-demo`.** One `AppHost` provisioning all four databases
+  (Postgres/MySQL/SQL Server/MongoDB, each `WithDataVolume()` + a uniquely-named `AddDatabase(...)`
+  to avoid connection-string-key collisions in one host) and one `Web` project mounting the full
+  UI. `Web/Program.cs` calls all four `Add<Provider>ConfigSource()` so `GET /api/capabilities` is
+  never empty (kills "Demo mode" for good); `AddSourceRegistry()` pre-registers all four databases
+  as named sources (`postgres-demo`/`mysql-demo`/`sqlserver-demo`/`mongodb-demo`) so the Builder
+  wizard can build new reports against any of them by name; `AddDynamicReports()`/`AddScheduling()`
+  registered so both work; one ready-to-run typed report per database
+  (`wide-transactions-{postgres,mysql,sqlserver,mongodb}`) ships pre-registered. Seeds all four in
+  parallel at 15,000 rows each (smaller than the single-sample 500,000 default, since this sample
+  seeds four databases at once). Verified end to end in a real browser: no "Demo mode" banner on
+  the Builder, all four named sources listed on the Sources screen, `wide-transactions-mongodb` run
+  to completion (100%, 15,000 records, CSV + XLSX artifacts generated) with the real D47 progress
+  percentage live on the running-job page.
+
 ## Epic K — Interactive source explorer + visual query builder (Pro, D49) — not started
 
 Requested directly by the maintainer (2026-07-15). Recorded here as the next thing to pick up, but
@@ -939,3 +960,24 @@ review) mapped every free-text field and which are real helper candidates — fu
   despite the underlying token system (`{name}`, `{ext}`, `{date}`/`{date:FORMAT}`, and any
   `RunReportRequest.Parameters` key) already being fully implemented and richer than its own
   placeholder text suggests.
+
+## Epic N — Report detail page: show all real detail (D52) — not started
+
+Requested directly by the maintainer (2026-07-15), from real use of the D48 demo: `ReportDetail.razor`
+is missing real fields it should show — the source, for a start. Full detail and scope split
+(pure-UI vs. needs-a-small-API-field vs. needs-new-engine-plumbing) in D52.
+
+- [ ] **N1 — Render what's already returned (pure UI, no API change).** `ReportDetail.razor` doesn't
+  show `PageSize`, `FailureStrategy`, or the retry/abort-threshold fields at all, despite
+  `GET /reports/{name}` already returning every one of them. Reuse the existing `ResilienceFormatter`
+  helper (already used on `JobCompleted.razor`'s "Configuration" card) rather than reinventing it.
+- [ ] **N2 — Expose `CompiledReport.SourceRef` through the API.** Already captured by the compiler
+  for `Ref`-based dynamic reports, never leaves `GetReportDetailAsync` today. Add it to
+  `ReportDetailView`/`ApiReportDetail`, then show it on `ReportDetail.razor` (e.g. next to the
+  existing `origin: code`/`origin: config` chip).
+- [ ] **N3 — Design: source-type label for code-first and inline-type reports** (bigger, separate
+  from N1/N2). No source-type string is tracked on `CompiledReport` at all for typed reports or
+  dynamic reports with an inline (non-`ref`) source — sources are fully type-erased at compile time.
+  Showing "reads from Postgres" for those cases needs `CompiledReport` to carry a declared
+  source-type string through compilation — real engine plumbing, needs its own design pass on
+  whether the surface is worth adding for every future source type before implementing.

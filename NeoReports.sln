@@ -1,4 +1,4 @@
-
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
@@ -126,6 +126,10 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NeoReports.Sources.MongoDb", "src\Sources\NeoReports.Sources.MongoDb\NeoReports.Sources.MongoDb.csproj", "{CEC879E4-7636-435A-BD1F-9CBF3D294963}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NeoReports.Sources.MongoDb.IntegrationTests", "tests\NeoReports.Sources.MongoDb.IntegrationTests\NeoReports.Sources.MongoDb.IntegrationTests.csproj", "{EEC58B8D-DB0A-4270-A21C-11F8867CAA0F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NeoReports.Samples.AspireAllSourcesDemo.AppHost", "samples\14-aspire-all-sources-demo\AppHost\NeoReports.Samples.AspireAllSourcesDemo.AppHost.csproj", "{53A2F3CD-D746-4B3F-8F4B-D901DD23825A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NeoReports.Samples.AspireAllSourcesDemo.Web", "samples\14-aspire-all-sources-demo\Web\NeoReports.Samples.AspireAllSourcesDemo.Web.csproj", "{AECBED31-875E-4328-9A11-F2C78D80E6A1}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -761,6 +765,30 @@ Global
 		{EEC58B8D-DB0A-4270-A21C-11F8867CAA0F}.Release|x64.Build.0 = Release|Any CPU
 		{EEC58B8D-DB0A-4270-A21C-11F8867CAA0F}.Release|x86.ActiveCfg = Release|Any CPU
 		{EEC58B8D-DB0A-4270-A21C-11F8867CAA0F}.Release|x86.Build.0 = Release|Any CPU
+		{53A2F3CD-D746-4B3F-8F4B-D901DD23825A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{53A2F3CD-D746-4B3F-8F4B-D901DD23825A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{53A2F3CD-D746-4B3F-8F4B-D901DD23825A}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{53A2F3CD-D746-4B3F-8F4B-D901DD23825A}.Debug|x64.Build.0 = Debug|Any CPU
+		{53A2F3CD-D746-4B3F-8F4B-D901DD23825A}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{53A2F3CD-D746-4B3F-8F4B-D901DD23825A}.Debug|x86.Build.0 = Debug|Any CPU
+		{53A2F3CD-D746-4B3F-8F4B-D901DD23825A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{53A2F3CD-D746-4B3F-8F4B-D901DD23825A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{53A2F3CD-D746-4B3F-8F4B-D901DD23825A}.Release|x64.ActiveCfg = Release|Any CPU
+		{53A2F3CD-D746-4B3F-8F4B-D901DD23825A}.Release|x64.Build.0 = Release|Any CPU
+		{53A2F3CD-D746-4B3F-8F4B-D901DD23825A}.Release|x86.ActiveCfg = Release|Any CPU
+		{53A2F3CD-D746-4B3F-8F4B-D901DD23825A}.Release|x86.Build.0 = Release|Any CPU
+		{AECBED31-875E-4328-9A11-F2C78D80E6A1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AECBED31-875E-4328-9A11-F2C78D80E6A1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AECBED31-875E-4328-9A11-F2C78D80E6A1}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{AECBED31-875E-4328-9A11-F2C78D80E6A1}.Debug|x64.Build.0 = Debug|Any CPU
+		{AECBED31-875E-4328-9A11-F2C78D80E6A1}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{AECBED31-875E-4328-9A11-F2C78D80E6A1}.Debug|x86.Build.0 = Debug|Any CPU
+		{AECBED31-875E-4328-9A11-F2C78D80E6A1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AECBED31-875E-4328-9A11-F2C78D80E6A1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AECBED31-875E-4328-9A11-F2C78D80E6A1}.Release|x64.ActiveCfg = Release|Any CPU
+		{AECBED31-875E-4328-9A11-F2C78D80E6A1}.Release|x64.Build.0 = Release|Any CPU
+		{AECBED31-875E-4328-9A11-F2C78D80E6A1}.Release|x86.ActiveCfg = Release|Any CPU
+		{AECBED31-875E-4328-9A11-F2C78D80E6A1}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -824,5 +852,7 @@ Global
 		{FB47ED89-A10F-4B8E-8299-6BEF99BFA96E} = {22222222-2222-2222-2222-222222222222}
 		{CEC879E4-7636-435A-BD1F-9CBF3D294963} = {371C8358-20A2-CD07-4715-AFA0A31FB8ED}
 		{EEC58B8D-DB0A-4270-A21C-11F8867CAA0F} = {22222222-2222-2222-2222-222222222222}
+		{53A2F3CD-D746-4B3F-8F4B-D901DD23825A} = {44444444-4444-4444-4444-444444444444}
+		{AECBED31-875E-4328-9A11-F2C78D80E6A1} = {44444444-4444-4444-4444-444444444444}
 	EndGlobalSection
 EndGlobal
