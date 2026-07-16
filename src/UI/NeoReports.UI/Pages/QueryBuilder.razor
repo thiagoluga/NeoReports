@@ -435,11 +435,17 @@
         }
     }
 
-    private IEnumerable<ApiCatalogTable> FilteredTables => _catalog is null
-        ? Array.Empty<ApiCatalogTable>()
-        : string.IsNullOrWhiteSpace(_tableSearch)
-            ? _catalog.Tables
-            : _catalog.Tables.Where(t => $"{t.Schema}.{t.Name}".Contains(_tableSearch, StringComparison.OrdinalIgnoreCase));
+    private IEnumerable<ApiCatalogTable> FilteredTables
+    {
+        get
+        {
+            if (_catalog is null)
+                return Array.Empty<ApiCatalogTable>();
+            if (string.IsNullOrWhiteSpace(_tableSearch))
+                return _catalog.Tables;
+            return _catalog.Tables.Where(t => $"{t.Schema}.{t.Name}".Contains(_tableSearch, StringComparison.OrdinalIgnoreCase));
+        }
+    }
 
     private IEnumerable<KeyValuePair<string, (string Alias, string Column, string DataType)>> ColumnOptions =>
         _tables.SelectMany(t => t.Columns.Select(c =>
