@@ -14,6 +14,7 @@ using NeoReports.Core.Configuration;
 using NeoReports.Core.Events;
 using NeoReports.Core.Pipeline;
 using NeoReports.Core.Preview;
+using NeoReports.Core.QueryBuilder;
 using NeoReports.Core.Registry;
 using NeoReports.Core.Scheduling;
 using NeoReports.Core.Schema;
@@ -52,6 +53,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
     /// <item><c>POST {prefix}/sources/{name}/health</c> — run an on-demand health check now; cached + timestamped; 422 when the type has no registered check</item>
     /// <item><c>GET  {prefix}/sources/{name}/catalog</c> — introspect the source's schema (tables/columns/PK/FK, ADR D49); 422 when the type has no registered explorer</item>
     /// <item><c>GET  {prefix}/sources/{name}/preview?schema=&amp;table=</c> — first rows of one table (ADR D49); row count is fixed server-side</item>
+    /// <item><c>POST {prefix}/sources/{name}/query-sql</c> — generate keyset-safe report SQL from a visual query model (ADR D49, Pro); 422 when no query-builder generator is registered</item>
     /// </list>
     /// Authorization is inherited from the host; set <see cref="NeoReportsEndpointOptions.RequireAuthorization"/>
     /// to apply <c>RequireAuthorization</c> to the group.
@@ -119,6 +121,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         group.MapPost("/sources/{name}/health", CheckSourceHealthAsync);
         group.MapGet("/sources/{name}/catalog", GetSourceCatalogAsync);
         group.MapGet("/sources/{name}/preview", PreviewSourceTableAsync);
+        group.MapPost("/sources/{name}/query-sql", GenerateSourceQuerySqlAsync);
 
         return group;
     }
@@ -996,6 +999,42 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         }
     }
 
+    private static async Task<IResult> GenerateSourceQuerySqlAsync(string name, HttpContext http, CancellationToken cancellationToken)
+    {
+        (SourceDefinition? definition, IResult? failure) = await ResolveSourceAsync(name, http, cancellationToken).ConfigureAwait(false);
+        if (failure is not null)
+            return failure;
+
+        // The Pro query builder registers this seam (ADR D49); an MIT-only host has none, so the
+        // capability is honestly reported as unavailable rather than faked (D36).
+        IQuerySqlGenerator? generator = http.RequestServices.GetService<IQuerySqlGenerator>();
+        if (generator is null)
+        {
+            return Results.Problem(
+                title: "The visual query builder is not available on this host.",
+                detail: "No IQuerySqlGenerator is registered. It ships with the NeoReports.QueryBuilder.Pro package (AddQueryBuilder()).",
+                statusCode: StatusCodes.Status422UnprocessableEntity);
+        }
+
+        string modelJson = await ReadBodyAsync(http, cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(modelJson))
+            return Results.BadRequest(new { error = "The request body must contain the query model JSON." });
+
+        try
+        {
+            GeneratedReportSql generated = generator.Generate(modelJson, definition!.Type);
+            ReportColumnView[] schema = generated.Schema.Columns
+                .Select(c => new ReportColumnView(c.Name, c.Type.ToString(), c.DisplayName, c.Format, c.Nullable))
+                .ToArray();
+            return Results.Ok(new GeneratedQuerySqlResponse(generated.Sql, generated.Parameters, schema));
+        }
+        catch (QuerySqlGenerationException ex)
+        {
+            // The generator's message is caller-safe by contract (no secrets, no raw model echo).
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    }
+
     // A schema/preview call opens a live DB connection built from the source's connection string and
     // runs catalog/preview SQL — a driver exception's message can echo connection-string fragments
     // (a malformed string, an auth error), so it is logged server-side and never returned to the
@@ -1018,9 +1057,32 @@ public static class NeoReportsEndpointRouteBuilderExtensions
     private static async Task<(SourceDefinition? Definition, ISchemaExplorer? Explorer, IResult? Failure)> ResolveExplorerAsync(
         string name, HttpContext http, CancellationToken cancellationToken)
     {
+        (SourceDefinition? definition, IResult? failure) = await ResolveSourceAsync(name, http, cancellationToken).ConfigureAwait(false);
+        if (failure is not null)
+            return (null, null, failure);
+
+        ISchemaExplorer? explorer = http.RequestServices.GetServices<ISchemaExplorer>()
+            .FirstOrDefault(e => string.Equals(e.Type, definition!.Type, StringComparison.OrdinalIgnoreCase));
+        if (explorer is null)
+        {
+            return (null, null, Results.Problem(
+                title: "Schema exploration not supported for this source type.",
+                detail: $"No ISchemaExplorer is registered for type '{definition!.Type}'.",
+                statusCode: StatusCodes.Status422UnprocessableEntity));
+        }
+
+        return (definition, explorer, null);
+    }
+
+    // Resolves the named source through the registry, or returns the appropriate failure result
+    // (409 no registry, 404 unknown source, 500 on a resolve error) — shared by every endpoint that
+    // acts on a named source's live capabilities (schema explorer, query builder).
+    private static async Task<(SourceDefinition? Definition, IResult? Failure)> ResolveSourceAsync(
+        string name, HttpContext http, CancellationToken cancellationToken)
+    {
         ISourceRegistry? registry = http.RequestServices.GetService<ISourceRegistry>();
         if (registry is null)
-            return (null, null, Results.Conflict(new { error = "No source registry is configured on this host." }));
+            return (null, Results.Conflict(new { error = "No source registry is configured on this host." }));
 
         SourceDefinition? definition;
         try
@@ -1029,24 +1091,14 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         }
         catch (ConfigurationException ex)
         {
-            return (null, null, Results.Problem(
+            return (null, Results.Problem(
                 title: "Could not resolve the source.", detail: ex.Message, statusCode: StatusCodes.Status500InternalServerError));
         }
 
         if (definition is null)
-            return (null, null, Results.NotFound(new { error = $"No source named '{name}' is registered." }));
+            return (null, Results.NotFound(new { error = $"No source named '{name}' is registered." }));
 
-        ISchemaExplorer? explorer = http.RequestServices.GetServices<ISchemaExplorer>()
-            .FirstOrDefault(e => string.Equals(e.Type, definition.Type, StringComparison.OrdinalIgnoreCase));
-        if (explorer is null)
-        {
-            return (null, null, Results.Problem(
-                title: "Schema exploration not supported for this source type.",
-                detail: $"No ISchemaExplorer is registered for type '{definition.Type}'.",
-                statusCode: StatusCodes.Status422UnprocessableEntity));
-        }
-
-        return (definition, explorer, null);
+        return (definition, null);
     }
 
     private static SchemaCatalogResponse ToCatalogResponse(SchemaCatalog catalog) => new(

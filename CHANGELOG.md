@@ -9,6 +9,15 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 ## [Unreleased]
 
 ### Added
+- **Visual query builder: generate-SQL seam + endpoint (D49/Epic K, K5a, Pro).** The MIT UI and
+  endpoints stay decoupled from the commercial generator via a new Core contract,
+  `NeoReports.Core.QueryBuilder.IQuerySqlGenerator` — the visual query model crosses the seam as
+  opaque JSON, so no MIT layer references a Pro type (the same capability-gating pattern as
+  `ISchemaExplorer`/`IFilterTranslator`). `NeoReports.QueryBuilder.Pro` implements it (register with
+  `AddQueryBuilder()`), and a new `POST /sources/{name}/query-sql` endpoint compiles a visual query
+  into keyset-safe report SQL (`{sql, parameters, schema}`); honest states for no registry (409),
+  unknown source (404), no generator registered — i.e. an MIT-only host (422), and an empty or invalid
+  model (400, with a caller-safe message). No UI yet (K5b).
 - **`NeoReports.QueryBuilder.Pro` — visual query builder engine (D49/Epic K, K4, Pro).** A new
   commercial (PolyForm Small Business) package with a structured `QueryModel` (source + inner/left
   joins + columns + WHERE + GROUP BY/aggregation + keyset key) and a `KeysetSqlGenerator` that turns
