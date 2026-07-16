@@ -9,6 +9,19 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 ## [Unreleased]
 
 ### Added
+- **Visual query builder UI (D49/Epic K, K5b, Pro).** A new **Query builder** screen
+  (`/query-builder`) composes a query visually and generates keyset-safe SQL. A schema explorer over
+  the source's catalog (searchable tree, PK/FK icons, an "already used" marker, per-table 50-row
+  previews) feeds a notebook of step cards — FROM (keyset key defaults to the table's PK), JOIN (FK
+  auto-detected, `ON` pre-filled), Columns (with aggregates), WHERE (structured, parameter-bound) —
+  and a live generated-SQL panel through `POST /sources/{name}/query-sql`; a Raw-SQL escape-hatch tab
+  carries the honest caveat banner. On a host without the Pro query-builder package the panel says the
+  builder isn't available (422) instead of faking it. New UI API-client methods
+  (`TryGetSourceCatalogAsync`/`TryPreviewSourceTableAsync`/`TryGenerateQuerySqlAsync`). Adding a table
+  uses a `+` button (not drag-drop) and SQL generates on an explicit click — both to keep the Blazor
+  Server circuit quiet. The D49 result-preview grid of the built query's own rows is deferred (it needs
+  an ad-hoc-SQL preview endpoint that doesn't exist yet); per-table samples and the generated SQL are
+  available now.
 - **Visual query builder: generate-SQL seam + endpoint (D49/Epic K, K5a, Pro).** The MIT UI and
   endpoints stay decoupled from the commercial generator via a new Core contract,
   `NeoReports.Core.QueryBuilder.IQuerySqlGenerator` — the visual query model crosses the seam as

@@ -1,0 +1,686 @@
+@page "/query-builder"
+@page "/query-builder/{Source}"
+@using System.Text.Json
+@using NeoReports.UI.Services
+@inject NavigationManager Nav
+@inject INeoReportsApiClient Api
+
+@* Interactive source explorer + visual query builder (ADR D49/K5b, Pro).
+   Left: a schema explorer over GET /sources/{name}/catalog. Center: a notebook of step cards
+   (FROM / JOIN / columns / WHERE / GROUP BY / key) that compiles to keyset-safe SQL through
+   POST /sources/{name}/query-sql. The generator ships in the Pro package — an MIT-only host has
+   none, so the SQL panel honestly says the builder isn't available (D36) rather than faking it.
+   Deferred (needs an ad-hoc-SQL preview endpoint that doesn't exist yet): a result grid of the
+   built query's own rows. Per-table samples and the generated SQL are available now. *@
+
+<div class="page">
+    <div class="page-head">
+        <div class="title">
+            <h1 style="font-size:24px">Query builder</h1>
+            <p class="sub" style="max-width:560px;margin-top:8px;line-height:1.5">
+                Explore a source's schema and compose a query visually — NeoReports generates keyset-safe SQL for you.
+            </p>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;align-self:flex-start;margin-top:6px">
+            <label class="muted" style="font-size:12px">Source</label>
+            <select class="input mono" style="width:220px" value="@_sourceName" @onchange="OnSourceChangedAsync">
+                <option value="">Select a source…</option>
+                @if (_sources is not null)
+                {
+                    @foreach (var s in _sources)
+                    {
+                        <option value="@s.Name">@s.Name (@s.Type)</option>
+                    }
+                }
+            </select>
+        </div>
+    </div>
+
+    @if (_sources is null)
+    {
+        <Banner Variant="warning" Icon="plug-connected-x">
+            <b>The engine API is unreachable.</b>
+            <span style="font-size:12px">The query builder needs a live engine to introspect sources and generate SQL.</span>
+        </Banner>
+    }
+    else if (_sources.Count == 0)
+    {
+        <EmptyState Icon="database-off" Title="No sources registered">
+            <ChildContent>Register a source first — the query builder introspects a source's schema.</ChildContent>
+            <Action><Button Variant="primary" Icon="plus" OnClick="@(() => Nav.NavigateTo("sources"))">Go to sources</Button></Action>
+        </EmptyState>
+    }
+    else if (_sourceName is null)
+    {
+        <EmptyState Icon="pointer" Title="Pick a source to begin">
+            <ChildContent>Choose a registered source above to explore its tables and build a query.</ChildContent>
+        </EmptyState>
+    }
+    else if (_catalogLoading)
+    {
+        <PageLoading />
+    }
+    else if (_catalog is null)
+    {
+        <Banner Variant="info" Icon="info-circle">
+            <b>No schema explorer for this source type.</b>
+            <span style="font-size:12px">
+                The visual builder needs catalog introspection, which the SQL-family sources
+                (Postgres, MySQL, SQL Server, Oracle) provide — this source's type doesn't. You can still build reports for it from the Builder.
+            </span>
+        </Banner>
+    }
+    else
+    {
+        <div style="display:grid;grid-template-columns:320px 1fr;gap:16px;align-items:start">
+
+            @* ── Left: schema explorer ─────────────────────────────────────── *@
+            <Card Title="Schema" Sub="@($"{_catalog.Tables.Count} tables")">
+                <ChildContent>
+                    <input class="input" style="margin-bottom:10px" placeholder="Search tables…" @bind="_tableSearch" @bind:event="oninput" />
+                    <div style="display:flex;flex-direction:column;gap:2px;max-height:520px;overflow:auto">
+                        @foreach (var t in FilteredTables)
+                        {
+                            var used = IsUsed(t);
+                            <div style="border:0.5px solid var(--border);border-radius:8px;padding:8px 10px">
+                                <div style="display:flex;align-items:center;gap:6px">
+                                    @if (used)
+                                    {
+                                        <i class="ti ti-circle-check" style="color:var(--success)" title="Already used in this query"></i>
+                                    }
+                                    else
+                                    {
+                                        <i class="ti ti-table muted"></i>
+                                    }
+                                    <span class="mono" style="font-size:13px;flex:1">@t.Schema.@t.Name</span>
+                                    <button class="icon-btn" title="Preview 50 rows" @onclick="() => PreviewTableAsync(t)"><i class="ti ti-eye"></i></button>
+                                    <button class="icon-btn" title="Add to query" @onclick="() => AddTable(t)"><i class="ti ti-plus"></i></button>
+                                </div>
+                                <div style="margin-top:6px;display:flex;flex-direction:column;gap:2px">
+                                    @foreach (var c in t.Columns)
+                                    {
+                                        <div style="display:flex;align-items:center;gap:6px;padding-left:22px">
+                                            @if (c.IsPrimaryKey)
+                                            {
+                                                <i class="ti ti-key" style="color:var(--warning)" title="Primary key"></i>
+                                            }
+                                            else if (t.ForeignKeys.Any(f => f.Column == c.Name))
+                                            {
+                                                <i class="ti ti-link muted" title="Foreign key"></i>
+                                            }
+                                            else
+                                            {
+                                                <span style="width:16px"></span>
+                                            }
+                                            <span class="mono" style="font-size:12px;flex:1">@c.Name</span>
+                                            <span class="muted mono" style="font-size:11px">@c.DataType</span>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </ChildContent>
+            </Card>
+
+            @* ── Right: notebook + generated SQL ────────────────────────────── *@
+            <div style="display:flex;flex-direction:column;gap:16px">
+                <div style="display:flex;gap:6px">
+                    <Button Variant="@(_tab == "visual" ? "primary" : "outline")" Icon="layout-list" OnClick="@(() => _tab = "visual")">Visual</Button>
+                    <Button Variant="@(_tab == "raw" ? "primary" : "outline")" Icon="code" OnClick="@(() => _tab = "raw")">Raw SQL</Button>
+                </div>
+
+                @if (_tab == "visual")
+                {
+                    @if (_tables.Count == 0)
+                    {
+                        <EmptyState Icon="arrow-left" Title="Add a table to include it in the query">
+                            <ChildContent>Use the <i class="ti ti-plus"></i> button next to a table on the left to start. The first table you add becomes the query's FROM.</ChildContent>
+                        </EmptyState>
+                    }
+                    else
+                    {
+                        @* FROM *@
+                        <Card Title="From" Sub="The primary table and the keyset key it paginates on">
+                            <ChildContent>
+                                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                                    <Chip Kind="token">@_tables[0].Schema.@_tables[0].Name</Chip>
+                                    <span class="muted mono" style="font-size:12px">@_tables[0].Alias</span>
+                                    <div style="display:flex;align-items:center;gap:6px;margin-left:auto">
+                                        <label class="muted" style="font-size:12px">key</label>
+                                        <select class="input mono" style="width:180px" value="@_keyColumn" @onchange="OnKeyChanged">
+                                            @foreach (var c in _tables[0].Columns)
+                                            {
+                                                <option value="@c.Name">@c.Name</option>
+                                            }
+                                        </select>
+                                    </div>
+                                    <button class="icon-btn" title="Remove (clears the query)" @onclick="() => RemoveTable(0)"><i class="ti ti-trash"></i></button>
+                                </div>
+                            </ChildContent>
+                        </Card>
+
+                        @* JOINs *@
+                        @for (var ji = 1; ji < _tables.Count; ji++)
+                        {
+                            var j = _tables[ji];
+                            var idx = ji;
+                            <Card Title="Join" Sub="@(HasFk(j) ? "Foreign key detected — the ON condition was pre-filled" : "No foreign key found — set the ON columns manually")">
+                                <ChildContent>
+                                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                                        <select class="input" style="width:120px" value="@j.Kind" @onchange='e => j.Kind = e.Value?.ToString() ?? "Inner"'>
+                                            <option value="Inner">inner join</option>
+                                            <option value="Left">left join</option>
+                                        </select>
+                                        <Chip Kind="token">@j.Schema.@j.Name</Chip>
+                                        <span class="muted mono" style="font-size:12px">@j.Alias</span>
+                                        <span class="muted" style="font-size:12px">on</span>
+                                        <select class="input mono" style="width:150px" value="@j.LeftAlias" @onchange="e => j.LeftAlias = e.Value?.ToString() ?? j.LeftAlias">
+                                            @foreach (var a in AliasesBefore(idx))
+                                            {
+                                                <option value="@a">@a</option>
+                                            }
+                                        </select>
+                                        <span class="mono">.</span>
+                                        <input class="input mono" style="width:130px" @bind="j.LeftColumn" placeholder="column" />
+                                        <span class="mono">=</span>
+                                        <span class="mono muted">@j.Alias.</span>
+                                        <input class="input mono" style="width:130px" @bind="j.RightColumn" placeholder="column" />
+                                        <button class="icon-btn" title="Remove join" @onclick="() => RemoveTable(idx)"><i class="ti ti-trash"></i></button>
+                                    </div>
+                                </ChildContent>
+                            </Card>
+                        }
+
+                        @* SELECT columns *@
+                        <Card Title="Columns" Sub="The output columns — pick from any added table; add an aggregate to summarize">
+                            <Action>
+                                <select class="input mono" style="width:200px" value="" @onchange="AddSelectColumn">
+                                    <option value="">Add column…</option>
+                                    @foreach (var opt in ColumnOptions)
+                                    {
+                                        <option value="@opt.Key">@opt.Key</option>
+                                    }
+                                </select>
+                            </Action>
+                            <ChildContent>
+                                @if (_select.Count == 0)
+                                {
+                                    <span class="muted" style="font-size:12px">No columns selected yet — a query must output at least one column.</span>
+                                }
+                                @foreach (var col in _select)
+                                {
+                                    var c = col;
+                                    <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
+                                        <span class="mono" style="font-size:12px;width:200px">@c.Alias.@c.Column</span>
+                                        <select class="input" style="width:110px" value="@c.Aggregate" @onchange='e => c.Aggregate = e.Value?.ToString() ?? "None"'>
+                                            @foreach (var agg in Aggregates)
+                                            {
+                                                <option value="@agg">@agg.ToLowerInvariant()</option>
+                                            }
+                                        </select>
+                                        <span class="muted" style="font-size:12px">as</span>
+                                        <input class="input mono" style="flex:1" @bind="c.OutputName" placeholder="output name" />
+                                        <button class="icon-btn" title="Remove column" @onclick="() => _select.Remove(c)"><i class="ti ti-trash"></i></button>
+                                    </div>
+                                }
+                                @if (_select.Any(s => s.Aggregate != "None"))
+                                {
+                                    <div style="margin-top:10px"><span class="muted" style="font-size:12px">
+                                        <i class="ti ti-info-circle"></i>
+                                        This is an aggregated query — the non-aggregated columns are grouped automatically (GROUP BY), and the key must be one of them.
+                                    </span></div>
+                                }
+                            </ChildContent>
+                        </Card>
+
+                        @* WHERE *@
+                        <Card Title="Where" Sub="Conditions are ANDed; values are always bound as parameters, never inlined">
+                            <Action><Button Variant="outline" Icon="plus" OnClick="AddWhere">Add condition</Button></Action>
+                            <ChildContent>
+                                @if (_where.Count == 0)
+                                {
+                                    <span class="muted" style="font-size:12px">No conditions — the query returns every row (up to the keyset page).</span>
+                                }
+                                @foreach (var w in _where)
+                                {
+                                    var row = w;
+                                    <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
+                                        <select class="input mono" style="width:200px" value="@ColumnKey(row.Alias, row.Column)" @onchange="e => SetWhereColumn(row, e.Value?.ToString())">
+                                            @foreach (var opt in ColumnOptions)
+                                            {
+                                                <option value="@opt.Key">@opt.Key</option>
+                                            }
+                                        </select>
+                                        <select class="input mono" style="width:170px" value="@row.Operator" @onchange='e => row.Operator = e.Value?.ToString() ?? "Equals"'>
+                                            @foreach (var op in Operators)
+                                            {
+                                                <option value="@op">@op</option>
+                                            }
+                                        </select>
+                                        <input class="input" style="flex:1" @bind="row.Value" placeholder="value" />
+                                        <button class="icon-btn" title="Remove condition" @onclick="() => _where.Remove(row)"><i class="ti ti-trash"></i></button>
+                                    </div>
+                                }
+                            </ChildContent>
+                        </Card>
+
+                        <div style="display:flex;gap:8px">
+                            <Button Variant="primary" Icon="wand" Loading="_generating" OnClick="GenerateAsync">Generate SQL</Button>
+                        </div>
+                    }
+                }
+                else
+                {
+                    @* Raw SQL escape hatch *@
+                    <Banner Variant="warning" Icon="alert-triangle">
+                        <b>Raw SQL — you own the query.</b>
+                        <span style="font-size:12px">
+                            The visual builder is off for a hand-written query. NeoReports won't validate or keyset-wrap it for you —
+                            it must already be a valid keyset query (<span class="mono">WHERE (@("@")cursor IS NULL OR key &gt; @("@")cursor) … ORDER BY key</span>).
+                            The "already used" table markers on the left use lightweight name extraction and won't be 100% — subqueries, CTEs, and aliases can fool them.
+                        </span>
+                    </Banner>
+                    <Card Title="Raw SQL" Sub="Paste or edit the query, then copy it into a report">
+                        <ChildContent>
+                            <textarea class="input mono" style="width:100%;min-height:220px;resize:vertical" @bind="_rawSql" placeholder="SELECT …"></textarea>
+                        </ChildContent>
+                    </Card>
+                }
+
+                @* Generated SQL — shared by both tabs when a visual query was generated. *@
+                @if (_tab == "visual" && _generated is not null)
+                {
+                    <Card Title="Generated SQL" Sub='@("Keyset-safe — exposes @cursor and orders by the key")'>
+                        <ChildContent>
+                            @switch (_generated.Outcome)
+                            {
+                                case ApiQuerySqlOutcome.Ok when _generated.Data is { } g:
+                                    <pre class="mono" style="white-space:pre-wrap;font-size:12px;background:var(--surface-2);border:0.5px solid var(--border);border-radius:8px;padding:12px;overflow:auto">@g.Sql</pre>
+                                    @if (g.Parameters.Count > 0)
+                                    {
+                                        <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+                                            <span class="muted" style="font-size:12px">parameters:</span>
+                                            @foreach (var p in g.Parameters)
+                                            {
+                                                <Chip Kind="token">@p.Key = @(p.Value?.ToString() ?? "null")</Chip>
+                                            }
+                                        </div>
+                                    }
+                                    <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+                                        <span class="muted" style="font-size:12px">columns:</span>
+                                        @foreach (var c in g.Schema)
+                                        {
+                                            <Chip Kind="token">@c.Name : @c.Type</Chip>
+                                        }
+                                    </div>
+                                    break;
+                                case ApiQuerySqlOutcome.NotSupported:
+                                    <Banner Variant="info" Icon="info-circle">
+                                        <b>The visual query builder isn't available on this host.</b>
+                                        <span style="font-size:12px">It ships with the NeoReports.QueryBuilder.Pro package. Schema exploration and per-table previews still work.</span>
+                                    </Banner>
+                                    break;
+                                case ApiQuerySqlOutcome.Invalid:
+                                    <Banner Variant="danger" Icon="alert-triangle"><span style="font-size:12px">@(_generated.Error ?? "The query model is invalid.")</span></Banner>
+                                    break;
+                                default:
+                                    <Banner Variant="danger" Icon="alert-triangle"><span style="font-size:12px">The engine couldn't generate SQL for this query.</span></Banner>
+                                    break;
+                            }
+                        </ChildContent>
+                    </Card>
+                }
+
+                @* Per-table preview sample. *@
+                @if (_previewTarget is { } pt)
+                {
+                    <Card Title="@($"Preview · {pt.Schema}.{pt.Table}")" Sub="First rows — read-only, capped server-side">
+                        <Action><button class="icon-btn" title="Close" @onclick="() => { _previewTarget = null; _preview = null; }"><i class="ti ti-x"></i></button></Action>
+                        <ChildContent>
+                            <DataGrid Columns="@Math.Max(_preview?.Columns.Count ?? 1, 1)" Loading="_previewLoading"
+                                      Empty="@(_preview is null || _preview.Rows.Count == 0)" EmptyIcon="table-off" EmptyTitle="No rows">
+                                <Head>
+                                    <tr>@if (_preview is not null) { @foreach (var c in _preview.Columns) { <th>@c</th> } }</tr>
+                                </Head>
+                                <Body>
+                                    @if (_preview is not null)
+                                    {
+                                        @foreach (var row in _preview.Rows)
+                                        {
+                                            <tr>@foreach (var v in row) { <td class="mono">@(v?.ToString() ?? "—")</td> }</tr>
+                                        }
+                                    }
+                                </Body>
+                            </DataGrid>
+                        </ChildContent>
+                    </Card>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string? Source { get; set; }
+
+    private static readonly string[] Operators =
+        { "Equals", "NotEquals", "GreaterThan", "GreaterThanOrEqual", "LessThan", "LessThanOrEqual", "Contains", "StartsWith" };
+    private static readonly string[] Aggregates = { "None", "Count", "Sum", "Avg", "Min", "Max" };
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+
+    private IReadOnlyList<ApiSourceView>? _sources;
+    private string? _sourceName;
+    private bool _catalogLoading;
+    private ApiSchemaCatalog? _catalog;
+    private string _tableSearch = "";
+    private string _tab = "visual";
+
+    // Monotonic alias sequence — never reused, so removing a middle table can't collide the next
+    // table's alias with an existing one (aliases are t0, t1, … with gaps allowed after removals).
+    private int _aliasSeq;
+    private readonly List<TableVm> _tables = new();
+    private readonly List<SelectVm> _select = new();
+    private readonly List<WhereVm> _where = new();
+    private string? _keyColumn;
+    private string? _keyDataType;
+
+    private ApiQuerySqlResult? _generated;
+    private bool _generating;
+
+    private (string Schema, string Table)? _previewTarget;
+    private ApiTablePreview? _preview;
+    private bool _previewLoading;
+
+    private string _rawSql = "";
+
+    private sealed class TableVm
+    {
+        public string Schema { get; init; } = "";
+        public string Name { get; init; } = "";
+        public string Alias { get; init; } = "";
+        public IReadOnlyList<ApiCatalogColumn> Columns { get; init; } = Array.Empty<ApiCatalogColumn>();
+        public IReadOnlyList<ApiForeignKey> ForeignKeys { get; init; } = Array.Empty<ApiForeignKey>();
+        public string Kind { get; set; } = "Inner";
+        public string LeftAlias { get; set; } = "";
+        public string LeftColumn { get; set; } = "";
+        public string RightColumn { get; set; } = "";
+    }
+
+    private sealed class SelectVm
+    {
+        public string Alias { get; init; } = "";
+        public string Column { get; init; } = "";
+        public string DataType { get; init; } = "";
+        public string OutputName { get; set; } = "";
+        public string Aggregate { get; set; } = "None";
+    }
+
+    private sealed class WhereVm
+    {
+        public string Alias { get; set; } = "";
+        public string Column { get; set; } = "";
+        public string DataType { get; set; } = "";
+        public string Operator { get; set; } = "Equals";
+        public string Value { get; set; } = "";
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _sources = (await Api.TryListSourcesAsync())?.ToList();
+        if (!string.IsNullOrWhiteSpace(Source))
+        {
+            _sourceName = Source;
+            await LoadCatalogAsync();
+        }
+    }
+
+    private IEnumerable<ApiCatalogTable> FilteredTables
+    {
+        get
+        {
+            if (_catalog is null)
+                return Array.Empty<ApiCatalogTable>();
+            if (string.IsNullOrWhiteSpace(_tableSearch))
+                return _catalog.Tables;
+            return _catalog.Tables.Where(t => $"{t.Schema}.{t.Name}".Contains(_tableSearch, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    private IEnumerable<KeyValuePair<string, (string Alias, string Column, string DataType)>> ColumnOptions =>
+        _tables.SelectMany(t => t.Columns.Select(c =>
+            new KeyValuePair<string, (string, string, string)>($"{t.Alias}.{c.Name}", (t.Alias, c.Name, c.DataType))));
+
+    private static string ColumnKey(string alias, string column) => $"{alias}.{column}";
+
+    private IEnumerable<string> AliasesBefore(int index) => _tables.Take(index).Select(t => t.Alias);
+
+    private bool IsUsed(ApiCatalogTable t) => _tables.Any(x => x.Schema == t.Schema && x.Name == t.Name);
+
+    private static bool HasFk(TableVm j) => !string.IsNullOrEmpty(j.LeftColumn) && !string.IsNullOrEmpty(j.RightColumn);
+
+    private async Task OnSourceChangedAsync(ChangeEventArgs e)
+    {
+        _sourceName = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString();
+        ResetQuery();
+        _catalog = null;
+        if (_sourceName is not null)
+            await LoadCatalogAsync();
+    }
+
+    private async Task LoadCatalogAsync()
+    {
+        _catalogLoading = true;
+        try
+        {
+            _catalog = await Api.TryGetSourceCatalogAsync(_sourceName!);
+        }
+        finally
+        {
+            _catalogLoading = false;
+        }
+    }
+
+    private void ResetQuery()
+    {
+        _tables.Clear();
+        _select.Clear();
+        _where.Clear();
+        _aliasSeq = 0;
+        _keyColumn = null;
+        _keyDataType = null;
+        _generated = null;
+        _previewTarget = null;
+        _preview = null;
+    }
+
+    private void AddTable(ApiCatalogTable t)
+    {
+        var alias = $"t{_aliasSeq++}";
+        var vm = new TableVm
+        {
+            Schema = t.Schema,
+            Name = t.Name,
+            Alias = alias,
+            Columns = t.Columns,
+            ForeignKeys = t.ForeignKeys,
+        };
+
+        if (_tables.Count == 0)
+        {
+            _tables.Add(vm);
+            // Default the keyset key to the table's primary key (or its first column).
+            var pk = t.Columns.FirstOrDefault(c => c.IsPrimaryKey) ?? t.Columns.FirstOrDefault();
+            _keyColumn = pk?.Name;
+            _keyDataType = pk?.DataType;
+        }
+        else
+        {
+            AutoJoin(vm, t);
+            _tables.Add(vm);
+        }
+        _generated = null;
+    }
+
+    // Pre-fills the join's ON from a foreign key, whether it points from the new table to an existing
+    // one or the reverse. The new table's alias is always the right side.
+    private void AutoJoin(TableVm vm, ApiCatalogTable t)
+    {
+        foreach (var existing in _tables)
+        {
+            // FK on the new table → existing table.
+            var outbound = t.ForeignKeys.FirstOrDefault(f => f.ReferencedTable == existing.Name && f.ReferencedSchema == existing.Schema);
+            if (outbound is not null)
+            {
+                vm.LeftAlias = existing.Alias;
+                vm.LeftColumn = outbound.ReferencedColumn;
+                vm.RightColumn = outbound.Column;
+                return;
+            }
+
+            // FK on an existing table → the new table.
+            var inbound = existing.ForeignKeys.FirstOrDefault(f => f.ReferencedTable == t.Name && f.ReferencedSchema == t.Schema);
+            if (inbound is not null)
+            {
+                vm.LeftAlias = existing.Alias;
+                vm.LeftColumn = inbound.Column;
+                vm.RightColumn = inbound.ReferencedColumn;
+                return;
+            }
+        }
+        vm.LeftAlias = _tables[0].Alias;
+    }
+
+    private void RemoveTable(int index)
+    {
+        if (index == 0)
+        {
+            // Removing FROM clears the whole query — aliases would otherwise dangle.
+            ResetQuery();
+            return;
+        }
+        var removed = _tables[index];
+        _tables.RemoveAt(index);
+        _select.RemoveAll(s => s.Alias == removed.Alias);
+        _where.RemoveAll(w => w.Alias == removed.Alias);
+        _generated = null;
+    }
+
+    private void OnKeyChanged(ChangeEventArgs e)
+    {
+        _keyColumn = e.Value?.ToString();
+        _keyDataType = _tables.Count > 0
+            ? _tables[0].Columns.FirstOrDefault(c => c.Name == _keyColumn)?.DataType
+            : null;
+        _generated = null;
+    }
+
+    private void AddSelectColumn(ChangeEventArgs e)
+    {
+        var key = e.Value?.ToString();
+        if (string.IsNullOrEmpty(key))
+            return;
+        var opt = ColumnOptions.FirstOrDefault(o => o.Key == key);
+        if (opt.Key is null)
+            return;
+        _select.Add(new SelectVm
+        {
+            Alias = opt.Value.Alias,
+            Column = opt.Value.Column,
+            DataType = opt.Value.DataType,
+            OutputName = opt.Value.Column,
+        });
+        _generated = null;
+    }
+
+    private void AddWhere()
+    {
+        var first = ColumnOptions.FirstOrDefault();
+        _where.Add(new WhereVm { Alias = first.Value.Alias ?? "", Column = first.Value.Column ?? "", DataType = first.Value.DataType ?? "" });
+    }
+
+    private void SetWhereColumn(WhereVm row, string? key)
+    {
+        var opt = ColumnOptions.FirstOrDefault(o => o.Key == key);
+        if (opt.Key is null)
+            return;
+        row.Alias = opt.Value.Alias;
+        row.Column = opt.Value.Column;
+        row.DataType = opt.Value.DataType;
+    }
+
+    private async Task PreviewTableAsync(ApiCatalogTable t)
+    {
+        _previewTarget = (t.Schema, t.Name);
+        _preview = null;
+        _previewLoading = true;
+        try
+        {
+            _preview = await Api.TryPreviewSourceTableAsync(_sourceName!, t.Schema, t.Name);
+        }
+        finally
+        {
+            _previewLoading = false;
+        }
+    }
+
+    private async Task GenerateAsync()
+    {
+        if (_sourceName is null || _tables.Count == 0)
+            return;
+
+        _generating = true;
+        try
+        {
+            var modelJson = BuildModelJson();
+            _generated = await Api.TryGenerateQuerySqlAsync(_sourceName, modelJson);
+        }
+        finally
+        {
+            _generating = false;
+        }
+    }
+
+    // Serializes the notebook into the query-model JSON the Pro generator expects (camelCase keys,
+    // string enum values). When any column is aggregated, the non-aggregated columns become the
+    // GROUP BY set — matching the generator's rule that grouped queries need every plain column grouped.
+    private string BuildModelJson()
+    {
+        var from = _tables[0];
+        bool aggregated = _select.Any(s => s.Aggregate != "None");
+        var groupBy = aggregated
+            ? _select.Where(s => s.Aggregate == "None").Select(s => new { tableAlias = s.Alias, column = s.Column }).ToArray()
+            : Array.Empty<object>();
+
+        var model = new
+        {
+            from = new { schema = from.Schema, name = from.Name, alias = from.Alias },
+            joins = _tables.Skip(1).Select(j => new
+            {
+                kind = j.Kind,
+                table = new { schema = j.Schema, name = j.Name, alias = j.Alias },
+                left = new { tableAlias = j.LeftAlias, column = j.LeftColumn },
+                right = new { tableAlias = j.Alias, column = j.RightColumn },
+            }).ToArray(),
+            select = _select.Select(s => new
+            {
+                source = new { tableAlias = s.Alias, column = s.Column },
+                outputName = string.IsNullOrWhiteSpace(s.OutputName) ? s.Column : s.OutputName,
+                dataType = s.DataType,
+                aggregate = s.Aggregate,
+            }).ToArray(),
+            where = _where.Where(w => !string.IsNullOrWhiteSpace(w.Column)).Select(w => new
+            {
+                column = new { tableAlias = w.Alias, column = w.Column },
+                @operator = w.Operator,
+                value = w.Value,
+                dataType = w.DataType,
+            }).ToArray(),
+            groupBy,
+            key = new { tableAlias = from.Alias, column = _keyColumn ?? "" },
+            keyDataType = _keyDataType ?? "",
+        };
+
+        return JsonSerializer.Serialize(model, Json);
+    }
+}
