@@ -31,7 +31,7 @@ public class SchemaExplorerEndpointTests
             services.AddSingleton(explorer);
     }
 
-    private static Task RegisterSourceAsync(HttpClient client, string name = "sales-db", string type = "fake") =>
+    private static Task<HttpResponseMessage> RegisterSourceAsync(HttpClient client, string name = "sales-db", string type = "fake") =>
         client.PostAsJsonAsync("/api/sources", new { name, type }, Json);
 
     [Fact]
@@ -110,12 +110,43 @@ public class SchemaExplorerEndpointTests
 
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
+
+    [Fact]
+    public async Task Catalog_returns_502_and_no_driver_detail_when_the_explorer_throws()
+    {
+        using var host = await TestApp.StartAsync(s => AddHost(s, new ThrowingSchemaExplorer()));
+        var client = host.GetTestClient();
+        await RegisterSourceAsync(client);
+
+        var response = await client.GetAsync("/api/sources/sales-db/catalog");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadGateway);
+        string body = await response.Content.ReadAsStringAsync();
+        body.ShouldNotContain(ThrowingSchemaExplorer.SecretFragment); // never echo connection-string fragments
+    }
+
+    [Fact]
+    public async Task Preview_returns_502_and_no_driver_detail_when_the_explorer_throws()
+    {
+        using var host = await TestApp.StartAsync(s => AddHost(s, new ThrowingSchemaExplorer()));
+        var client = host.GetTestClient();
+        await RegisterSourceAsync(client);
+
+        var response = await client.GetAsync("/api/sources/sales-db/preview?schema=public&table=customers");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadGateway);
+        string body = await response.Content.ReadAsStringAsync();
+        body.ShouldNotContain(ThrowingSchemaExplorer.SecretFragment);
+    }
 }
 
 /// <summary>Minimal in-memory <see cref="ISchemaExplorer"/> for the endpoint tests.</summary>
 internal sealed class FakeSchemaExplorer : ISchemaExplorer
 {
     public FakeSchemaExplorer(string type) => Type = type;
+
+    private static readonly string[] PreviewColumns = { "id" };
+    private static readonly object?[][] PreviewRows = { new object?[] { 1L } };
 
     public string Type { get; }
     public int LastTop { get; private set; }
@@ -141,6 +172,25 @@ internal sealed class FakeSchemaExplorer : ISchemaExplorer
         LastSchema = schema;
         LastTable = table;
         LastTop = top;
-        return Task.FromResult(new TablePreview(new[] { "id" }, new[] { new object?[] { 1L } }));
+        return Task.FromResult(new TablePreview(PreviewColumns, PreviewRows));
     }
+}
+
+/// <summary>
+/// An <see cref="ISchemaExplorer"/> whose calls always throw a driver-style exception carrying a
+/// connection-string fragment — used to prove the endpoint maps the failure to a 502 and never
+/// echoes the exception message (which could leak secrets) back to the caller.
+/// </summary>
+internal sealed class ThrowingSchemaExplorer : ISchemaExplorer
+{
+    public const string SecretFragment = "Password=hunter2";
+
+    public string Type => "fake";
+
+    public Task<SchemaCatalog> GetCatalogAsync(SourceDefinition definition, CancellationToken cancellationToken) =>
+        throw new InvalidOperationException($"login failed for Server=db;{SecretFragment}");
+
+    public Task<TablePreview> PreviewTableAsync(
+        SourceDefinition definition, string schema, string table, int top, CancellationToken cancellationToken) =>
+        throw new InvalidOperationException($"login failed for Server=db;{SecretFragment}");
 }
