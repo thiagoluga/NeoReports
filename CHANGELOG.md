@@ -9,6 +9,14 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 ## [Unreleased]
 
 ### Added
+- **Builder: insert-token helper for the destination path (D51/Epic M).** The Builder's
+  "Choose a destination" step now offers clickable **Insert token** buttons below the path/key
+  template field — `{name}`, `{ext}`, `{date}`, `{date:yyyy-MM-dd}`, `{date:yyyyMMdd-HHmmss}`
+  (a date+time stamp), `{date:yyyy/MM/dd}` — each appending its token to the template, plus a hint
+  that tokens resolve at run time (and any run-time parameter is available as `{paramName}`). The
+  tokens mirror exactly what the Local/S3 destinations' `PathTemplate.Expand` recognizes. A live
+  resolved-filename preview is deferred (it needs a small engine endpoint to reuse `Expand` without
+  the decoupled UI reimplementing it and risking drift).
 - **Visual query builder UI (D49/Epic K, K5b, Pro).** A new **Query builder** screen
   (`/query-builder`) composes a query visually and generates keyset-safe SQL. A schema explorer over
   the source's catalog (searchable tree, PK/FK icons, an "already used" marker, per-table 50-row

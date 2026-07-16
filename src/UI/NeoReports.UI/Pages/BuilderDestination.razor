@@ -43,6 +43,25 @@
                 }
             </div>
             <div class="field"><span class="label-sm">Path / key template</span><span class="input mono"><input class="mono" @bind="Wizard.DestinationPath" @bind:event="oninput" placeholder="./out/{name}-{date:yyyy-MM-dd}.{ext}" style="width:100%" /></span></div>
+
+            @* Insert-token helper (D51/Epic M). Clicking a token appends it to the template — the
+               tokens are resolved at run time by PathTemplate.Expand (Local/S3 destinations): {name},
+               {ext}, {date}/{date:FORMAT}, and any run-time parameter key. Appending (rather than
+               caret-aware insertion) keeps this JS-interop-free and robust on the Blazor Server circuit. *@
+            <div style="margin-top:8px;display:flex;flex-wrap:wrap;align-items:center;gap:6px">
+                <span class="muted" style="font-size:12px">Insert token:</span>
+                @foreach (var tok in Tokens)
+                {
+                    var token = tok;
+                    <button type="button" class="mono" title="@token.Hint"
+                            style="border:0.5px solid var(--border);border-radius:6px;background:var(--surface);padding:2px 8px;font-size:12px;cursor:pointer"
+                            @onclick="() => AppendToken(token.Value)">@token.Value</button>
+                }
+            </div>
+            <p class="muted" style="font-size:12px;margin-top:6px">
+                Tokens resolve when the report runs — e.g. <span class="mono">{date:yyyyMMdd-HHmmss}</span> stamps the date and time.
+                Any run-time parameter is also available as <span class="mono">{paramName}</span>.
+            </p>
         </ChildContent>
         </Card>
     }
@@ -59,6 +78,22 @@
 @code {
     private readonly string[] Steps = { "Source", "Columns", "Format", "Destination", "Review" };
     private IReadOnlyList<string> _engineDestinations = Array.Empty<string>();
+
+    private sealed record TokenOption(string Value, string Hint);
+
+    // The tokens PathTemplate.Expand recognizes (NeoReports.Destinations.Local), plus common date
+    // presets — including a date+time stamp, the maintainer's motivating example (D51/Epic M).
+    private static readonly TokenOption[] Tokens =
+    {
+        new("{name}", "The report name"),
+        new("{ext}", "The file extension (csv, xlsx, …)"),
+        new("{date}", "Run date — yyyy-MM-dd"),
+        new("{date:yyyy-MM-dd}", "Run date — yyyy-MM-dd"),
+        new("{date:yyyyMMdd-HHmmss}", "Run date and time — yyyyMMdd-HHmmss"),
+        new("{date:yyyy/MM/dd}", "Run date as folders — yyyy/MM/dd"),
+    };
+
+    private void AppendToken(string token) => Wizard.DestinationPath += token;
 
     private sealed record DestinationOption(string Id, string Kind, string Icon, string Description);
 
