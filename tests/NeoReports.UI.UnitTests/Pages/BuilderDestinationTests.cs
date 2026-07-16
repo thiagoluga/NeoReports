@@ -70,4 +70,39 @@ public sealed class BuilderDestinationTests : NeoReportsTestContext
 
         cut.Markup.ShouldContain("Re-enter the path / key template.");
     }
+
+    [Fact]
+    public void Clicking_an_insert_token_button_appends_it_to_the_path()
+    {
+        Wizard.EngineAvailable = true;
+        Wizard.DestinationPath = "./out/";
+        Api.Capabilities = _ => Task.FromResult<ApiCapabilities?>(new ApiCapabilities([], [], ["local"]));
+
+        var cut = Render<BuilderDestination>();
+        cut.FindAll("button").First(b => b.TextContent == "{name}").Click();
+
+        Wizard.DestinationPath.ShouldBe("./out/{name}");
+    }
+
+    [Fact]
+    public void The_date_time_token_preset_is_offered()
+    {
+        Wizard.EngineAvailable = true;
+        Api.Capabilities = _ => Task.FromResult<ApiCapabilities?>(new ApiCapabilities([], [], ["local"]));
+
+        var cut = Render<BuilderDestination>();
+
+        // The maintainer's motivating example — a date+time stamp preset.
+        cut.FindAll("button").Any(b => b.TextContent == "{date:yyyyMMdd-HHmmss}").ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Insert_tokens_are_hidden_when_the_engine_is_unavailable()
+    {
+        Wizard.EngineAvailable = false;
+
+        var cut = Render<BuilderDestination>();
+
+        cut.Markup.ShouldNotContain("Insert token:");
+    }
 }

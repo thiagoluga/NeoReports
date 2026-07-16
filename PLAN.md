@@ -1005,25 +1005,32 @@ the OSS repo (a distribution/business call, not an engineering one).
   record it as a proper DECISIONS.md entry (superseding D50's "open question" status) before any
   sample actually does so.
 
-## Epic M — Builder wizard: token/value helpers (D51) — not started
+## Epic M — Builder wizard: token/value helpers (D51) — M1/M2 (insert-token helper) done; live preview deferred
 
 Requested directly by the maintainer (2026-07-15): "add helpers in the Builder, e.g. to generate the
 output filename — helpers that help with the generated name, e.g. to put date and time in the file."
 A full screen-by-screen audit of all 5 Builder steps (source, configure, format, destination,
 review) mapped every free-text field and which are real helper candidates — full detail in D51.
 
-- [ ] **M1 — Design.** Before any implementation: what the destination-path helper UI actually looks
-  like (insert-token dropdown/menu, common date-format presets, live-resolved-filename preview) —
-  the preview must reuse `PathTemplate.Expand`'s exact substitution logic (`NeoReports.Destinations.Local`)
-  so it can never drift from what a real run would produce. Decide whether the weaker candidates
-  found in the same audit (report-name availability check, a column pick-list once `Validate` has
-  run, a fuller cron builder beyond the existing Hourly/Daily/Weekly presets) are in scope for this
-  epic or split out separately.
-- [ ] **M2 — Implementation** (blocked on M1). Primary target: `BuilderDestination.razor`'s
-  `Wizard.DestinationPath` field — currently a bare `<input>` with no token assistance at all,
-  despite the underlying token system (`{name}`, `{ext}`, `{date}`/`{date:FORMAT}`, and any
-  `RunReportRequest.Parameters` key) already being fully implemented and richer than its own
-  placeholder text suggests.
+- [x] **M1 — Design (settled during M2).** Scope kept lean: **only** the primary target (the
+  destination-path insert-token helper) is in this epic; the weaker audit candidates (report-name
+  availability check, a post-`Validate` column pick-list, a fuller cron builder) are **out** — split
+  out separately if the maintainer wants them (a lean default per the v1 discipline). **The live
+  resolved-filename preview is deferred**, not reimplemented: the UI RCL is deliberately decoupled from
+  the engine assemblies (`FrameworkReference` only, no `ProjectReference` — it talks to the engine over
+  HTTP), so it can't call `PathTemplate.Expand` directly, and M1's "must reuse `Expand`, never drift"
+  rule rules out a client-side reimplementation. A faithful live preview therefore needs a small engine
+  endpoint that runs the real `PathTemplate.Expand` and returns the resolved string — its own follow-up
+  (tracked in D51's note), rather than a drift-prone client copy. The insert-token menu itself needs no
+  `Expand` (it just inserts tokens), so it ships now and delivers the maintainer's core ask.
+- [x] **M2 — Insert-token helper on `BuilderDestination.razor`.** Done. Below the `Wizard.DestinationPath`
+  field, an "Insert token:" row of clickable token buttons — `{name}`, `{ext}`, `{date}`,
+  `{date:yyyy-MM-dd}`, `{date:yyyyMMdd-HHmmss}` (the maintainer's motivating date+time example),
+  `{date:yyyy/MM/dd}` — each appends its token to the template (append, not caret-aware insert, to stay
+  JS-interop-free and robust on the Blazor Server circuit), plus a hint line noting tokens resolve at
+  run time and that any run-time parameter is available as `{paramName}`. The tokens mirror exactly what
+  `PathTemplate.Expand` (`NeoReports.Destinations.Local`) recognizes. 3 bUnit tests (append behavior,
+  the date+time preset is offered, hidden when the engine is unavailable).
 
 ## Epic N — Report detail page: show all real detail (D52) — N1/N2 done, N3 not started
 
