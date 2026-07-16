@@ -44,6 +44,11 @@ public sealed class FakeNeoReportsApiClient : INeoReportsApiClient
     public Func<string, CancellationToken, Task<ApiSourceHealth?>> CheckSourceHealth { get; set; } = (_, _) => Task.FromResult<ApiSourceHealth?>(null);
     public Func<string, IReadOnlyList<ApiPreviewFilter>?, int?, CancellationToken, Task<ApiPreviewResult>> Preview { get; set; } =
         (_, _, _, _) => Task.FromResult(new ApiPreviewResult(ApiPreviewOutcome.Unavailable, null, null));
+    public Func<string, CancellationToken, Task<ApiSchemaCatalog?>> SourceCatalog { get; set; } = (_, _) => Task.FromResult<ApiSchemaCatalog?>(null);
+    public Func<string, string, string, CancellationToken, Task<ApiTablePreview?>> SourceTablePreview { get; set; } =
+        (_, _, _, _) => Task.FromResult<ApiTablePreview?>(null);
+    public Func<string, string, CancellationToken, Task<ApiQuerySqlResult>> QuerySql { get; set; } =
+        (_, _, _) => Task.FromResult(new ApiQuerySqlResult(ApiQuerySqlOutcome.Unavailable, null, null));
 
     public IReadOnlyList<ApiPreviewFilter>? LastPreviewFilters { get; private set; }
     public int? LastPreviewPageSize { get; private set; }
@@ -52,6 +57,8 @@ public sealed class FakeNeoReportsApiClient : INeoReportsApiClient
     public string? LastCreateReportConfigJson { get; private set; }
     public string? LastDeletedSourceName { get; private set; }
     public (string Name, string Cron)? LastSetSchedule { get; private set; }
+    public (string Source, string Schema, string Table)? LastTablePreview { get; private set; }
+    public (string Source, string ModelJson)? LastQuerySql { get; private set; }
 
     public Task<IReadOnlyList<ApiReportSummary>?> TryGetReportsAsync(CancellationToken cancellationToken = default) => Reports(cancellationToken);
 
@@ -139,5 +146,22 @@ public sealed class FakeNeoReportsApiClient : INeoReportsApiClient
         LastPreviewFilters = filters;
         LastPreviewPageSize = pageSize;
         return Preview(reportName, filters, pageSize, cancellationToken);
+    }
+
+    public Task<ApiSchemaCatalog?> TryGetSourceCatalogAsync(string sourceName, CancellationToken cancellationToken = default) =>
+        SourceCatalog(sourceName, cancellationToken);
+
+    public Task<ApiTablePreview?> TryPreviewSourceTableAsync(
+        string sourceName, string schema, string table, CancellationToken cancellationToken = default)
+    {
+        LastTablePreview = (sourceName, schema, table);
+        return SourceTablePreview(sourceName, schema, table, cancellationToken);
+    }
+
+    public Task<ApiQuerySqlResult> TryGenerateQuerySqlAsync(
+        string sourceName, string modelJson, CancellationToken cancellationToken = default)
+    {
+        LastQuerySql = (sourceName, modelJson);
+        return QuerySql(sourceName, modelJson, cancellationToken);
     }
 }

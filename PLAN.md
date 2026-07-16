@@ -910,7 +910,7 @@ additive exception to D46's "one provider per sample" rule — samples 10-13 are
   to completion (100%, 15,000 records, CSV + XLSX artifacts generated) with the real D47 progress
   percentage live on the running-job page.
 
-## Epic K — Interactive source explorer + visual query builder (Pro, D49) — K1–K4 + K5a done, K5b (UI) not started
+## Epic K — Interactive source explorer + visual query builder (Pro, D49) — K1–K5b done; result-preview grid deferred (needs an ad-hoc-SQL endpoint)
 
 Requested directly by the maintainer (2026-07-15). Design settled with the maintainer (2026-07-16) —
 see the full `## D49` section in `DECISIONS.md`. Structured query model (SQL is generated, not
@@ -962,10 +962,35 @@ only (Mongo out); Pro-tier. K2 is implementation-ready but broken into small, in
   read the raw JSON body, `Generate(json, type)`, 400 on a `QuerySqlGenerationException` with its
   caller-safe message). Pro unit tests (JSON binding, every dialect, unsupported type, malformed-JSON
   scrub, validation-error passthrough) + AspNetCore integration tests with a fake generator (200/404/422/400).
-- [ ] **K5b — UI: schema explorer panel + notebook builder + raw-SQL escape hatch.** The Blazor screen
-  from D49 (explorer tree with `ti-circle-check` "already used" markers + tooltip, notebook step cards,
-  FK-auto-join, live generated-SQL panel via `POST /sources/{name}/query-sql`, preview grid via
-  `ReportPreviewRunner`, raw-SQL tab with the caveat banner). bUnit coverage (per D53's suite).
+- [x] **K5b — UI: schema explorer panel + notebook builder + raw-SQL escape hatch.** Done. New
+  `QueryBuilder.razor` (route `/query-builder` + `/query-builder/{source}`, "Query builder" nav item)
+  with the D49 layout: a source picker; a left **schema explorer** over `GET /sources/{name}/catalog`
+  (searchable schema→table tree, 🔑 PK / 🔗 FK column icons, a `ti-circle-check` "already used in this
+  query" marker + tooltip on added tables, a per-table "preview 50 rows" action via
+  `GET /sources/{name}/preview`, and a `+` "add to query"); a center **notebook** of step cards — FROM
+  (with the keyset key defaulting to the table's PK), JOIN (**FK auto-detected → ON pre-filled**,
+  inner/left), Columns (per-column output name + aggregate), WHERE (D45-style structured rows, bound as
+  parameters); a live **Generated SQL** panel via `POST /sources/{name}/query-sql` (honest 422 "not
+  available on this host" for an MIT-only host, 400 with the caller-safe message for an invalid model);
+  and a **Raw SQL** escape-hatch tab with the caveat banner. New UI API-client methods
+  (`TryGetSourceCatalogAsync`/`TryPreviewSourceTableAsync`/`TryGenerateQuerySqlAsync`) + their DTOs +
+  fake wiring. 11 bUnit tests (every state + add-table→generate + preview + raw-SQL caveat); a browser
+  smoke test confirmed the page renders honestly with no console errors.
+  **Faithful simplifications, documented in D49:** *add-to-query is a `+` button, not HTML5 drag-drop*
+  (more robust on the Blazor Server circuit — D49 chose the notebook precisely to avoid drag chattiness),
+  and SQL is generated on an explicit **"Generate SQL"** click, not on every keystroke (same rationale).
+  **Deferred (its own follow-up):** the D49 *result-preview grid of the built query's own rows* — it needs
+  an ad-hoc-SQL preview endpoint that doesn't exist yet (`ReportPreviewRunner` previews a *registered
+  report's* source, not arbitrary generated SQL); per-table samples and the generated SQL are available
+  now, and the raw-SQL tab is copy-to-a-report rather than executable in place.
+- [ ] **K6 — (follow-up) run the built/raw query: preview grid + "create report".** Two related pieces
+  the query builder wants but K5b deferred: **(a)** an ad-hoc-SQL preview endpoint (bounded, read-only,
+  keyset-page — a sibling of D45's `POST /reports/{name}/preview` that takes a source name + generated
+  SQL instead of a registered report) so the builder can show a result grid of the query it just built,
+  and **(b)** a "create report from this query" handoff that turns the generated (or raw) SQL into a
+  registered `Sql`-source report via the existing create flow. Needs a design pass on the ad-hoc-preview
+  endpoint's safety envelope (it runs caller-supplied/generated SQL — the generated path is injection-safe
+  by construction, the raw path is the user's own SQL, same as today's Builder).
 
 ## Epic L — Investigate: Pro packages in samples/demos (D50) — open question, not started
 

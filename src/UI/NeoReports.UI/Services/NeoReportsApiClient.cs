@@ -181,6 +181,48 @@ public enum ApiPreviewOutcome
 /// <summary>Result of <see cref="INeoReportsApiClient.TryPreviewReportAsync"/>.</summary>
 public sealed record ApiPreviewResult(ApiPreviewOutcome Outcome, ApiPreviewData? Data, string? Error);
 
+/// <summary>A source's introspected schema, from <c>GET /api/sources/{name}/catalog</c> (ADR D49/K3).</summary>
+public sealed record ApiSchemaCatalog(IReadOnlyList<ApiCatalogTable> Tables);
+
+/// <summary>One table in an <see cref="ApiSchemaCatalog"/>.</summary>
+public sealed record ApiCatalogTable(
+    string Schema, string Name, IReadOnlyList<ApiCatalogColumn> Columns, IReadOnlyList<ApiForeignKey> ForeignKeys);
+
+/// <summary>One column of an <see cref="ApiCatalogTable"/>.</summary>
+public sealed record ApiCatalogColumn(string Name, string DataType, bool Nullable, bool IsPrimaryKey);
+
+/// <summary>One outbound foreign key of an <see cref="ApiCatalogTable"/> — drives FK-aware auto-join suggestions.</summary>
+public sealed record ApiForeignKey(string Column, string ReferencedSchema, string ReferencedTable, string ReferencedColumn);
+
+/// <summary>A bounded table sample, from <c>GET /api/sources/{name}/preview</c> (ADR D49/K3).</summary>
+public sealed record ApiTablePreview(IReadOnlyList<string> Columns, IReadOnlyList<object?[]> Rows);
+
+/// <summary>The keyset-safe SQL a visual query compiles to, from <c>POST /api/sources/{name}/query-sql</c> (ADR D49/K5a).</summary>
+public sealed record ApiGeneratedQuerySql(
+    string Sql, IReadOnlyDictionary<string, object?> Parameters, IReadOnlyList<ApiReportColumn> Schema);
+
+/// <summary>Outcome of a <c>POST /api/sources/{name}/query-sql</c> call.</summary>
+public enum ApiQuerySqlOutcome
+{
+    /// <summary>200 — the SQL was generated.</summary>
+    Ok,
+
+    /// <summary>404 — no source with that name is registered.</summary>
+    NotFound,
+
+    /// <summary>422 — the host has no query-builder generator (an MIT-only host, D36).</summary>
+    NotSupported,
+
+    /// <summary>400 — the query model was empty or invalid.</summary>
+    Invalid,
+
+    /// <summary>The engine wasn't reachable, or returned an unexpected status.</summary>
+    Unavailable,
+}
+
+/// <summary>Result of <see cref="INeoReportsApiClient.TryGenerateQuerySqlAsync"/>. <see cref="Error"/> carries the engine's caller-safe message on <see cref="ApiQuerySqlOutcome.Invalid"/>.</summary>
+public sealed record ApiQuerySqlResult(ApiQuerySqlOutcome Outcome, ApiGeneratedQuerySql? Data, string? Error);
+
 /// <summary>
 /// Reads and drives NeoReports engine jobs/reports over its HTTP API (<c>MapNeoReports</c>). Every
 /// call is best-effort: on a network error, timeout, or unexpected shape it logs and returns a
@@ -326,6 +368,39 @@ public interface INeoReportsApiClient
     /// <param name="cancellationToken">Cancellation token.</param>
     Task<ApiPreviewResult> TryPreviewReportAsync(
         string reportName, IReadOnlyList<ApiPreviewFilter>? filters, int? pageSize, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Introspects a registered source's schema — its tables, columns (type/nullable/PK), and outbound
+    /// foreign keys — via <c>GET /api/sources/{name}/catalog</c> (ADR D49). Returns <c>null</c> when the
+    /// engine is unreachable, the source is unknown, or its type has no schema explorer (e.g. MongoDB).
+    /// </summary>
+    /// <param name="sourceName">The registered source's name.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<ApiSchemaCatalog?> TryGetSourceCatalogAsync(string sourceName, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads a bounded sample of one of a source's tables via <c>GET /api/sources/{name}/preview</c>
+    /// (ADR D49); the row count is capped server-side. Returns <c>null</c> when the engine is
+    /// unreachable, the source/table is unknown, or the source type has no schema explorer.
+    /// </summary>
+    /// <param name="sourceName">The registered source's name.</param>
+    /// <param name="schema">The table's owning schema (may be empty).</param>
+    /// <param name="table">The table name.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<ApiTablePreview?> TryPreviewSourceTableAsync(
+        string sourceName, string schema, string table, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Compiles a visually-composed query model into keyset-safe report SQL via
+    /// <c>POST /api/sources/{name}/query-sql</c> (ADR D49, Pro). The model is passed as the raw JSON the
+    /// builder serialized. The result distinguishes success from an unknown source (404), a host with no
+    /// query-builder generator (422 — an MIT-only host), an invalid model (400), or an unreachable engine.
+    /// </summary>
+    /// <param name="sourceName">The registered source's name (its type selects the SQL dialect).</param>
+    /// <param name="modelJson">The query model as JSON (the builder's serialized state).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<ApiQuerySqlResult> TryGenerateQuerySqlAsync(
+        string sourceName, string modelJson, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Locates the NeoReports engine API the UI calls.</summary>
@@ -821,6 +896,81 @@ internal sealed class NeoReportsApiClient(
         {
             logger.LogWarning(ex, "POST {ApiBase}reports/{ReportName}/preview failed.", Sanitize(apiBase.ToString()), Sanitize(reportName));
             return new ApiPreviewResult(ApiPreviewOutcome.Unavailable, null, null);
+        }
+    }
+
+    public async Task<ApiSchemaCatalog?> TryGetSourceCatalogAsync(string sourceName, CancellationToken cancellationToken = default)
+    {
+        var apiBase = ApiBase;
+        try
+        {
+            using var response = await http.GetAsync(
+                new Uri(apiBase, $"sources/{Uri.EscapeDataString(sourceName)}/catalog"), cancellationToken).ConfigureAwait(false);
+            // 404 (unknown source) and 422 (no explorer for the type) both mean "no catalog to show".
+            if (!response.IsSuccessStatusCode)
+                return null;
+            return await response.Content.ReadFromJsonAsync<ApiSchemaCatalog>(Json, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsTransient(ex))
+        {
+            logger.LogWarning(ex, "GET {ApiBase}sources/{Source}/catalog unavailable.", Sanitize(apiBase.ToString()), Sanitize(sourceName));
+            return null;
+        }
+    }
+
+    public async Task<ApiTablePreview?> TryPreviewSourceTableAsync(
+        string sourceName, string schema, string table, CancellationToken cancellationToken = default)
+    {
+        var apiBase = ApiBase;
+        var query = $"schema={Uri.EscapeDataString(schema)}&table={Uri.EscapeDataString(table)}";
+        try
+        {
+            using var response = await http.GetAsync(
+                new Uri(apiBase, $"sources/{Uri.EscapeDataString(sourceName)}/preview?{query}"), cancellationToken).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+                return null;
+            return await response.Content.ReadFromJsonAsync<ApiTablePreview>(Json, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsTransient(ex))
+        {
+            logger.LogWarning(ex, "GET {ApiBase}sources/{Source}/preview unavailable.", Sanitize(apiBase.ToString()), Sanitize(sourceName));
+            return null;
+        }
+    }
+
+    public async Task<ApiQuerySqlResult> TryGenerateQuerySqlAsync(
+        string sourceName, string modelJson, CancellationToken cancellationToken = default)
+    {
+        var apiBase = ApiBase;
+        try
+        {
+            using var request = new HttpRequestMessage(
+                HttpMethod.Post, new Uri(apiBase, $"sources/{Uri.EscapeDataString(sourceName)}/query-sql"))
+            {
+                Content = new StringContent(modelJson, Encoding.UTF8, "application/json"),
+            };
+            using var response = await http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var data = await response.Content.ReadFromJsonAsync<ApiGeneratedQuerySql>(Json, cancellationToken).ConfigureAwait(false);
+                return new ApiQuerySqlResult(ApiQuerySqlOutcome.Ok, data, null);
+            }
+
+            string? error = await TryReadErrorAsync(response, cancellationToken).ConfigureAwait(false);
+            ApiQuerySqlOutcome outcome = response.StatusCode switch
+            {
+                HttpStatusCode.NotFound => ApiQuerySqlOutcome.NotFound,
+                HttpStatusCode.UnprocessableEntity => ApiQuerySqlOutcome.NotSupported,
+                HttpStatusCode.BadRequest => ApiQuerySqlOutcome.Invalid,
+                _ => ApiQuerySqlOutcome.Unavailable,
+            };
+            return new ApiQuerySqlResult(outcome, null, error);
+        }
+        catch (Exception ex) when (IsTransient(ex))
+        {
+            logger.LogWarning(ex, "POST {ApiBase}sources/{Source}/query-sql failed.", Sanitize(apiBase.ToString()), Sanitize(sourceName));
+            return new ApiQuerySqlResult(ApiQuerySqlOutcome.Unavailable, null, null);
         }
     }
 
