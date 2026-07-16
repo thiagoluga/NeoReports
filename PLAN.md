@@ -932,9 +932,14 @@ only (Mongo out); Pro-tier. K2 is implementation-ready but broken into small, in
   empirically); Oracle uses the `ALL_*` data-dictionary views scoped to `OWNER = USER`. Testcontainers
   integration tests per provider (catalog shape, PK/nullable flags, FK discovery, bounded preview) —
   all green against real containers. No UI/endpoints yet.
-- [ ] **K3 — AspNetCore endpoints.** `GET /sources/{name}/catalog` and `GET /sources/{name}/tables/{table}/preview`
-  (top 50), resolving the named source through the registry (D42) and delegating to `ISchemaExplorer`.
-  404/422 honest states when no explorer is registered for the source type. Integration tests.
+- [x] **K3 — AspNetCore endpoints.** Done. `GET /sources/{name}/catalog` and
+  `GET /sources/{name}/preview?schema=&table=` (preview row count fixed server-side at 50, no client
+  override), resolving the named source through the registry (D42) and delegating to `ISchemaExplorer`.
+  Honest states: 409 (no
+  registry), 404 (unknown source), 422 (no explorer registered for the source type — e.g. MongoDB),
+  400 (missing `table`), 502 (the source's DB threw). Wire DTOs (`SchemaCatalogResponse` etc.) in
+  `Contracts.cs`. AspNetCore integration tests with a fake explorer (the real ADO explorers are
+  covered by K2's Testcontainers tests).
 - [ ] **K4 — Structured query model + keyset-safe SQL generator (Pro).** The model (source + joins +
   columns + WHERE + GROUP BY/aggregations + key), the generator that emits keyset-valid SQL with
   allow-listed + quoted identifiers and parameterized values, and derivation of the report's
