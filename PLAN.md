@@ -910,7 +910,7 @@ additive exception to D46's "one provider per sample" rule — samples 10-13 are
   to completion (100%, 15,000 records, CSV + XLSX artifacts generated) with the real D47 progress
   percentage live on the running-job page.
 
-## Epic K — Interactive source explorer + visual query builder (Pro, D49) — K1–K4 done, K5 not started
+## Epic K — Interactive source explorer + visual query builder (Pro, D49) — K1–K4 + K5a done, K5b (UI) not started
 
 Requested directly by the maintainer (2026-07-15). Design settled with the maintainer (2026-07-16) —
 see the full `## D49` section in `DECISIONS.md`. Structured query model (SQL is generated, not
@@ -952,10 +952,20 @@ only (Mongo out); Pro-tier. K2 is implementation-ready but broken into small, in
   validation rejects aggregate-without-group-by, ungrouped non-aggregate selects, and a non-grouped
   key. 13 container-free unit tests (SQL shape, per-dialect quoting, cursor cast, injection rejection,
   schema derivation, validation). No UI wiring yet (K5).
-- [ ] **K5 — UI: schema explorer panel + notebook builder + raw-SQL escape hatch.** The Blazor screen
+- [x] **K5a — MIT/Pro seam + generate-SQL endpoint.** Done. The visual builder lives in the Pro
+  package, but the UI/endpoints are MIT and must not reference it — so `NeoReports.Core.QueryBuilder.IQuerySqlGenerator`
+  (Core contract, opaque model-as-JSON in, `GeneratedReportSql(Sql, Parameters, ReportSchema)` out) is
+  the seam, mirroring `ISchemaExplorer`/`IFilterTranslator`. The Pro `QuerySqlGenerator` deserializes
+  the model JSON (camelCase + string enums), resolves the dialect from the source type, and delegates to
+  `KeysetSqlGenerator`; registered via `AddQueryBuilder()`. AspNetCore adds `POST /sources/{name}/query-sql`
+  (resolve source through the registry → get its type → resolve `IQuerySqlGenerator`, 422 if none (D36),
+  read the raw JSON body, `Generate(json, type)`, 400 on a `QuerySqlGenerationException` with its
+  caller-safe message). Pro unit tests (JSON binding, every dialect, unsupported type, malformed-JSON
+  scrub, validation-error passthrough) + AspNetCore integration tests with a fake generator (200/404/422/400).
+- [ ] **K5b — UI: schema explorer panel + notebook builder + raw-SQL escape hatch.** The Blazor screen
   from D49 (explorer tree with `ti-circle-check` "already used" markers + tooltip, notebook step cards,
-  FK-auto-join, live generated-SQL panel, preview grid via `ReportPreviewRunner`, raw-SQL tab with the
-  caveat banner). bUnit coverage (per D53's suite).
+  FK-auto-join, live generated-SQL panel via `POST /sources/{name}/query-sql`, preview grid via
+  `ReportPreviewRunner`, raw-SQL tab with the caveat banner). bUnit coverage (per D53's suite).
 
 ## Epic L — Investigate: Pro packages in samples/demos (D50) — open question, not started
 

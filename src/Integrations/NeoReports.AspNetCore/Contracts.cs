@@ -76,6 +76,13 @@ public sealed record ForeignKeyView(string Column, string ReferencedSchema, stri
 /// <param name="Rows">The rows, each a positional array aligned to <paramref name="Columns"/>.</param>
 public sealed record TablePreviewResponse(IReadOnlyList<string> Columns, IReadOnlyList<object?[]> Rows);
 
+/// <summary>Response for <c>POST /sources/{name}/query-sql</c> — the keyset-safe SQL a visual query compiles to (ADR D49, Pro).</summary>
+/// <param name="Sql">The generated report SQL — exposes <c>@cursor</c> and ends in <c>ORDER BY</c> the key.</param>
+/// <param name="Parameters">The WHERE filter values by bind-parameter name (without prefix).</param>
+/// <param name="Schema">The report's output schema, derived from the selected columns.</param>
+public sealed record GeneratedQuerySqlResponse(
+    string Sql, IReadOnlyDictionary<string, object?> Parameters, IReadOnlyList<ReportColumnView> Schema);
+
 /// <summary>Response returned when a report is triggered asynchronously.</summary>
 /// <param name="JobId">Identifier of the queued job.</param>
 /// <param name="Status">Initial job status (typically <c>Queued</c>).</param>
