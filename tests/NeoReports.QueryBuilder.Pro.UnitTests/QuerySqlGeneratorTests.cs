@@ -14,7 +14,7 @@ namespace NeoReports.QueryBuilder.Pro.UnitTests;
 /// </summary>
 public class QuerySqlGeneratorTests
 {
-    private static readonly IQuerySqlGenerator Generator = new QuerySqlGenerator();
+    private static readonly QuerySqlGenerator Generator = new();
 
     // A minimal but valid single-table model, serialized exactly as the UI would (camelCase + string enum).
     private const string ValidModelJson = """

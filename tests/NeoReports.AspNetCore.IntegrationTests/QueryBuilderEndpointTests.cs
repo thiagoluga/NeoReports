@@ -31,10 +31,10 @@ public class QueryBuilderEndpointTests
             services.AddSingleton(generator);
     }
 
-    private static Task RegisterSourceAsync(HttpClient client, string name = "sales-db", string type = "fake") =>
+    private static Task<HttpResponseMessage> RegisterSourceAsync(HttpClient client, string name = "sales-db", string type = "fake") =>
         client.PostAsJsonAsync("/api/sources", new { name, type }, Json);
 
-    private static HttpContent JsonBody(string json) => new StringContent(json, Encoding.UTF8, "application/json");
+    private static StringContent JsonBody(string json) => new(json, Encoding.UTF8, "application/json");
 
     [Fact]
     public async Task Generate_returns_the_sql_parameters_and_schema()
