@@ -29,10 +29,15 @@ public sealed record GeneratedQuery(string Sql, IReadOnlyDictionary<string, obje
 /// so a generated query is always a valid keyset query.
 /// </para>
 /// </summary>
-public static class KeysetSqlGenerator
+public static partial class KeysetSqlGenerator
 {
     private const string FilterParameterPrefix = "qbfilter";
-    private static readonly Regex SafeAlias = new(@"\A[A-Za-z_][A-Za-z0-9_]*\z", RegexOptions.Compiled);
+
+    // A table alias is the one identifier emitted unquoted, so it must match a strict pattern.
+    // Source-generated with a match timeout: the pattern is linear (no catastrophic backtracking),
+    // but the timeout is a hard belt-and-braces bound on any pathological input.
+    [GeneratedRegex(@"\A[A-Za-z_][A-Za-z0-9_]*\z", RegexOptions.None, matchTimeoutMilliseconds: 100)]
+    private static partial Regex SafeAlias();
 
     /// <summary>Generates the report SQL, bind parameters, and output schema for <paramref name="model"/>.</summary>
     /// <param name="model">The visually-composed query.</param>
@@ -93,12 +98,12 @@ public static class KeysetSqlGenerator
         if (grouped)
         {
             var groupSet = new HashSet<(string, string)>(model.GroupBy.Select(g => (g.TableAlias, g.Column)));
-            foreach (QuerySelectColumn c in model.Select.Where(c => c.Aggregate == QueryAggregate.None))
-            {
-                if (!groupSet.Contains((c.Source.TableAlias, c.Source.Column)))
-                    throw new QueryModelException(
-                        $"Selected column '{c.Source.TableAlias}.{c.Source.Column}' must be aggregated or grouped.");
-            }
+            QuerySelectColumn? ungrouped = model.Select
+                .Where(c => c.Aggregate == QueryAggregate.None)
+                .FirstOrDefault(c => !groupSet.Contains((c.Source.TableAlias, c.Source.Column)));
+            if (ungrouped is not null)
+                throw new QueryModelException(
+                    $"Selected column '{ungrouped.Source.TableAlias}.{ungrouped.Source.Column}' must be aggregated or grouped.");
 
             if (!groupSet.Contains((model.Key.TableAlias, model.Key.Column)))
                 throw new QueryModelException("The keyset key column must be one of the grouped columns.");
@@ -107,7 +112,7 @@ public static class KeysetSqlGenerator
 
     private static string ValidateAlias(string alias)
     {
-        if (string.IsNullOrEmpty(alias) || !SafeAlias.IsMatch(alias))
+        if (string.IsNullOrEmpty(alias) || !SafeAlias().IsMatch(alias))
             throw new QueryModelException($"Table alias '{alias}' is not a valid identifier.");
         return alias;
     }
@@ -175,7 +180,7 @@ public static class KeysetSqlGenerator
 
     private static ReportSchema DeriveSchema(QueryModel model)
     {
-        var columns = model.Select.Select(c => new ReportColumn(
+        ReportColumn[] columns = model.Select.Select(c => new ReportColumn(
             c.OutputName,
             c.Aggregate switch
             {
