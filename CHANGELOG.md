@@ -9,6 +9,12 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 ## [Unreleased]
 
 ### Added
+- **Schema-explorer HTTP endpoints (D49/Epic K, K3).** `GET /sources/{name}/catalog` (a source's
+  tables/columns/PK/FK) and `GET /sources/{name}/preview?schema=&table=&top=` (a table's first N
+  rows, capped server-side at 50). Both resolve the named source through the registry (D42) and
+  delegate to the source type's `ISchemaExplorer`; honest states for no registry (409), unknown
+  source (404), a source type with no explorer (422, e.g. MongoDB), missing table (400), or a
+  database error (502). Backs the interactive query builder (D49); no UI yet.
 - **Schema introspection capability (D49/Epic K, K2).** New `NeoReports.Core.Schema.ISchemaExplorer`
   — a per-source-type engine capability (like `IFilterTranslator`/`ISourceHealthCheck`) that reads a
   registered source's catalog (tables, columns, nullable/PK, foreign keys) and previews a table's

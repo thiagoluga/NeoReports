@@ -45,6 +45,37 @@ public sealed record PreviewRequest(IReadOnlyList<PreviewFilterRequest>? Filters
 public sealed record PreviewResponse(
     IReadOnlyList<object?[]> Rows, IReadOnlyList<ReportColumnView> Schema, bool FiltersApplied, bool HasMore);
 
+/// <summary>Response for <c>GET /sources/{name}/catalog</c> — the source's introspected schema (ADR D49).</summary>
+/// <param name="Tables">Every user table, ordered by schema then name.</param>
+public sealed record SchemaCatalogResponse(IReadOnlyList<CatalogTableView> Tables);
+
+/// <summary>One table in a <see cref="SchemaCatalogResponse"/>.</summary>
+/// <param name="Schema">The owning schema/database/owner.</param>
+/// <param name="Name">The table name.</param>
+/// <param name="Columns">The columns, in ordinal order.</param>
+/// <param name="ForeignKeys">Outbound foreign keys — enables FK-aware auto-join suggestions.</param>
+public sealed record CatalogTableView(
+    string Schema, string Name, IReadOnlyList<CatalogColumnView> Columns, IReadOnlyList<ForeignKeyView> ForeignKeys);
+
+/// <summary>One column of a <see cref="CatalogTableView"/>.</summary>
+/// <param name="Name">The column name.</param>
+/// <param name="DataType">The database's own type name (mapped to a NeoReports type by the UI).</param>
+/// <param name="Nullable">Whether the column allows NULL.</param>
+/// <param name="IsPrimaryKey">Whether the column is part of the table's primary key.</param>
+public sealed record CatalogColumnView(string Name, string DataType, bool Nullable, bool IsPrimaryKey);
+
+/// <summary>One outbound foreign key of a <see cref="CatalogTableView"/>.</summary>
+/// <param name="Column">The referencing column on the owning table.</param>
+/// <param name="ReferencedSchema">The referenced table's schema.</param>
+/// <param name="ReferencedTable">The referenced table.</param>
+/// <param name="ReferencedColumn">The referenced column.</param>
+public sealed record ForeignKeyView(string Column, string ReferencedSchema, string ReferencedTable, string ReferencedColumn);
+
+/// <summary>Response for <c>GET /sources/{name}/preview</c> — a bounded table sample (ADR D49).</summary>
+/// <param name="Columns">The selected column names, in order.</param>
+/// <param name="Rows">The rows, each a positional array aligned to <paramref name="Columns"/>.</param>
+public sealed record TablePreviewResponse(IReadOnlyList<string> Columns, IReadOnlyList<object?[]> Rows);
+
 /// <summary>Response returned when a report is triggered asynchronously.</summary>
 /// <param name="JobId">Identifier of the queued job.</param>
 /// <param name="Status">Initial job status (typically <c>Queued</c>).</param>

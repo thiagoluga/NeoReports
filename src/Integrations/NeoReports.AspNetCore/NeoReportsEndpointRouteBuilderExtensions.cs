@@ -16,6 +16,7 @@ using NeoReports.Core.Pipeline;
 using NeoReports.Core.Preview;
 using NeoReports.Core.Registry;
 using NeoReports.Core.Scheduling;
+using NeoReports.Core.Schema;
 using NeoReports.Core.SourceRegistry;
 
 namespace NeoReports.AspNetCore;
@@ -49,6 +50,8 @@ public static class NeoReportsEndpointRouteBuilderExtensions
     /// <item><c>POST {prefix}/sources</c> / <c>PUT {prefix}/sources/{name}</c> — register / full-replace a source; 409 when a report still references it on delete</item>
     /// <item><c>DELETE {prefix}/sources/{name}</c> — remove a source; blocked (409) while any registered report references it</item>
     /// <item><c>POST {prefix}/sources/{name}/health</c> — run an on-demand health check now; cached + timestamped; 422 when the type has no registered check</item>
+    /// <item><c>GET  {prefix}/sources/{name}/catalog</c> — introspect the source's schema (tables/columns/PK/FK, ADR D49); 422 when the type has no registered explorer</item>
+    /// <item><c>GET  {prefix}/sources/{name}/preview?schema=&amp;table=</c> — first rows of one table (ADR D49); row count is fixed server-side</item>
     /// </list>
     /// Authorization is inherited from the host; set <see cref="NeoReportsEndpointOptions.RequireAuthorization"/>
     /// to apply <c>RequireAuthorization</c> to the group.
@@ -114,6 +117,8 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         group.MapPut("/sources/{name}", ReplaceSourceAsync);
         group.MapDelete("/sources/{name}", DeleteSourceAsync);
         group.MapPost("/sources/{name}/health", CheckSourceHealthAsync);
+        group.MapGet("/sources/{name}/catalog", GetSourceCatalogAsync);
+        group.MapGet("/sources/{name}/preview", PreviewSourceTableAsync);
 
         return group;
     }
@@ -944,6 +949,113 @@ public static class NeoReportsEndpointRouteBuilderExtensions
 
         return Results.Ok(new SourceHealthResponse(result.Healthy, result.Error, result.Latency.TotalMilliseconds, checkedAt));
     }
+
+    // The UI's preview size cap (ADR D49). The engine (AdoSchemaExplorer) also clamps to its own
+    // hard ceiling, so this endpoint's cap and that ceiling are independent defenses.
+    private const int SchemaPreviewTop = 50;
+
+    private static async Task<IResult> GetSourceCatalogAsync(string name, HttpContext http, CancellationToken cancellationToken)
+    {
+        (SourceDefinition? definition, ISchemaExplorer? explorer, IResult? failure) =
+            await ResolveExplorerAsync(name, http, cancellationToken).ConfigureAwait(false);
+        if (failure is not null)
+            return failure;
+
+        try
+        {
+            SchemaCatalog catalog = await explorer!.GetCatalogAsync(definition!, cancellationToken).ConfigureAwait(false);
+            return Results.Ok(ToCatalogResponse(catalog));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return SchemaProblem(http, ex, name, "Could not read the source's schema.");
+        }
+    }
+
+    private static async Task<IResult> PreviewSourceTableAsync(
+        string name, string? schema, string? table, HttpContext http, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(table))
+            return Results.BadRequest(new { error = "A 'table' query parameter is required." });
+
+        (SourceDefinition? definition, ISchemaExplorer? explorer, IResult? failure) =
+            await ResolveExplorerAsync(name, http, cancellationToken).ConfigureAwait(false);
+        if (failure is not null)
+            return failure;
+
+        try
+        {
+            TablePreview preview = await explorer!
+                .PreviewTableAsync(definition!, schema ?? string.Empty, table, SchemaPreviewTop, cancellationToken)
+                .ConfigureAwait(false);
+            return Results.Ok(new TablePreviewResponse(preview.Columns, preview.Rows));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return SchemaProblem(http, ex, name, "Could not preview the table.");
+        }
+    }
+
+    // A schema/preview call opens a live DB connection built from the source's connection string and
+    // runs catalog/preview SQL — a driver exception's message can echo connection-string fragments
+    // (a malformed string, an auth error), so it is logged server-side and never returned to the
+    // caller. The response carries only a generic, secret-free detail; operators diagnose from logs
+    // (or the source's own health check, which is the purpose-built place for a connection error).
+    private static IResult SchemaProblem(HttpContext http, Exception ex, string sourceName, string title)
+    {
+        http.RequestServices.GetRequiredService<ILoggerFactory>()
+            .CreateLogger("NeoReports.Schema")
+            .LogWarning(ex, "{Title} (source '{Source}').", title, sourceName);
+        return Results.Problem(
+            title: title,
+            detail: "The source's database could not be read. See the server logs for details.",
+            statusCode: StatusCodes.Status502BadGateway);
+    }
+
+    // Resolves the named source and its registered ISchemaExplorer, or returns the appropriate
+    // failure result (409 no registry, 404 unknown source, 422 no explorer for the source type,
+    // 500 on a resolve error) — shared by both schema-explorer endpoints.
+    private static async Task<(SourceDefinition? Definition, ISchemaExplorer? Explorer, IResult? Failure)> ResolveExplorerAsync(
+        string name, HttpContext http, CancellationToken cancellationToken)
+    {
+        ISourceRegistry? registry = http.RequestServices.GetService<ISourceRegistry>();
+        if (registry is null)
+            return (null, null, Results.Conflict(new { error = "No source registry is configured on this host." }));
+
+        SourceDefinition? definition;
+        try
+        {
+            definition = await registry.ResolveAsync(name, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ConfigurationException ex)
+        {
+            return (null, null, Results.Problem(
+                title: "Could not resolve the source.", detail: ex.Message, statusCode: StatusCodes.Status500InternalServerError));
+        }
+
+        if (definition is null)
+            return (null, null, Results.NotFound(new { error = $"No source named '{name}' is registered." }));
+
+        ISchemaExplorer? explorer = http.RequestServices.GetServices<ISchemaExplorer>()
+            .FirstOrDefault(e => string.Equals(e.Type, definition.Type, StringComparison.OrdinalIgnoreCase));
+        if (explorer is null)
+        {
+            return (null, null, Results.Problem(
+                title: "Schema exploration not supported for this source type.",
+                detail: $"No ISchemaExplorer is registered for type '{definition.Type}'.",
+                statusCode: StatusCodes.Status422UnprocessableEntity));
+        }
+
+        return (definition, explorer, null);
+    }
+
+    private static SchemaCatalogResponse ToCatalogResponse(SchemaCatalog catalog) => new(
+        catalog.Tables.Select(t => new CatalogTableView(
+            t.Schema,
+            t.Name,
+            t.Columns.Select(c => new CatalogColumnView(c.Name, c.DataType, c.Nullable, c.IsPrimaryKey)).ToArray(),
+            t.ForeignKeys.Select(f => new ForeignKeyView(f.Column, f.ReferencedSchema, f.ReferencedTable, f.ReferencedColumn)).ToArray()))
+            .ToArray());
 
     private static SourceView ToSourceView(SourceDefinition definition, IReportRegistry reportRegistry, ISourceHealthCache? healthCache)
     {
