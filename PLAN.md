@@ -910,23 +910,35 @@ additive exception to D46's "one provider per sample" rule — samples 10-13 are
   to completion (100%, 15,000 records, CSV + XLSX artifacts generated) with the real D47 progress
   percentage live on the running-job page.
 
-## Epic K — Interactive source explorer + visual query builder (Pro, D49) — not started
+## Epic K — Interactive source explorer + visual query builder (Pro, D49) — K1 designed, K2 not started
 
-Requested directly by the maintainer (2026-07-15). Recorded here as the next thing to pick up, but
-**no code until the follow-up ADR D49 calls for is written and settled** — this is exactly the
-feature D36 flagged as needing its own ADR before any code, back when the mocked
-`SourceExplorer.razor` was removed.
+Requested directly by the maintainer (2026-07-15). Design settled with the maintainer (2026-07-16) —
+see the full `## D49` section in `DECISIONS.md`. Structured query model (SQL is generated, not
+hand-typed) + raw-SQL escape hatch; notebook layout; joins + WHERE + ORDER BY + aggregation; SQL-family
+only (Mongo out); Pro-tier. K2 is implementation-ready but broken into small, independent PRs below.
 
-- [ ] **K1 — Design ADR.** Before any implementation: settle how far schema introspection reaches
-  per provider (system catalogs/`information_schema`, never the report's own already-declared SQL),
-  the row-preview cap (maintainer asked for "top 50") and any column masking, how a
-  visually-composed query (including inner join across tables) gets validated/parameterized before
-  becoming a report's persisted SQL, and how this relates to D45's existing preview mechanism and
-  D42's named-source model. Likely Pro-tier (D49), alongside `NeoReports.Sources.Join.Pro`.
-- [ ] **K2 — Implementation** (blocked on K1). In the Builder wizard, after selecting a source: an
-  interactive view of every table/column in the underlying database (not just the report's own
-  declared columns), a top-50-row preview per table, a way to compose the actual report query
-  visually — including inner join — and a live preview of the resulting report output.
+- [x] **K1 — Design ADR.** Done — `## D49` in `DECISIONS.md`. Settled: structured-model-not-free-text
+  (safety by construction), introspection scope (full `information_schema`/catalog **and** the report's
+  own SQL, both visible), top-50 raw preview (no masking in K1), notebook UI, `ISchemaExplorer` capability
+  per provider, keyset auto-generation, and the raw-SQL escape hatch with its honest FROM/JOIN-extraction
+  caveat.
+- [ ] **K2 — `ISchemaExplorer` capability + ADO catalog introspection (engine).** New Core interface
+  (`Type` + `GetCatalogAsync` + `PreviewTableAsync`, top 50), one shared ADO implementation parametrized
+  by dialect (like `AdoFilterTranslator`) + Oracle catalog-view specifics, registered via `TryAddEnumerable`
+  in each `AddXConfigSource()`. Testcontainers integration tests per provider (catalog shape, FK discovery,
+  top-50 preview). No UI yet.
+- [ ] **K3 — AspNetCore endpoints.** `GET /sources/{name}/catalog` and `GET /sources/{name}/tables/{table}/preview`
+  (top 50), resolving the named source through the registry (D42) and delegating to `ISchemaExplorer`.
+  404/422 honest states when no explorer is registered for the source type. Integration tests.
+- [ ] **K4 — Structured query model + keyset-safe SQL generator (Pro).** The model (source + joins +
+  columns + WHERE + GROUP BY/aggregations + key), the generator that emits keyset-valid SQL with
+  allow-listed + quoted identifiers and parameterized values, and derivation of the report's
+  `columns`/`ReportSchema` from selected columns. Lives in a `.Pro` package; heavy unit coverage on the
+  generator (identifier quoting, keyset wrapper, join/aggregate shapes, injection attempts rejected).
+- [ ] **K5 — UI: schema explorer panel + notebook builder + raw-SQL escape hatch.** The Blazor screen
+  from D49 (explorer tree with `ti-circle-check` "already used" markers + tooltip, notebook step cards,
+  FK-auto-join, live generated-SQL panel, preview grid via `ReportPreviewRunner`, raw-SQL tab with the
+  caveat banner). bUnit coverage (per D53's suite).
 
 ## Epic L — Investigate: Pro packages in samples/demos (D50) — open question, not started
 
