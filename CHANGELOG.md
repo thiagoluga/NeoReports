@@ -9,6 +9,13 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 ## [Unreleased]
 
 ### Added
+- **Schema introspection capability (D49/Epic K, K2).** New `NeoReports.Core.Schema.ISchemaExplorer`
+  — a per-source-type engine capability (like `IFilterTranslator`/`ISourceHealthCheck`) that reads a
+  registered source's catalog (tables, columns, nullable/PK, foreign keys) and previews a table's
+  first N rows. One shared `AdoSchemaExplorer` covers the SQL family, parametrized by dialect;
+  registered automatically by `AddPostgresConfigSource`/`AddMySqlConfigSource`/`AddSqlConfigSource`/
+  `AddOracleConfigSource`. MongoDB is not covered (no SQL/`information_schema`). This is the engine
+  foundation for the interactive query builder (D49); no UI/endpoints yet.
 - **Report detail: show the referenced named source (D52/N2).** `GET /reports/{name}` now returns
   `sourceRef` — the named source's name (ADR D42) whenever a report references one (a `Ref`-based
   dynamic source, or a code-first report built with `Source.SqlNamed`/its equivalents), `null` for

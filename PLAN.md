@@ -922,11 +922,16 @@ only (Mongo out); Pro-tier. K2 is implementation-ready but broken into small, in
   own SQL, both visible), top-50 raw preview (no masking in K1), notebook UI, `ISchemaExplorer` capability
   per provider, keyset auto-generation, and the raw-SQL escape hatch with its honest FROM/JOIN-extraction
   caveat.
-- [ ] **K2 — `ISchemaExplorer` capability + ADO catalog introspection (engine).** New Core interface
-  (`Type` + `GetCatalogAsync` + `PreviewTableAsync`, top 50), one shared ADO implementation parametrized
-  by dialect (like `AdoFilterTranslator`) + Oracle catalog-view specifics, registered via `TryAddEnumerable`
-  in each `AddXConfigSource()`. Testcontainers integration tests per provider (catalog shape, FK discovery,
-  top-50 preview). No UI yet.
+- [x] **K2 — `ISchemaExplorer` capability + ADO catalog introspection (engine).** Done. New
+  `NeoReports.Core.Schema.ISchemaExplorer` (`Type` + `GetCatalogAsync` + `PreviewTableAsync`) with
+  `SchemaCatalog`/`CatalogTable`/`CatalogColumn`/`ForeignKey`/`TablePreview` DTOs; one shared
+  `AdoSchemaExplorer` in `Sources.Common` parametrized by dialect (catalog queries + identifier
+  quoting + preview-SQL builder), registered via `TryAddEnumerable` in all four `AddXConfigSource()`.
+  Postgres/MySQL/SQL Server use `information_schema` (SQL Server's FK discovery goes through
+  `sys.foreign_key_columns` — its `KEY_COLUMN_USAGE` has no `POSITION_IN_UNIQUE_CONSTRAINT`, found
+  empirically); Oracle uses the `ALL_*` data-dictionary views scoped to `OWNER = USER`. Testcontainers
+  integration tests per provider (catalog shape, PK/nullable flags, FK discovery, bounded preview) —
+  all green against real containers. No UI/endpoints yet.
 - [ ] **K3 — AspNetCore endpoints.** `GET /sources/{name}/catalog` and `GET /sources/{name}/tables/{table}/preview`
   (top 50), resolving the named source through the registry (D42) and delegating to `ISchemaExplorer`.
   404/422 honest states when no explorer is registered for the source type. Integration tests.
