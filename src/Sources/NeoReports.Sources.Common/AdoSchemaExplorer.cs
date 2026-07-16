@@ -75,35 +75,35 @@ public sealed class AdoSchemaExplorer : ISchemaExplorer
 
         var columns = new Dictionary<TableKey, List<CatalogColumn>>();
         var order = new List<TableKey>();
-        await ReadAsync(connection, _queries.ColumnsSql, cancellationToken, r =>
+        await ReadAsync(connection, _queries.ColumnsSql, r =>
         {
             var keyName = new TableKey(GetString(r, 0), GetString(r, 1));
             if (!columns.TryGetValue(keyName, out List<CatalogColumn>? list))
             {
-                list = new List<CatalogColumn>();
+                list = [];
                 columns[keyName] = list;
                 order.Add(keyName);
             }
 
             list.Add(new CatalogColumn(GetString(r, 2), GetString(r, 3), IsNullable(GetString(r, 4)), IsPrimaryKey: false));
-        }).ConfigureAwait(false);
+        }, cancellationToken).ConfigureAwait(false);
 
         var primaryKeys = new HashSet<(TableKey Table, string Column)>();
-        await ReadAsync(connection, _queries.PrimaryKeysSql, cancellationToken, r =>
-            primaryKeys.Add((new TableKey(GetString(r, 0), GetString(r, 1)), GetString(r, 2)))).ConfigureAwait(false);
+        await ReadAsync(connection, _queries.PrimaryKeysSql, r =>
+            primaryKeys.Add((new TableKey(GetString(r, 0), GetString(r, 1)), GetString(r, 2))), cancellationToken).ConfigureAwait(false);
 
         var foreignKeys = new Dictionary<TableKey, List<ForeignKey>>();
-        await ReadAsync(connection, _queries.ForeignKeysSql, cancellationToken, r =>
+        await ReadAsync(connection, _queries.ForeignKeysSql, r =>
         {
             var keyName = new TableKey(GetString(r, 0), GetString(r, 1));
             if (!foreignKeys.TryGetValue(keyName, out List<ForeignKey>? list))
             {
-                list = new List<ForeignKey>();
+                list = [];
                 foreignKeys[keyName] = list;
             }
 
             list.Add(new ForeignKey(GetString(r, 2), GetString(r, 3), GetString(r, 4), GetString(r, 5)));
-        }).ConfigureAwait(false);
+        }, cancellationToken).ConfigureAwait(false);
 
         var tables = new List<CatalogTable>(order.Count);
         foreach (TableKey key in order)
@@ -162,7 +162,7 @@ public sealed class AdoSchemaExplorer : ISchemaExplorer
         return new TablePreview(names, rows);
     }
 
-    private static async Task ReadAsync(DbConnection connection, string sql, CancellationToken cancellationToken, Action<DbDataReader> onRow)
+    private static async Task ReadAsync(DbConnection connection, string sql, Action<DbDataReader> onRow, CancellationToken cancellationToken)
     {
         await using DbCommand command = connection.CreateCommand();
         command.CommandText = sql;
