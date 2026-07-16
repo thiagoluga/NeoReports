@@ -940,11 +940,18 @@ only (Mongo out); Pro-tier. K2 is implementation-ready but broken into small, in
   400 (missing `table`), 502 (the source's DB threw). Wire DTOs (`SchemaCatalogResponse` etc.) in
   `Contracts.cs`. AspNetCore integration tests with a fake explorer (the real ADO explorers are
   covered by K2's Testcontainers tests).
-- [ ] **K4 — Structured query model + keyset-safe SQL generator (Pro).** The model (source + joins +
-  columns + WHERE + GROUP BY/aggregations + key), the generator that emits keyset-valid SQL with
-  allow-listed + quoted identifiers and parameterized values, and derivation of the report's
-  `columns`/`ReportSchema` from selected columns. Lives in a `.Pro` package; heavy unit coverage on the
-  generator (identifier quoting, keyset wrapper, join/aggregate shapes, injection attempts rejected).
+- [x] **K4 — Structured query model + keyset-safe SQL generator (Pro).** Done. New Pro package
+  `NeoReports.QueryBuilder.Pro` (PolyForm Small Business, `IsPackable=false`, in `pack-pro.yml`):
+  `QueryModel` (source + inner/left joins + columns + WHERE + GROUP BY/aggregations + keyset key),
+  `SqlDialect` (per-provider quoting/param-prefix/cast presets + `SqlTypeMap` DB-type → `ColumnType`),
+  and `KeysetSqlGenerator` — pure `QueryModel` → `(Sql, Parameters, ReportSchema)`. Injection-safe by
+  construction: identifiers quoted per dialect, table aliases validated against a strict pattern (the
+  only unquoted token), WHERE values emitted as `@qbfilterN` placeholders and returned separately
+  (never inlined); the keyset `(@cursor IS NULL OR key > @cursor) … ORDER BY key` wrapper (with the
+  key's type-cast) is always appended, so a generated query is always a valid keyset query. Model
+  validation rejects aggregate-without-group-by, ungrouped non-aggregate selects, and a non-grouped
+  key. 13 container-free unit tests (SQL shape, per-dialect quoting, cursor cast, injection rejection,
+  schema derivation, validation). No UI wiring yet (K5).
 - [ ] **K5 — UI: schema explorer panel + notebook builder + raw-SQL escape hatch.** The Blazor screen
   from D49 (explorer tree with `ti-circle-check` "already used" markers + tooltip, notebook step cards,
   FK-auto-join, live generated-SQL panel, preview grid via `ReportPreviewRunner`, raw-SQL tab with the

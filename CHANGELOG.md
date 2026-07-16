@@ -9,6 +9,13 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 ## [Unreleased]
 
 ### Added
+- **`NeoReports.QueryBuilder.Pro` — visual query builder engine (D49/Epic K, K4, Pro).** A new
+  commercial (PolyForm Small Business) package with a structured `QueryModel` (source + inner/left
+  joins + columns + WHERE + GROUP BY/aggregation + keyset key) and a `KeysetSqlGenerator` that turns
+  it into keyset-safe report SQL. Injection-safe by construction — identifiers are quoted per dialect,
+  WHERE values are bind-parameter placeholders (never inlined), and the keyset wrapper is always
+  appended, so a generated query is always valid. Feeds the interactive query builder (D49); no UI
+  yet. Not in the OSS NuGet release (`IsPackable=false`, D30).
 - **Schema-explorer HTTP endpoints (D49/Epic K, K3).** `GET /sources/{name}/catalog` (a source's
   tables/columns/PK/FK) and `GET /sources/{name}/preview?schema=&table=&top=` (a table's first N
   rows, capped server-side at 50). Both resolve the named source through the registry (D42) and
