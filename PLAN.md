@@ -910,7 +910,7 @@ additive exception to D46's "one provider per sample" rule — samples 10-13 are
   to completion (100%, 15,000 records, CSV + XLSX artifacts generated) with the real D47 progress
   percentage live on the running-job page.
 
-## Epic K — Interactive source explorer + visual query builder (Pro, D49) — K1 designed, K2 not started
+## Epic K — Interactive source explorer + visual query builder (Pro, D49) — K1–K4 done, K5 not started
 
 Requested directly by the maintainer (2026-07-15). Design settled with the maintainer (2026-07-16) —
 see the full `## D49` section in `DECISIONS.md`. Structured query model (SQL is generated, not
@@ -1039,3 +1039,31 @@ type doesn't support server-side filters" banner on a Postgres-sourced report.
   — no engine defect found in this code path. The originally reported banner remains unexplained;
   reproducing it again needs the report's actual persisted source config or the named source's
   registered type from the live session where it was seen.
+
+## Epic P — Broad source-type expansion (D55) — not started
+
+Requested directly by the maintainer (2026-07-16): "possibilitar todas as fontes possíveis, menos
+Kafka." Directional design in `## D55` (`DECISIONS.md`). Every source is a new package on the
+existing `IBatchSource<T>`/`IStreamingSource<T>` + `IConfigSourceProvider` contracts (frozen
+`Abstractions` untouched, the Epic G pattern); message queues / unbounded streams (Kafka) are
+explicitly out. Two non-negotiables per source: constant memory (map native pagination to the
+opaque cursor, or stream-parse) and honest capability gaps (no query builder / server-side filters
+unless the source has a real catalog/query protocol — D36). Each source below still needs its own
+small design pass before code (like D43/K1). Ordered cheapest-highest-value first.
+
+- [ ] **P1 — SQLite** (`Microsoft.Data.Sqlite`) — rides `AdoKeysetSource` with a driver swap; gets
+  keyset + `ISchemaExplorer` almost for free. Cheapest possible source; also handy for tests/embedded.
+- [ ] **P2 — ADO.NET cloud warehouses: Snowflake, Amazon Redshift** — same near-free `AdoKeysetSource`
+  path (both have ADO.NET providers), inheriting keyset + schema exploration.
+- [ ] **P3 — File sources: CSV, Excel (XLSX), Parquet** (local or S3) — symmetric to the existing
+  Local/S3 destinations; stream-parsed for constant memory. A file's fixed columns allow a
+  lightweight catalog but no server-side filters.
+- [ ] **P4 — Generic HTTP/REST source** (its own ADR first). Settle: pagination strategy
+  (cursor/`Link`/page/offset/none→stream-parse), response→rows mapping (JSON path + field map), auth
+  (`${VAR}` for API key/Bearer/OAuth), Polly + `429`/`Retry-After` handling, and the honest capability
+  gaps (no `ISchemaExplorer`, no server-side filters). MIT.
+- [ ] **P5 — HTTP with richer query semantics: OData, GraphQL.** OData can push filters server-side
+  (register an `IFilterTranslator`); GraphQL's Relay cursor pagination fits the cursor model cleanly.
+- [ ] **P6 — Search engines: Elasticsearch / OpenSearch** — `search_after`/scroll is a natural cursor.
+- [ ] **P7 — SaaS APIs (special cases of P4, often with SDKs): Salesforce, HubSpot, Google Sheets,
+  Airtable.** Each a thin source over its API/SDK plus that provider's auth.
