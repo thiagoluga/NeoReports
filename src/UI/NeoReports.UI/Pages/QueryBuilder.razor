@@ -291,7 +291,7 @@
                 @* Generated SQL — shared by both tabs when a visual query was generated. *@
                 @if (_tab == "visual" && _generated is not null)
                 {
-                    <Card Title="Generated SQL" Sub="Keyset-safe — exposes @@cursor and orders by the key">
+                    <Card Title="Generated SQL" Sub='@("Keyset-safe — exposes @cursor and orders by the key")'>
                         <ChildContent>
                             @switch (_generated.Outcome)
                             {
