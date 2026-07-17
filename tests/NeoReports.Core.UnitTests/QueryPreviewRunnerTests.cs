@@ -67,10 +67,10 @@ public class QueryPreviewRunnerTests
             requestedRows: 10,
             Execution(new Dictionary<string, object?> { ["runParam"] = 7 }), services, CancellationToken.None);
 
-        provider.LastParameters.ContainsKey("qbfilter0").ShouldBeTrue();
-        provider.LastParameters["qbfilter0"].ShouldBe("Porto");
-        provider.LastParameters.ContainsKey("runParam").ShouldBeTrue();
-        provider.LastParameters["runParam"].ShouldBe(7);
+        provider.LastParameters.TryGetValue("qbfilter0", out object? filterValue).ShouldBeTrue();
+        filterValue.ShouldBe("Porto");
+        provider.LastParameters.TryGetValue("runParam", out object? runValue).ShouldBeTrue();
+        runValue.ShouldBe(7);
     }
 
     [Fact]
