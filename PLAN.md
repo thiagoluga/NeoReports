@@ -910,7 +910,7 @@ additive exception to D46's "one provider per sample" rule — samples 10-13 are
   to completion (100%, 15,000 records, CSV + XLSX artifacts generated) with the real D47 progress
   percentage live on the running-job page.
 
-## Epic K — Interactive source explorer + visual query builder (Pro, D49) — K1–K5b done; K6a (endpoint) + K6b (UI grid) done; K6c (create-report) remains
+## Epic K — Interactive source explorer + visual query builder (Pro, D49) — K1–K6c all done
 
 Requested directly by the maintainer (2026-07-15). Design settled with the maintainer (2026-07-16) —
 see the full `## D49` section in `DECISIONS.md`. Structured query model (SQL is generated, not
@@ -996,11 +996,17 @@ only (Mongo out); Pro-tier. K2 is implementation-ready but broken into small, in
   result** grid (with a "more rows exist" note when truncated), preserving the honest 422/400/engine-error
   states. New API-client method `TryPreviewQueryAsync` (+ fake) and 4 bUnit tests. The raw-SQL
   escape-hatch tab is intentionally not previewed.
-- [ ] **K6c — "create report from this query" handoff.** Turn the generated (visual) query into a
-  registered `Sql`-source dynamic report via the existing create flow. Needs the generator to expose
-  the key column's **output name** (a keyset report requires the key to be a *selected* result column)
-  and a design pass on the key-must-be-selected guarantee. Previewing hand-written **raw** SQL is a
-  separate future slice with its own safety decision (it would execute arbitrary caller text).
+- [x] **K6c — "create report from this query" handoff.** `KeysetSqlGenerator` now guarantees the
+  keyset key is always a real column of the generated `SELECT` list — reusing the user's own output
+  name when already selected, else appending a collision-checked synthetic column excluded from the
+  report schema — and exposes it as `KeyColumnName`, threaded through `GeneratedReportSql` →
+  `GeneratedQuerySqlResponse` → the UI's `ApiGeneratedQuerySql` (all additive). No new endpoint: a
+  **"Create report from this query"** button in `QueryBuilder.razor` populates the existing Builder
+  wizard (`BuilderState`) with the source ref/type, generated SQL, real key, and derived columns, then
+  hands off to `builder/configure` — reusing `POST /api/reports` like every other dynamic report.
+  `QueryPreviewRunner` now uses the real key too, replacing the old "any column" preview-only shortcut.
+  Previewing hand-written **raw** SQL is a separate future slice with its own safety decision (it would
+  execute arbitrary caller text).
 
 ## Epic L — Investigate: Pro packages in samples/demos (D50) — open question, not started
 

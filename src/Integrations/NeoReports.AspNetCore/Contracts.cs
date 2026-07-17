@@ -80,8 +80,14 @@ public sealed record TablePreviewResponse(IReadOnlyList<string> Columns, IReadOn
 /// <param name="Sql">The generated report SQL — exposes <c>@cursor</c> and ends in <c>ORDER BY</c> the key.</param>
 /// <param name="Parameters">The WHERE filter values by bind-parameter name (without prefix).</param>
 /// <param name="Schema">The report's output schema, derived from the selected columns.</param>
+/// <param name="KeyColumnName">
+/// The result-set column name a keyset source must read the key from (ADR D49/K6c) — always a real
+/// column of <see cref="Sql"/>'s <c>SELECT</c> list, but not necessarily part of <see cref="Schema"/>.
+/// This is the value a "create report from this query" flow must send as the <c>key</c> source
+/// property; any other column silently breaks pagination past the first page.
+/// </param>
 public sealed record GeneratedQuerySqlResponse(
-    string Sql, IReadOnlyDictionary<string, object?> Parameters, IReadOnlyList<ReportColumnView> Schema);
+    string Sql, IReadOnlyDictionary<string, object?> Parameters, IReadOnlyList<ReportColumnView> Schema, string KeyColumnName);
 
 /// <summary>Response for <c>POST /sources/{name}/query-preview</c> — a bounded sample of the visual query's result (ADR D49, K6).</summary>
 /// <param name="Columns">The query's output columns, in order.</param>

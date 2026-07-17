@@ -198,8 +198,9 @@ public sealed record ApiForeignKey(string Column, string ReferencedSchema, strin
 public sealed record ApiTablePreview(IReadOnlyList<string> Columns, IReadOnlyList<object?[]> Rows);
 
 /// <summary>The keyset-safe SQL a visual query compiles to, from <c>POST /api/sources/{name}/query-sql</c> (ADR D49/K5a).</summary>
+/// <param name="KeyColumnName">The result-set column name the keyset key must be read from (ADR D49/K6c) — the value to send as the <c>key</c> source property when creating a report from this query.</param>
 public sealed record ApiGeneratedQuerySql(
-    string Sql, IReadOnlyDictionary<string, object?> Parameters, IReadOnlyList<ApiReportColumn> Schema);
+    string Sql, IReadOnlyDictionary<string, object?> Parameters, IReadOnlyList<ApiReportColumn> Schema, string KeyColumnName);
 
 /// <summary>Outcome of a <c>POST /api/sources/{name}/query-sql</c> call.</summary>
 public enum ApiQuerySqlOutcome

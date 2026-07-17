@@ -54,6 +54,7 @@ public class QueryBuilderEndpointTests
         JsonElement schema = body.GetProperty("schema");
         schema.GetArrayLength().ShouldBe(1);
         schema[0].GetProperty("name").GetString().ShouldBe("total");
+        body.GetProperty("keyColumnName").GetString().ShouldBe("total");
 
         // The raw model JSON and the source's own type both reach the generator unmodified.
         generator.LastModelJson.ShouldBe(model);
@@ -129,6 +130,7 @@ internal sealed class FakeQuerySqlGenerator : IQuerySqlGenerator
         return new GeneratedReportSql(
             "SELECT 1",
             new Dictionary<string, object?> { ["qbfilter0"] = 42 },
-            schema);
+            schema,
+            "total");
     }
 }

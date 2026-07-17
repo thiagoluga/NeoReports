@@ -8,7 +8,15 @@ namespace NeoReports.Core.QueryBuilder;
 /// <param name="Sql">Keyset report SQL — exposes <c>@cursor</c> and ends in <c>ORDER BY</c> the key.</param>
 /// <param name="Parameters">The WHERE filter values by parameter name (without prefix). <c>@cursor</c>/<c>@pageSize</c> are bound by the keyset source, not here.</param>
 /// <param name="Schema">The report's output schema, derived from the selected columns.</param>
-public sealed record GeneratedReportSql(string Sql, IReadOnlyDictionary<string, object?> Parameters, ReportSchema Schema);
+/// <param name="KeyColumnName">
+/// The result-set column name a keyset source must read the key from (the <c>key</c> property of a
+/// <c>SourceConfig</c> built from this query, ADR D49/K6c). Always a real column of <see cref="Sql"/>'s
+/// <c>SELECT</c> list — either one of the user's own selected columns (when the key was picked as an
+/// output column) or a generator-appended one, which is <em>not</em> part of <see cref="Schema"/>: a
+/// keyset report never gains a phantom output column just to satisfy pagination.
+/// </param>
+public sealed record GeneratedReportSql(
+    string Sql, IReadOnlyDictionary<string, object?> Parameters, ReportSchema Schema, string KeyColumnName);
 
 /// <summary>
 /// The MIT seam between the visual query builder UI/endpoints and the Pro SQL generator (ADR D49,

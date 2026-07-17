@@ -265,6 +265,67 @@ public class KeysetSqlGeneratorTests
     }
 
     [Fact]
+    public void KeyColumnName_reuses_the_output_name_when_the_key_is_already_selected()
+    {
+        QueryModel model = SingleTable(
+            new QuerySelectColumn(Ref("t0", "id"), "Id", "integer"),
+            new QuerySelectColumn(Ref("t0", "name"), "Name", "varchar"));
+
+        GeneratedQuery result = KeysetSqlGenerator.Generate(model, SqlDialect.Postgres);
+
+        result.KeyColumnName.ShouldBe("Id");
+        // No extra SELECT item was appended — the key's own output column already covers it.
+        result.Sql.ShouldContain("SELECT t0.\"id\" AS \"Id\", t0.\"name\" AS \"Name\"\n");
+    }
+
+    [Fact]
+    public void KeyColumnName_appends_a_synthetic_column_when_the_key_is_not_selected()
+    {
+        // The key ("id") is never one of the Select columns (ADR D49/K6c) — the user only picked "name".
+        QueryModel model = SingleTable(new QuerySelectColumn(Ref("t0", "name"), "Name", "varchar"));
+
+        GeneratedQuery result = KeysetSqlGenerator.Generate(model, SqlDialect.Postgres);
+
+        result.KeyColumnName.ShouldBe("__neoreports_key");
+        result.Sql.ShouldContain("t0.\"id\" AS \"__neoreports_key\"");
+        // The synthetic key column is not part of the report's own output schema.
+        result.Schema.Columns.Select(c => c.Name).ShouldBe(new[] { "Name" });
+    }
+
+    [Fact]
+    public void KeyColumnName_avoids_colliding_with_a_real_output_name()
+    {
+        // The user's own output name happens to be the generator's default synthetic alias.
+        QueryModel model = SingleTable(new QuerySelectColumn(Ref("t0", "name"), "__neoreports_key", "varchar"));
+
+        GeneratedQuery result = KeysetSqlGenerator.Generate(model, SqlDialect.Postgres);
+
+        result.KeyColumnName.ShouldBe("__neoreports_key1");
+        result.Sql.ShouldContain("t0.\"id\" AS \"__neoreports_key1\"");
+    }
+
+    [Fact]
+    public void KeyColumnName_appends_the_key_even_when_only_grouped_not_selected()
+    {
+        // The key ("country") is a GROUP BY column but not itself one of the Select columns.
+        var model = new QueryModel(
+            From: Table("sales", "t0"),
+            Joins: Array.Empty<QueryJoin>(),
+            Select: new[] { new QuerySelectColumn(Ref("t0", "amount"), "Total", "numeric", QueryAggregate.Sum) },
+            Where: Array.Empty<QueryFilter>(),
+            GroupBy: new[] { Ref("t0", "country") },
+            Key: Ref("t0", "country"),
+            KeyDataType: "varchar");
+
+        GeneratedQuery result = KeysetSqlGenerator.Generate(model, SqlDialect.Postgres);
+
+        result.KeyColumnName.ShouldBe("__neoreports_key");
+        result.Sql.ShouldContain("t0.\"country\" AS \"__neoreports_key\"");
+        result.Sql.ShouldContain("GROUP BY t0.\"country\"");
+        result.Schema.Columns.Select(c => c.Name).ShouldBe(new[] { "Total" });
+    }
+
+    [Fact]
     public void ForType_resolves_the_dialect_preset()
     {
         SqlDialect.ForType("postgres").ShouldBe(SqlDialect.Postgres);

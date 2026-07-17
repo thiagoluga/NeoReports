@@ -4,6 +4,7 @@
 @using NeoReports.UI.Services
 @inject NavigationManager Nav
 @inject INeoReportsApiClient Api
+@inject BuilderState Wizard
 
 @* Interactive source explorer + visual query builder (ADR D49/K5b, Pro).
    Left: a schema explorer over GET /sources/{name}/catalog. Center: a notebook of step cards
@@ -268,6 +269,7 @@
                         <div style="display:flex;gap:8px">
                             <Button Variant="primary" Icon="wand" Loading="_generating" OnClick="GenerateAsync">Generate SQL</Button>
                             <Button Variant="outline" Icon="player-play" Loading="_previewing" OnClick="RunPreviewAsync">Run preview</Button>
+                            <Button Variant="outline" Icon="file-plus" Loading="_creatingReport" OnClick="CreateReportFromQueryAsync">Create report from this query</Button>
                         </div>
                     }
                 }
@@ -433,6 +435,7 @@
     private bool _generating;
     private ApiQueryPreviewResult? _previewResult;
     private bool _previewing;
+    private bool _creatingReport;
 
     private (string Schema, string Table)? _previewTarget;
     private ApiTablePreview? _preview;
@@ -708,6 +711,54 @@
         finally
         {
             _previewing = false;
+        }
+    }
+
+    // Turns the built query into a registered report via the same Builder wizard every other dynamic
+    // report goes through (ADR D49/K6c) — no separate creation path. Reuses _generated when it's
+    // already a fresh Ok result — every notebook mutation (AddTable/RemoveTable/OnKeyChanged/
+    // AddSelectColumn/ResetQuery, …) already nulls it out, so a non-null Ok result is guaranteed
+    // current — and only calls the endpoint when it isn't. Hands the query's source ref, SQL, the
+    // real keyset key (KeyColumnName — never a column the user merely selected as output; K6c's
+    // generator guarantees it's always a real SELECT column), and derived column names to the wizard,
+    // landing on the same "configure" step the Edit-report flow uses to confirm/complete the rest.
+    private async Task CreateReportFromQueryAsync()
+    {
+        if (_sourceName is null || _tables.Count == 0)
+            return;
+
+        _creatingReport = true;
+        try
+        {
+            if (_generated is not { Outcome: ApiQuerySqlOutcome.Ok })
+            {
+                var modelJson = BuildModelJson();
+                _generated = await Api.TryGenerateQuerySqlAsync(_sourceName, modelJson);
+            }
+
+            if (_generated is not { Outcome: ApiQuerySqlOutcome.Ok, Data: { } g })
+                return;
+
+            string sourceType = _sources?.FirstOrDefault(s => s.Name == _sourceName)?.Type ?? "";
+
+            Wizard.Reset();
+            // Reset() defaults EngineAvailable to false — normally set true by Builder.razor's step 1,
+            // which this flow skips entirely. The query-sql call just above already proves the engine
+            // is live and this source type/capabilities are usable, so it's set directly here; without
+            // it, BuilderFormat/BuilderDestination/BuilderReview would all show "no engine" and the
+            // wizard's Save/Run buttons would stay permanently disabled.
+            Wizard.EngineAvailable = true;
+            Wizard.SourceRef = _sourceName;
+            Wizard.SourceType = sourceType;
+            Wizard.SqlQuery = g.Sql;
+            Wizard.KeyColumn = g.KeyColumnName;
+            Wizard.ColumnNames = string.Join(", ", g.Schema.Select(c => c.Name));
+
+            Nav.NavigateTo("builder/configure");
+        }
+        finally
+        {
+            _creatingReport = false;
         }
     }
 
