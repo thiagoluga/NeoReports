@@ -1003,71 +1003,60 @@ public static class NeoReportsEndpointRouteBuilderExtensions
 
     private static async Task<IResult> GenerateSourceQuerySqlAsync(string name, HttpContext http, CancellationToken cancellationToken)
     {
-        (SourceDefinition? definition, IResult? failure) = await ResolveSourceAsync(name, http, cancellationToken).ConfigureAwait(false);
+        (GeneratedReportSql? generated, _, IResult? failure) =
+            await GenerateFromModelAsync(name, http, cancellationToken).ConfigureAwait(false);
         if (failure is not null)
             return failure;
+
+        ReportColumnView[] schema = generated!.Schema.Columns
+            .Select(c => new ReportColumnView(c.Name, c.Type.ToString(), c.DisplayName, c.Format, c.Nullable))
+            .ToArray();
+        return Results.Ok(new GeneratedQuerySqlResponse(generated.Sql, generated.Parameters, schema));
+    }
+
+    // Shared front half of both query-builder endpoints (query-sql and query-preview): resolve the
+    // named source, gate on the Pro IQuerySqlGenerator (422 when absent — D36), read the raw model
+    // JSON body, and generate the keyset SQL. Returns the generated SQL plus the resolved definition,
+    // or the appropriate failure result (404/409/422/400). The generator's messages are caller-safe.
+    private static async Task<(GeneratedReportSql? Generated, SourceDefinition? Definition, IResult? Failure)> GenerateFromModelAsync(
+        string name, HttpContext http, CancellationToken cancellationToken)
+    {
+        (SourceDefinition? definition, IResult? failure) = await ResolveSourceAsync(name, http, cancellationToken).ConfigureAwait(false);
+        if (failure is not null)
+            return (null, null, failure);
 
         // The Pro query builder registers this seam (ADR D49); an MIT-only host has none, so the
         // capability is honestly reported as unavailable rather than faked (D36).
         IQuerySqlGenerator? generator = http.RequestServices.GetService<IQuerySqlGenerator>();
         if (generator is null)
         {
-            return Results.Problem(
+            return (null, null, Results.Problem(
                 title: "The visual query builder is not available on this host.",
                 detail: "No IQuerySqlGenerator is registered. It ships with the NeoReports.QueryBuilder.Pro package (AddQueryBuilder()).",
-                statusCode: StatusCodes.Status422UnprocessableEntity);
+                statusCode: StatusCodes.Status422UnprocessableEntity));
         }
 
         string modelJson = await ReadBodyAsync(http, cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(modelJson))
-            return Results.BadRequest(new { error = "The request body must contain the query model JSON." });
+            return (null, null, Results.BadRequest(new { error = "The request body must contain the query model JSON." }));
 
         try
         {
-            GeneratedReportSql generated = generator.Generate(modelJson, definition!.Type);
-            ReportColumnView[] schema = generated.Schema.Columns
-                .Select(c => new ReportColumnView(c.Name, c.Type.ToString(), c.DisplayName, c.Format, c.Nullable))
-                .ToArray();
-            return Results.Ok(new GeneratedQuerySqlResponse(generated.Sql, generated.Parameters, schema));
+            return (generator.Generate(modelJson, definition!.Type), definition, null);
         }
         catch (QuerySqlGenerationException ex)
         {
             // The generator's message is caller-safe by contract (no secrets, no raw model echo).
-            return Results.BadRequest(new { error = ex.Message });
+            return (null, null, Results.BadRequest(new { error = ex.Message }));
         }
     }
 
     private static async Task<IResult> PreviewSourceQueryAsync(string name, HttpContext http, CancellationToken cancellationToken)
     {
-        (SourceDefinition? definition, IResult? failure) = await ResolveSourceAsync(name, http, cancellationToken).ConfigureAwait(false);
+        (GeneratedReportSql? generated, SourceDefinition? definition, IResult? failure) =
+            await GenerateFromModelAsync(name, http, cancellationToken).ConfigureAwait(false);
         if (failure is not null)
             return failure;
-
-        // Same capability gate as query-sql: the SQL is generated server-side from the model by the
-        // Pro generator (injection-safe by construction), never taken as raw caller SQL, so the
-        // preview never runs anything the visual builder couldn't already compile.
-        IQuerySqlGenerator? generator = http.RequestServices.GetService<IQuerySqlGenerator>();
-        if (generator is null)
-        {
-            return Results.Problem(
-                title: "The visual query builder is not available on this host.",
-                detail: "No IQuerySqlGenerator is registered. It ships with the NeoReports.QueryBuilder.Pro package (AddQueryBuilder()).",
-                statusCode: StatusCodes.Status422UnprocessableEntity);
-        }
-
-        string modelJson = await ReadBodyAsync(http, cancellationToken).ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(modelJson))
-            return Results.BadRequest(new { error = "The request body must contain the query model JSON." });
-
-        GeneratedReportSql generated;
-        try
-        {
-            generated = generator.Generate(modelJson, definition!.Type);
-        }
-        catch (QuerySqlGenerationException ex)
-        {
-            return Results.BadRequest(new { error = ex.Message });
-        }
 
         var jobId = Guid.NewGuid().ToString("N");
         ILogger logger = http.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("NeoReports.QueryPreview");
@@ -1076,10 +1065,10 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         try
         {
             QueryPreviewResult result = await QueryPreviewRunner.PreviewAsync(
-                definition!.Type, definition.Properties, generated,
+                definition!.Type, definition.Properties, generated!,
                 QueryPreviewRunner.MaxRows, execution, http.RequestServices, cancellationToken).ConfigureAwait(false);
 
-            ReportColumnView[] columns = generated.Schema.Columns
+            ReportColumnView[] columns = generated!.Schema.Columns
                 .Select(c => new ReportColumnView(c.Name, c.Type.ToString(), c.DisplayName, c.Format, c.Nullable))
                 .ToArray();
             return Results.Ok(new QueryPreviewResponse(columns, result.Rows, result.Truncated));
