@@ -8,6 +8,8 @@ namespace NeoReports.Sources.Snowflake;
 /// <summary>Fluent entry points for Snowflake sources.</summary>
 public static class Source
 {
+    internal static readonly AdoProviderOptions ColonPrefix = new() { ParameterPrefix = ":" };
+
     /// <summary>
     /// Begins configuring a Snowflake source. The query must expose a <c>:cursor</c> bind variable
     /// on the key column and order by it — Snowflake uses a <c>:</c> prefix, not <c>@</c> (e.g.
@@ -47,16 +49,8 @@ public sealed class SnowflakeSourceBuilder
     /// <typeparam name="TKey">The key column type.</typeparam>
     /// <param name="keySelector">Member selector for the key column, e.g. <c>v =&gt; v.Id</c>.</param>
     /// <param name="pageSize">Maximum rows per page. Default 1000.</param>
-    public IBatchSource<T> Keyset<T, TKey>(Expression<Func<T, TKey>> keySelector, int pageSize = 1000)
-    {
-        ArgumentNullException.ThrowIfNull(keySelector);
-        var keyColumn = MemberSelector.GetMemberName(keySelector);
-        var schema = new ReportSchema(new[] { new ReportColumn(keyColumn, ColumnType.String) });
-
-        return new AdoKeysetSource<T>(
-            () => new SnowflakeDbConnection(_connectionString), _sql, keyColumn, pageSize, schema,
-            new AdoProviderOptions { ParameterPrefix = ":" });
-    }
+    public IBatchSource<T> Keyset<T, TKey>(Expression<Func<T, TKey>> keySelector, int pageSize = 1000) =>
+        AdoSourceBuilder.Keyset(() => new SnowflakeDbConnection(_connectionString), _sql, keySelector, pageSize, Source.ColonPrefix);
 }
 
 /// <summary>Intermediate builder for a by-name Snowflake source, before the keyset key/page size are chosen.</summary>
@@ -79,14 +73,6 @@ public sealed class SnowflakeNamedSourceBuilder
     /// <typeparam name="TKey">The key column type.</typeparam>
     /// <param name="keySelector">Member selector for the key column, e.g. <c>v =&gt; v.Id</c>.</param>
     /// <param name="pageSize">Maximum rows per page. Default 1000.</param>
-    public IBatchSource<T> Keyset<T, TKey>(Expression<Func<T, TKey>> keySelector, int pageSize = 1000)
-    {
-        ArgumentNullException.ThrowIfNull(keySelector);
-        var keyColumn = MemberSelector.GetMemberName(keySelector);
-        var schema = new ReportSchema(new[] { new ReportColumn(keyColumn, ColumnType.String) });
-
-        return new AdoNamedKeysetSource<T>(
-            _sourceName, _sql, keyColumn, pageSize, schema, cs => new SnowflakeDbConnection(cs),
-            new AdoProviderOptions { ParameterPrefix = ":" });
-    }
+    public IBatchSource<T> Keyset<T, TKey>(Expression<Func<T, TKey>> keySelector, int pageSize = 1000) =>
+        AdoSourceBuilder.NamedKeyset(_sourceName, cs => new SnowflakeDbConnection(cs), _sql, keySelector, pageSize, Source.ColonPrefix);
 }

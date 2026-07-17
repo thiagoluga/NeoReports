@@ -49,14 +49,8 @@ public sealed class RedshiftSourceBuilder
     /// <typeparam name="TKey">The key column type.</typeparam>
     /// <param name="keySelector">Member selector for the key column, e.g. <c>v =&gt; v.Id</c>.</param>
     /// <param name="pageSize">Maximum rows per page. Default 1000.</param>
-    public IBatchSource<T> Keyset<T, TKey>(Expression<Func<T, TKey>> keySelector, int pageSize = 1000)
-    {
-        ArgumentNullException.ThrowIfNull(keySelector);
-        var keyColumn = MemberSelector.GetMemberName(keySelector);
-        var schema = new ReportSchema(new[] { new ReportColumn(keyColumn, ColumnType.String) });
-
-        return new AdoKeysetSource<T>(() => new NpgsqlConnection(_connectionString), _sql, keyColumn, pageSize, schema);
-    }
+    public IBatchSource<T> Keyset<T, TKey>(Expression<Func<T, TKey>> keySelector, int pageSize = 1000) =>
+        AdoSourceBuilder.Keyset(() => new NpgsqlConnection(_connectionString), _sql, keySelector, pageSize);
 }
 
 /// <summary>Intermediate builder for a by-name Amazon Redshift source, before the keyset key/page size are chosen.</summary>
@@ -79,12 +73,6 @@ public sealed class RedshiftNamedSourceBuilder
     /// <typeparam name="TKey">The key column type.</typeparam>
     /// <param name="keySelector">Member selector for the key column, e.g. <c>v =&gt; v.Id</c>.</param>
     /// <param name="pageSize">Maximum rows per page. Default 1000.</param>
-    public IBatchSource<T> Keyset<T, TKey>(Expression<Func<T, TKey>> keySelector, int pageSize = 1000)
-    {
-        ArgumentNullException.ThrowIfNull(keySelector);
-        var keyColumn = MemberSelector.GetMemberName(keySelector);
-        var schema = new ReportSchema(new[] { new ReportColumn(keyColumn, ColumnType.String) });
-
-        return new AdoNamedKeysetSource<T>(_sourceName, _sql, keyColumn, pageSize, schema, cs => new NpgsqlConnection(cs));
-    }
+    public IBatchSource<T> Keyset<T, TKey>(Expression<Func<T, TKey>> keySelector, int pageSize = 1000) =>
+        AdoSourceBuilder.NamedKeyset(_sourceName, cs => new NpgsqlConnection(cs), _sql, keySelector, pageSize);
 }
