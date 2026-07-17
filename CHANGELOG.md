@@ -9,6 +9,14 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 ## [Unreleased]
 
 ### Added
+- **Query builder: run the built query and see its rows (D49/Epic K, K6b).** The visual query-builder
+  screen now has a **Run preview** button beside **Generate SQL**; it calls the new
+  `POST /sources/{name}/query-preview` and renders a **Query result** grid of the built query's own
+  rows (with a "more rows exist" note when the sample fills the cap), closing the
+  build→see-output→adjust loop. Honest states are preserved: "not available on this host" (422 — no Pro
+  package), the engine's caller-safe validation message (400), and a generic "couldn't run against the
+  source" for an engine/database error. New API-client method `TryPreviewQueryAsync` (+ fake). The
+  raw-SQL escape-hatch tab is intentionally not previewed (it would run hand-written SQL).
 - **Query builder: bounded result preview endpoint (D49/Epic K, K6a).** New
   `POST /sources/{name}/query-preview` runs a read-only sample of a visually-composed query and
   returns its columns, a capped page of rows, and a `truncated` flag. It takes the query **model JSON**
