@@ -9,6 +9,15 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 ## [Unreleased]
 
 ### Added
+- **Query builder: bounded result preview endpoint (D49/Epic K, K6a).** New
+  `POST /sources/{name}/query-preview` runs a read-only sample of a visually-composed query and
+  returns its columns, a capped page of rows, and a `truncated` flag. It takes the query **model JSON**
+  (the same body as `query-sql`) and generates the keyset SQL **server-side** — no raw caller SQL is
+  ever executed — then reads one bounded page through the source's own keyset provider (new Core
+  `QueryPreviewRunner`, the query-side sibling of the report preview runner). Honest states: 422 when
+  the Pro query-builder package isn't registered, 400 on an invalid model, and a secret-free 502 if the
+  source's database can't be read. The UI result grid and a "create report from this query" handoff
+  ride on this in follow-ups (K6b/K6c).
 - **Builder: insert-token helper for the destination path (D51/Epic M).** The Builder's
   "Choose a destination" step now offers clickable **Insert token** buttons below the path/key
   template field — `{name}`, `{ext}`, `{date}`, `{date:yyyy-MM-dd}`, `{date:yyyyMMdd-HHmmss}`

@@ -910,7 +910,7 @@ additive exception to D46's "one provider per sample" rule — samples 10-13 are
   to completion (100%, 15,000 records, CSV + XLSX artifacts generated) with the real D47 progress
   percentage live on the running-job page.
 
-## Epic K — Interactive source explorer + visual query builder (Pro, D49) — K1–K5b done; result-preview grid deferred (needs an ad-hoc-SQL endpoint)
+## Epic K — Interactive source explorer + visual query builder (Pro, D49) — K1–K5b done; K6a (ad-hoc query-preview endpoint) done; K6b (UI grid) / K6c (create-report) remain
 
 Requested directly by the maintainer (2026-07-15). Design settled with the maintainer (2026-07-16) —
 see the full `## D49` section in `DECISIONS.md`. Structured query model (SQL is generated, not
@@ -983,14 +983,22 @@ only (Mongo out); Pro-tier. K2 is implementation-ready but broken into small, in
   an ad-hoc-SQL preview endpoint that doesn't exist yet (`ReportPreviewRunner` previews a *registered
   report's* source, not arbitrary generated SQL); per-table samples and the generated SQL are available
   now, and the raw-SQL tab is copy-to-a-report rather than executable in place.
-- [ ] **K6 — (follow-up) run the built/raw query: preview grid + "create report".** Two related pieces
-  the query builder wants but K5b deferred: **(a)** an ad-hoc-SQL preview endpoint (bounded, read-only,
-  keyset-page — a sibling of D45's `POST /reports/{name}/preview` that takes a source name + generated
-  SQL instead of a registered report) so the builder can show a result grid of the query it just built,
-  and **(b)** a "create report from this query" handoff that turns the generated (or raw) SQL into a
-  registered `Sql`-source report via the existing create flow. Needs a design pass on the ad-hoc-preview
-  endpoint's safety envelope (it runs caller-supplied/generated SQL — the generated path is injection-safe
-  by construction, the raw path is the user's own SQL, same as today's Builder).
+- [x] **K6a — ad-hoc query-preview endpoint (engine + API).** `POST /sources/{name}/query-preview`
+  takes the query **model JSON** (not raw SQL), resolves the named source (D42) + `IQuerySqlGenerator`
+  (422 when the Pro package isn't registered), generates the keyset SQL server-side (injection-safe by
+  construction), and runs **one bounded page** through the source's own `IConfigSourceProvider` via a
+  new Core `QueryPreviewRunner` (the query-side sibling of D45's `ReportPreviewRunner`) — clamped to
+  `MaxRows` (100), `truncated` when the page fills, driver errors mapped to a secret-free 502. **No raw
+  caller SQL is ever executed**, resolving K6's safety-envelope open question (see the K6a paragraph in
+  `## D49`). Core-unit + AspNetCore-integration tests.
+- [ ] **K6b — UI: run-query preview grid.** Wire a "Run" button + result grid into the visual tab of
+  `QueryBuilder.razor`, calling `POST /sources/{name}/query-preview`; new API-client method + fake +
+  bUnit tests. Closes the build→see-output→adjust loop.
+- [ ] **K6c — "create report from this query" handoff.** Turn the generated (visual) query into a
+  registered `Sql`-source dynamic report via the existing create flow. Needs the generator to expose
+  the key column's **output name** (a keyset report requires the key to be a *selected* result column)
+  and a design pass on the key-must-be-selected guarantee. Previewing hand-written **raw** SQL is a
+  separate future slice with its own safety decision (it would execute arbitrary caller text).
 
 ## Epic L — Investigate: Pro packages in samples/demos (D50) — open question, not started
 

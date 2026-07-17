@@ -54,6 +54,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
     /// <item><c>GET  {prefix}/sources/{name}/catalog</c> — introspect the source's schema (tables/columns/PK/FK, ADR D49); 422 when the type has no registered explorer</item>
     /// <item><c>GET  {prefix}/sources/{name}/preview?schema=&amp;table=</c> — first rows of one table (ADR D49); row count is fixed server-side</item>
     /// <item><c>POST {prefix}/sources/{name}/query-sql</c> — generate keyset-safe report SQL from a visual query model (ADR D49, Pro); 422 when no query-builder generator is registered</item>
+    /// <item><c>POST {prefix}/sources/{name}/query-preview</c> — bounded, read-only sample of a visual query's result (ADR D49, K6); generates the SQL server-side, runs one capped page, never executes raw caller SQL</item>
     /// </list>
     /// Authorization is inherited from the host; set <see cref="NeoReportsEndpointOptions.RequireAuthorization"/>
     /// to apply <c>RequireAuthorization</c> to the group.
@@ -122,6 +123,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         group.MapGet("/sources/{name}/catalog", GetSourceCatalogAsync);
         group.MapGet("/sources/{name}/preview", PreviewSourceTableAsync);
         group.MapPost("/sources/{name}/query-sql", GenerateSourceQuerySqlAsync);
+        group.MapPost("/sources/{name}/query-preview", PreviewSourceQueryAsync);
 
         return group;
     }
@@ -1032,6 +1034,65 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         {
             // The generator's message is caller-safe by contract (no secrets, no raw model echo).
             return Results.BadRequest(new { error = ex.Message });
+        }
+    }
+
+    private static async Task<IResult> PreviewSourceQueryAsync(string name, HttpContext http, CancellationToken cancellationToken)
+    {
+        (SourceDefinition? definition, IResult? failure) = await ResolveSourceAsync(name, http, cancellationToken).ConfigureAwait(false);
+        if (failure is not null)
+            return failure;
+
+        // Same capability gate as query-sql: the SQL is generated server-side from the model by the
+        // Pro generator (injection-safe by construction), never taken as raw caller SQL, so the
+        // preview never runs anything the visual builder couldn't already compile.
+        IQuerySqlGenerator? generator = http.RequestServices.GetService<IQuerySqlGenerator>();
+        if (generator is null)
+        {
+            return Results.Problem(
+                title: "The visual query builder is not available on this host.",
+                detail: "No IQuerySqlGenerator is registered. It ships with the NeoReports.QueryBuilder.Pro package (AddQueryBuilder()).",
+                statusCode: StatusCodes.Status422UnprocessableEntity);
+        }
+
+        string modelJson = await ReadBodyAsync(http, cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(modelJson))
+            return Results.BadRequest(new { error = "The request body must contain the query model JSON." });
+
+        GeneratedReportSql generated;
+        try
+        {
+            generated = generator.Generate(modelJson, definition!.Type);
+        }
+        catch (QuerySqlGenerationException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+
+        var jobId = Guid.NewGuid().ToString("N");
+        ILogger logger = http.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("NeoReports.QueryPreview");
+        var execution = new ReportExecutionContext(jobId, name, null, logger, cancellationToken);
+
+        try
+        {
+            QueryPreviewResult result = await QueryPreviewRunner.PreviewAsync(
+                definition!.Type, definition.Properties, generated.Sql, generated.Parameters, generated.Schema,
+                QueryPreviewRunner.MaxRows, execution, http.RequestServices, cancellationToken).ConfigureAwait(false);
+
+            ReportColumnView[] columns = generated.Schema.Columns
+                .Select(c => new ReportColumnView(c.Name, c.Type.ToString(), c.DisplayName, c.Format, c.Nullable))
+                .ToArray();
+            return Results.Ok(new QueryPreviewResponse(columns, result.Rows, result.Truncated));
+        }
+        catch (ConfigurationException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // A driver exception's message can echo connection-string fragments — log it, return a
+            // generic secret-free 502 (the same guard the schema/table-preview endpoints use).
+            return SchemaProblem(http, ex, name, "Could not run the query preview.");
         }
     }
 
