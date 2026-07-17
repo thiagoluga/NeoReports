@@ -117,6 +117,7 @@ public class KeysetSqlGeneratorTests
         KeysetSqlGenerator.Generate(model, SqlDialect.MySql).Sql.ShouldContain("t0.`id`");
         KeysetSqlGenerator.Generate(model, SqlDialect.SqlServer).Sql.ShouldContain("t0.[id]");
         KeysetSqlGenerator.Generate(model, SqlDialect.Oracle).Sql.ShouldContain(":cursor"); // Oracle bind prefix
+        KeysetSqlGenerator.Generate(model, SqlDialect.Sqlite).Sql.ShouldContain("t0.\"id\"");
     }
 
     [Fact]
@@ -330,6 +331,7 @@ public class KeysetSqlGeneratorTests
     {
         SqlDialect.ForType("postgres").ShouldBe(SqlDialect.Postgres);
         SqlDialect.ForType("oracle").ShouldBe(SqlDialect.Oracle);
+        SqlDialect.ForType("sqlite").ShouldBe(SqlDialect.Sqlite);
         SqlDialect.ForType("mongodb").ShouldBeNull();
     }
 }
