@@ -54,7 +54,7 @@ public static partial class KeysetSqlGenerator
         foreach (QueryJoin join in model.Joins)
             aliases.Add(ValidateAlias(join.Table.Alias));
 
-        List<string> selectItems = model.Select.Select(c => RenderSelect(c, dialect, aliases)).ToList();
+        var selectItems = model.Select.Select(c => RenderSelect(c, dialect, aliases)).ToList();
         string keyColumnName = ResolveKeyColumnName(model, dialect, aliases, selectItems);
 
         var sql = new StringBuilder();
