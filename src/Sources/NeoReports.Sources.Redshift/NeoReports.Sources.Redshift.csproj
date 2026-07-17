@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
+    <Description>Amazon Redshift source with keyset pagination for NeoReports.</Description>
+    <PackageTags>reports;reporting;source;redshift;aws;npgsql</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\NeoReports.Abstractions\NeoReports.Abstractions.csproj" />
+    <ProjectReference Include="..\..\NeoReports.Core\NeoReports.Core.csproj" />
+    <ProjectReference Include="..\NeoReports.Sources.Common\NeoReports.Sources.Common.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Npgsql" />
+  </ItemGroup>
+
+</Project>
