@@ -32,8 +32,9 @@ public class QueryPreviewRunnerTests
         return services.BuildServiceProvider();
     }
 
-    private static GeneratedReportSql Query(string sql, IReadOnlyDictionary<string, object?>? parameters = null) =>
-        new(sql, parameters ?? new Dictionary<string, object?>(), Schema);
+    private static GeneratedReportSql Query(
+        string sql, IReadOnlyDictionary<string, object?>? parameters = null, string keyColumnName = "Id") =>
+        new(sql, parameters ?? new Dictionary<string, object?>(), Schema, keyColumnName);
 
     [Fact]
     public async Task Composes_the_source_config_with_the_generated_sql_key_and_page_size()
@@ -43,17 +44,30 @@ public class QueryPreviewRunnerTests
 
         await QueryPreviewRunner.PreviewAsync(
             "fake", new Dictionary<string, object?> { ["connectionString"] = "cs" },
-            Query("SELECT * ... ORDER BY t0.\"Id\""),
+            Query("SELECT * ... ORDER BY t0.\"Id\"", keyColumnName: "Id"),
             requestedRows: 25, Execution(), services, CancellationToken.None);
 
         provider.LastConfig.ShouldNotBeNull();
         provider.LastConfig!.Type.ShouldBe("fake");
         provider.LastConfig.Properties!["connectionString"].ShouldBe("cs");
         provider.LastConfig.Properties["sql"].ShouldBe("SELECT * ... ORDER BY t0.\"Id\"");
-        // The key must be a real result column (the first selected column) so the keyset source can
-        // read it without error; the value it computes is discarded on a first-page preview.
+        // The key is always the generator's own KeyColumnName (ADR D49/K6c) — always a real result
+        // column, whether or not it was one the user picked as an output column.
         provider.LastConfig.Properties["key"].ShouldBe("Id");
         provider.LastConfig.Properties["pageSize"].ShouldBe(25);
+    }
+
+    [Fact]
+    public async Task Uses_the_generators_key_column_name_even_when_not_the_first_schema_column()
+    {
+        var provider = new CapturingProvider(rowCount: 1, type: "fake");
+        using ServiceProvider services = Services(provider);
+
+        await QueryPreviewRunner.PreviewAsync(
+            "fake", null, Query("SELECT 1", keyColumnName: "__neoreports_key"),
+            requestedRows: 10, Execution(), services, CancellationToken.None);
+
+        provider.LastConfig!.Properties!["key"].ShouldBe("__neoreports_key");
     }
 
     [Fact]
@@ -101,6 +115,21 @@ public class QueryPreviewRunnerTests
 
         result.Rows.Count.ShouldBe(3);
         result.Truncated.ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task Throws_when_the_generators_key_column_name_is_empty(string keyColumnName)
+    {
+        // IQuerySqlGenerator is a public extensibility seam (ADR D49) — a non-conforming
+        // implementation must fail fast here, not silently write a blank "key" property that
+        // surfaces as a confusing error deep inside the source provider.
+        using ServiceProvider services = Services(new CapturingProvider(rowCount: 0, type: "fake"));
+
+        await Should.ThrowAsync<ArgumentException>(() => QueryPreviewRunner.PreviewAsync(
+            "fake", null, Query("SELECT 1", keyColumnName: keyColumnName),
+            requestedRows: 10, Execution(), services, CancellationToken.None));
     }
 
     [Fact]

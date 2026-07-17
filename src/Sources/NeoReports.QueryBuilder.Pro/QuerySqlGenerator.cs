@@ -50,7 +50,7 @@ public sealed class QuerySqlGenerator : IQuerySqlGenerator
         try
         {
             GeneratedQuery generated = KeysetSqlGenerator.Generate(model, dialect);
-            return new GeneratedReportSql(generated.Sql, generated.Parameters, generated.Schema);
+            return new GeneratedReportSql(generated.Sql, generated.Parameters, generated.Schema, generated.KeyColumnName);
         }
         catch (QueryModelException ex)
         {

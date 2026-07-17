@@ -47,6 +47,8 @@ public class QuerySqlGeneratorTests
         result.Sql.ShouldNotContain("Porto");
         // The schema is derived from the selected columns, in order.
         result.Schema.Columns.Select(c => c.Name).ShouldBe(new[] { "Id", "Name" });
+        // The key column name (ADR D49/K6c) round-trips from KeysetSqlGenerator through this seam.
+        result.KeyColumnName.ShouldBe("Id");
     }
 
     [Theory]

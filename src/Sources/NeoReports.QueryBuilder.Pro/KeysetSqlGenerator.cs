@@ -16,7 +16,9 @@ public sealed class QueryModelException : Exception
 /// <param name="Sql">Keyset report SQL — exposes <c>@cursor</c> and ends in <c>ORDER BY</c> the key.</param>
 /// <param name="Parameters">The WHERE filter values, by parameter name (without prefix). <c>@cursor</c>/<c>@pageSize</c> are bound by the keyset source, not here.</param>
 /// <param name="Schema">The report's output schema, derived from the selected columns.</param>
-public sealed record GeneratedQuery(string Sql, IReadOnlyDictionary<string, object?> Parameters, ReportSchema Schema);
+/// <param name="KeyColumnName">The result-set column name of the keyset key (ADR D49/K6c) — always a real column of <see cref="Sql"/>'s <c>SELECT</c> list, but not necessarily part of <see cref="Schema"/>.</param>
+public sealed record GeneratedQuery(
+    string Sql, IReadOnlyDictionary<string, object?> Parameters, ReportSchema Schema, string KeyColumnName);
 
 /// <summary>
 /// Turns a visually-composed <see cref="QueryModel"/> into keyset-safe report SQL (ADR D49, Epic K).
@@ -52,10 +54,11 @@ public static partial class KeysetSqlGenerator
         foreach (QueryJoin join in model.Joins)
             aliases.Add(ValidateAlias(join.Table.Alias));
 
-        string selectList = string.Join(", ", model.Select.Select(c => RenderSelect(c, dialect, aliases)));
+        List<string> selectItems = model.Select.Select(c => RenderSelect(c, dialect, aliases)).ToList();
+        string keyColumnName = ResolveKeyColumnName(model, dialect, aliases, selectItems);
 
         var sql = new StringBuilder();
-        sql.Append("SELECT ").Append(selectList);
+        sql.Append("SELECT ").Append(string.Join(", ", selectItems));
         sql.Append("\nFROM ").Append(RenderTable(model.From, dialect));
         foreach (QueryJoin join in model.Joins)
         {
@@ -81,7 +84,38 @@ public static partial class KeysetSqlGenerator
 
         sql.Append("\nORDER BY ").Append(keyExpr);
 
-        return new GeneratedQuery(sql.ToString(), parameters, DeriveSchema(model));
+        return new GeneratedQuery(sql.ToString(), parameters, DeriveSchema(model), keyColumnName);
+    }
+
+    /// <summary>
+    /// Guarantees the keyset key is always a real column of the generated <c>SELECT</c> list, even
+    /// when the user never picked it as an output column — <c>AdoKeysetSource</c>/
+    /// <c>AdoNamedKeysetSource</c> read the cursor value by name out of the live result set, so a key
+    /// absent from <c>SELECT</c> would silently break pagination past the first page (ADR D49/K6c).
+    /// Reuses the user's own output name when the key was already selected plainly (no aggregate);
+    /// otherwise appends one more <c>SELECT</c> item to <paramref name="selectItems"/> under a
+    /// reserved, collision-checked alias that is deliberately excluded from <see cref="DeriveSchema"/>
+    /// — a keyset report never gains a phantom output column just to satisfy pagination.
+    /// </summary>
+    private static string ResolveKeyColumnName(
+        QueryModel model, SqlDialect dialect, HashSet<string> aliases, List<string> selectItems)
+    {
+        QuerySelectColumn? existing = model.Select.FirstOrDefault(c =>
+            c.Aggregate == QueryAggregate.None &&
+            c.Source.TableAlias == model.Key.TableAlias &&
+            c.Source.Column == model.Key.Column);
+        if (existing is not null)
+            return existing.OutputName;
+
+        var usedNames = new HashSet<string>(model.Select.Select(c => c.OutputName), StringComparer.Ordinal);
+        string reserved = "__neoreports_key";
+        var suffix = 0;
+        while (usedNames.Contains(reserved))
+            reserved = $"__neoreports_key{++suffix}";
+
+        string keyExpr = RenderRef(model.Key, dialect, aliases);
+        selectItems.Add($"{keyExpr} AS {dialect.QuoteIdentifier(reserved)}");
+        return reserved;
     }
 
     private static void Validate(QueryModel model)

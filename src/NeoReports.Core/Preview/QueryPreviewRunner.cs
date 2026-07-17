@@ -39,16 +39,12 @@ public static class QueryPreviewRunner
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceType);
         ArgumentNullException.ThrowIfNull(query);
         ArgumentException.ThrowIfNullOrWhiteSpace(query.Sql);
+        ArgumentException.ThrowIfNullOrWhiteSpace(query.KeyColumnName);
         ArgumentNullException.ThrowIfNull(execution);
         ArgumentNullException.ThrowIfNull(services);
 
         ReportSchema schema = query.Schema;
         int rows = Math.Clamp(requestedRows <= 0 ? MaxRows : requestedRows, 1, MaxRows);
-
-        // The keyset source's required 'key' property is only read to compute a next-cursor, which a
-        // first page (cursor bound null) discards — so any real result column satisfies it. The first
-        // derived column is always in the SELECT, so it is always a valid result-set column.
-        string keyColumn = schema.Count > 0 ? schema.Columns[0].Name : "key";
 
         var properties = new Dictionary<string, object?>(StringComparer.Ordinal);
         if (sourceProperties is not null)
@@ -58,7 +54,7 @@ public static class QueryPreviewRunner
         }
 
         properties["sql"] = query.Sql;
-        properties["key"] = keyColumn;
+        properties["key"] = query.KeyColumnName;
         properties["pageSize"] = rows;
         var config = new SourceConfig(sourceType, properties);
 

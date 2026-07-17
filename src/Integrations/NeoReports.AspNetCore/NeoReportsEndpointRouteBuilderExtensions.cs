@@ -1011,7 +1011,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         ReportColumnView[] schema = generated!.Schema.Columns
             .Select(c => new ReportColumnView(c.Name, c.Type.ToString(), c.DisplayName, c.Format, c.Nullable))
             .ToArray();
-        return Results.Ok(new GeneratedQuerySqlResponse(generated.Sql, generated.Parameters, schema));
+        return Results.Ok(new GeneratedQuerySqlResponse(generated.Sql, generated.Parameters, schema, generated.KeyColumnName));
     }
 
     // Shared front half of both query-builder endpoints (query-sql and query-preview): resolve the

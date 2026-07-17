@@ -1,4 +1,6 @@
 using Bunit;
+using Microsoft.AspNetCore.Components;
+using Microsoft.Extensions.DependencyInjection;
 using NeoReports.UI.Pages;
 using NeoReports.UI.Services;
 using Shouldly;
@@ -119,7 +121,8 @@ public sealed class QueryBuilderTests : NeoReportsTestContext
             new ApiGeneratedQuerySql(
                 "SELECT t0.\"id\" FROM \"public\".\"customers\" t0 ORDER BY t0.\"id\"",
                 new Dictionary<string, object?>(),
-                new[] { new ApiReportColumn("id", "Integer", null, null, false) }),
+                new[] { new ApiReportColumn("id", "Integer", null, null, false) },
+                "id"),
             null));
 
         var cut = Render<QueryBuilder>(p => p.Add(x => x.Source, "sales-db"));
@@ -296,6 +299,93 @@ public sealed class QueryBuilderTests : NeoReportsTestContext
         await cut.InvokeAsync(() => run.Click());
 
         cut.WaitForAssertion(() => cut.Markup.ShouldContain("A query must select at least one column."));
+    }
+
+    [Fact]
+    public async Task Create_report_from_query_populates_the_wizard_and_navigates_to_configure()
+    {
+        WithSources(new[] { Source() });
+        WithCatalog(Catalog());
+        Api.QuerySql = (_, _, _) => Task.FromResult(new ApiQuerySqlResult(
+            ApiQuerySqlOutcome.Ok,
+            new ApiGeneratedQuerySql(
+                "SELECT t0.\"id\" AS \"Id\" FROM \"public\".\"customers\" t0 ORDER BY t0.\"id\"",
+                new Dictionary<string, object?>(),
+                new[] { new ApiReportColumn("Id", "Integer", null, null, false) },
+                "__neoreports_key"),
+            null));
+
+        var cut = Render<QueryBuilder>(p => p.Add(x => x.Source, "sales-db"));
+        cut.FindAll("button[title='Add to query']")[0].Click();
+
+        var create = cut.FindAll("button").First(b => b.TextContent.Contains("Create report from this query"));
+        await cut.InvokeAsync(() => create.Click());
+
+        Api.LastQuerySql.ShouldNotBeNull();
+        Api.LastQuerySql!.Value.Source.ShouldBe("sales-db");
+        Wizard.SourceRef.ShouldBe("sales-db");
+        Wizard.SourceType.ShouldBe("postgres");
+        Wizard.SqlQuery.ShouldBe("SELECT t0.\"id\" AS \"Id\" FROM \"public\".\"customers\" t0 ORDER BY t0.\"id\"");
+        // The real keyset key (KeyColumnName, ADR D49/K6c) is used — not a column the user merely selected.
+        Wizard.KeyColumn.ShouldBe("__neoreports_key");
+        Wizard.ColumnNames.ShouldBe("Id");
+        // This flow skips Builder.razor's step 1 (the only place that normally sets this from a live
+        // capabilities check) — it must be set directly here, or Save/Run stay disabled on Review.
+        Wizard.EngineAvailable.ShouldBeTrue();
+        Services.GetRequiredService<NavigationManager>().Uri.ShouldEndWith("builder/configure");
+    }
+
+    [Fact]
+    public async Task Create_report_from_query_reuses_a_fresh_generated_result_without_recalling_the_endpoint()
+    {
+        WithSources(new[] { Source() });
+        WithCatalog(Catalog());
+        var callCount = 0;
+        Api.QuerySql = (_, _, _) =>
+        {
+            callCount++;
+            return Task.FromResult(new ApiQuerySqlResult(
+                ApiQuerySqlOutcome.Ok,
+                new ApiGeneratedQuerySql(
+                    "SELECT t0.\"id\" AS \"Id\" FROM \"public\".\"customers\" t0 ORDER BY t0.\"id\"",
+                    new Dictionary<string, object?>(),
+                    new[] { new ApiReportColumn("Id", "Integer", null, null, false) },
+                    "Id"),
+                null));
+        };
+
+        var cut = Render<QueryBuilder>(p => p.Add(x => x.Source, "sales-db"));
+        cut.FindAll("button[title='Add to query']")[0].Click();
+
+        var generate = cut.FindAll("button").First(b => b.TextContent.Contains("Generate SQL"));
+        await cut.InvokeAsync(() => generate.Click());
+        callCount.ShouldBe(1);
+
+        var create = cut.FindAll("button").First(b => b.TextContent.Contains("Create report from this query"));
+        await cut.InvokeAsync(() => create.Click());
+
+        // No edit happened between the two clicks — the already-fresh _generated is reused.
+        callCount.ShouldBe(1);
+        Wizard.SqlQuery.ShouldBe("SELECT t0.\"id\" AS \"Id\" FROM \"public\".\"customers\" t0 ORDER BY t0.\"id\"");
+    }
+
+    [Fact]
+    public async Task Create_report_from_query_does_nothing_when_generation_fails()
+    {
+        WithSources(new[] { Source() });
+        WithCatalog(Catalog());
+        Api.QuerySql = (_, _, _) => Task.FromResult(new ApiQuerySqlResult(
+            ApiQuerySqlOutcome.Invalid, null, "A query must select at least one column."));
+        string originalUri = Services.GetRequiredService<NavigationManager>().Uri;
+
+        var cut = Render<QueryBuilder>(p => p.Add(x => x.Source, "sales-db"));
+        cut.FindAll("button[title='Add to query']")[0].Click();
+
+        var create = cut.FindAll("button").First(b => b.TextContent.Contains("Create report from this query"));
+        await cut.InvokeAsync(() => create.Click());
+
+        Wizard.SourceRef.ShouldBe("");
+        Services.GetRequiredService<NavigationManager>().Uri.ShouldBe(originalUri);
     }
 
     [Fact]
