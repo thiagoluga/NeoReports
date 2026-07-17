@@ -223,6 +223,13 @@ public enum ApiQuerySqlOutcome
 /// <summary>Result of <see cref="INeoReportsApiClient.TryGenerateQuerySqlAsync"/>. <see cref="Error"/> carries the engine's caller-safe message on <see cref="ApiQuerySqlOutcome.Invalid"/>.</summary>
 public sealed record ApiQuerySqlResult(ApiQuerySqlOutcome Outcome, ApiGeneratedQuerySql? Data, string? Error);
 
+/// <summary>A bounded sample of a visual query's result, from <c>POST /api/sources/{name}/query-preview</c> (ADR D49/K6).</summary>
+public sealed record ApiQueryPreview(
+    IReadOnlyList<ApiReportColumn> Columns, IReadOnlyList<object?[]> Rows, bool Truncated);
+
+/// <summary>Result of <see cref="INeoReportsApiClient.TryPreviewQueryAsync"/> — shares the query-sql outcome mapping (404/422/400/unavailable).</summary>
+public sealed record ApiQueryPreviewResult(ApiQuerySqlOutcome Outcome, ApiQueryPreview? Data, string? Error);
+
 /// <summary>
 /// Reads and drives NeoReports engine jobs/reports over its HTTP API (<c>MapNeoReports</c>). Every
 /// call is best-effort: on a network error, timeout, or unexpected shape it logs and returns a
@@ -400,6 +407,19 @@ public interface INeoReportsApiClient
     /// <param name="modelJson">The query model as JSON (the builder's serialized state).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task<ApiQuerySqlResult> TryGenerateQuerySqlAsync(
+        string sourceName, string modelJson, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Runs a bounded, read-only sample of a visually-composed query via
+    /// <c>POST /api/sources/{name}/query-preview</c> (ADR D49, K6). The model is generated to SQL
+    /// server-side (never raw), then one capped page is read. The result distinguishes success from an
+    /// unknown source (404), a host with no query-builder generator (422), an invalid model (400), or an
+    /// unreachable/erroring engine (including a 502 when the source's database can't be read).
+    /// </summary>
+    /// <param name="sourceName">The registered source's name (its type selects the SQL dialect).</param>
+    /// <param name="modelJson">The query model as JSON (the builder's serialized state).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<ApiQueryPreviewResult> TryPreviewQueryAsync(
         string sourceName, string modelJson, CancellationToken cancellationToken = default);
 }
 
@@ -958,19 +978,52 @@ internal sealed class NeoReportsApiClient(
             }
 
             string? error = await TryReadErrorAsync(response, cancellationToken).ConfigureAwait(false);
-            ApiQuerySqlOutcome outcome = response.StatusCode switch
-            {
-                HttpStatusCode.NotFound => ApiQuerySqlOutcome.NotFound,
-                HttpStatusCode.UnprocessableEntity => ApiQuerySqlOutcome.NotSupported,
-                HttpStatusCode.BadRequest => ApiQuerySqlOutcome.Invalid,
-                _ => ApiQuerySqlOutcome.Unavailable,
-            };
-            return new ApiQuerySqlResult(outcome, null, error);
+            return new ApiQuerySqlResult(MapQueryOutcome(response.StatusCode), null, error);
         }
         catch (Exception ex) when (IsTransient(ex))
         {
             logger.LogWarning(ex, "POST {ApiBase}sources/{Source}/query-sql failed.", Sanitize(apiBase.ToString()), Sanitize(sourceName));
             return new ApiQuerySqlResult(ApiQuerySqlOutcome.Unavailable, null, null);
+        }
+    }
+
+    // The query-builder endpoints (query-sql, query-preview) share the same honest status contract:
+    // 404 unknown source, 422 no Pro generator (D36), 400 invalid model, anything else (incl. a 502
+    // when the source's database can't be read) is "unavailable".
+    private static ApiQuerySqlOutcome MapQueryOutcome(HttpStatusCode status) => status switch
+    {
+        HttpStatusCode.NotFound => ApiQuerySqlOutcome.NotFound,
+        HttpStatusCode.UnprocessableEntity => ApiQuerySqlOutcome.NotSupported,
+        HttpStatusCode.BadRequest => ApiQuerySqlOutcome.Invalid,
+        _ => ApiQuerySqlOutcome.Unavailable,
+    };
+
+    public async Task<ApiQueryPreviewResult> TryPreviewQueryAsync(
+        string sourceName, string modelJson, CancellationToken cancellationToken = default)
+    {
+        var apiBase = ApiBase;
+        try
+        {
+            using var request = new HttpRequestMessage(
+                HttpMethod.Post, new Uri(apiBase, $"sources/{Uri.EscapeDataString(sourceName)}/query-preview"))
+            {
+                Content = new StringContent(modelJson, Encoding.UTF8, "application/json"),
+            };
+            using var response = await http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var data = await response.Content.ReadFromJsonAsync<ApiQueryPreview>(Json, cancellationToken).ConfigureAwait(false);
+                return new ApiQueryPreviewResult(ApiQuerySqlOutcome.Ok, data, null);
+            }
+
+            string? error = await TryReadErrorAsync(response, cancellationToken).ConfigureAwait(false);
+            return new ApiQueryPreviewResult(MapQueryOutcome(response.StatusCode), null, error);
+        }
+        catch (Exception ex) when (IsTransient(ex))
+        {
+            logger.LogWarning(ex, "POST {ApiBase}sources/{Source}/query-preview failed.", Sanitize(apiBase.ToString()), Sanitize(sourceName));
+            return new ApiQueryPreviewResult(ApiQuerySqlOutcome.Unavailable, null, null);
         }
     }
 

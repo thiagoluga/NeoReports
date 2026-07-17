@@ -910,7 +910,7 @@ additive exception to D46's "one provider per sample" rule — samples 10-13 are
   to completion (100%, 15,000 records, CSV + XLSX artifacts generated) with the real D47 progress
   percentage live on the running-job page.
 
-## Epic K — Interactive source explorer + visual query builder (Pro, D49) — K1–K5b done; K6a (ad-hoc query-preview endpoint) done; K6b (UI grid) / K6c (create-report) remain
+## Epic K — Interactive source explorer + visual query builder (Pro, D49) — K1–K5b done; K6a (endpoint) + K6b (UI grid) done; K6c (create-report) remains
 
 Requested directly by the maintainer (2026-07-15). Design settled with the maintainer (2026-07-16) —
 see the full `## D49` section in `DECISIONS.md`. Structured query model (SQL is generated, not
@@ -991,9 +991,11 @@ only (Mongo out); Pro-tier. K2 is implementation-ready but broken into small, in
   `MaxRows` (100), `truncated` when the page fills, driver errors mapped to a secret-free 502. **No raw
   caller SQL is ever executed**, resolving K6's safety-envelope open question (see the K6a paragraph in
   `## D49`). Core-unit + AspNetCore-integration tests.
-- [ ] **K6b — UI: run-query preview grid.** Wire a "Run" button + result grid into the visual tab of
-  `QueryBuilder.razor`, calling `POST /sources/{name}/query-preview`; new API-client method + fake +
-  bUnit tests. Closes the build→see-output→adjust loop.
+- [x] **K6b — UI: run-query preview grid.** A **Run preview** button beside **Generate SQL** in the
+  visual tab of `QueryBuilder.razor` calls `POST /sources/{name}/query-preview` and renders a **Query
+  result** grid (with a "more rows exist" note when truncated), preserving the honest 422/400/engine-error
+  states. New API-client method `TryPreviewQueryAsync` (+ fake) and 4 bUnit tests. The raw-SQL
+  escape-hatch tab is intentionally not previewed.
 - [ ] **K6c — "create report from this query" handoff.** Turn the generated (visual) query into a
   registered `Sql`-source dynamic report via the existing create flow. Needs the generator to expose
   the key column's **output name** (a keyset report requires the key to be a *selected* result column)

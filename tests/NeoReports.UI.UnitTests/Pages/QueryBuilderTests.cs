@@ -222,6 +222,83 @@ public sealed class QueryBuilderTests : NeoReportsTestContext
     }
 
     [Fact]
+    public async Task Run_preview_sends_the_model_and_renders_the_result_grid()
+    {
+        WithSources(new[] { Source() });
+        WithCatalog(Catalog());
+        Api.QueryPreview = (_, _, _) => Task.FromResult(new ApiQueryPreviewResult(
+            ApiQuerySqlOutcome.Ok,
+            new ApiQueryPreview(
+                new[] { new ApiReportColumn("id", "Integer", null, null, false) },
+                new[] { new object?[] { 1L }, new object?[] { 2L } },
+                Truncated: false),
+            null));
+
+        var cut = Render<QueryBuilder>(p => p.Add(x => x.Source, "sales-db"));
+        cut.FindAll("button[title='Add to query']")[0].Click();
+
+        var run = cut.FindAll("button").First(b => b.TextContent.Contains("Run preview"));
+        await cut.InvokeAsync(() => run.Click());
+
+        cut.WaitForAssertion(() => cut.Markup.ShouldContain("Query result"));
+        Api.LastQueryPreview.ShouldNotBeNull();
+        Api.LastQueryPreview!.Value.Source.ShouldBe("sales-db");
+        Api.LastQueryPreview!.Value.ModelJson.ShouldContain("\"customers\"");
+    }
+
+    [Fact]
+    public async Task Run_preview_notes_truncation_when_the_page_fills()
+    {
+        WithSources(new[] { Source() });
+        WithCatalog(Catalog());
+        Api.QueryPreview = (_, _, _) => Task.FromResult(new ApiQueryPreviewResult(
+            ApiQuerySqlOutcome.Ok,
+            new ApiQueryPreview(
+                new[] { new ApiReportColumn("id", "Integer", null, null, false) },
+                new[] { new object?[] { 1L } },
+                Truncated: true),
+            null));
+
+        var cut = Render<QueryBuilder>(p => p.Add(x => x.Source, "sales-db"));
+        cut.FindAll("button[title='Add to query']")[0].Click();
+        var run = cut.FindAll("button").First(b => b.TextContent.Contains("Run preview"));
+        await cut.InvokeAsync(() => run.Click());
+
+        cut.WaitForAssertion(() => cut.Markup.ShouldContain("more rows exist"));
+    }
+
+    [Fact]
+    public async Task Run_preview_on_an_mit_only_host_says_the_builder_is_unavailable()
+    {
+        WithSources(new[] { Source() });
+        WithCatalog(Catalog());
+        Api.QueryPreview = (_, _, _) => Task.FromResult(new ApiQueryPreviewResult(ApiQuerySqlOutcome.NotSupported, null, null));
+
+        var cut = Render<QueryBuilder>(p => p.Add(x => x.Source, "sales-db"));
+        cut.FindAll("button[title='Add to query']")[0].Click();
+        var run = cut.FindAll("button").First(b => b.TextContent.Contains("Run preview"));
+        await cut.InvokeAsync(() => run.Click());
+
+        cut.WaitForAssertion(() => cut.Markup.ShouldContain("isn't available on this host"));
+    }
+
+    [Fact]
+    public async Task Run_preview_surfaces_an_invalid_model_error()
+    {
+        WithSources(new[] { Source() });
+        WithCatalog(Catalog());
+        Api.QueryPreview = (_, _, _) => Task.FromResult(new ApiQueryPreviewResult(
+            ApiQuerySqlOutcome.Invalid, null, "A query must select at least one column."));
+
+        var cut = Render<QueryBuilder>(p => p.Add(x => x.Source, "sales-db"));
+        cut.FindAll("button[title='Add to query']")[0].Click();
+        var run = cut.FindAll("button").First(b => b.TextContent.Contains("Run preview"));
+        await cut.InvokeAsync(() => run.Click());
+
+        cut.WaitForAssertion(() => cut.Markup.ShouldContain("A query must select at least one column."));
+    }
+
+    [Fact]
     public void Raw_sql_tab_shows_the_honest_caveat_banner()
     {
         WithSources(new[] { Source() });

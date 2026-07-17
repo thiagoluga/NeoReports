@@ -49,6 +49,8 @@ public sealed class FakeNeoReportsApiClient : INeoReportsApiClient
         (_, _, _, _) => Task.FromResult<ApiTablePreview?>(null);
     public Func<string, string, CancellationToken, Task<ApiQuerySqlResult>> QuerySql { get; set; } =
         (_, _, _) => Task.FromResult(new ApiQuerySqlResult(ApiQuerySqlOutcome.Unavailable, null, null));
+    public Func<string, string, CancellationToken, Task<ApiQueryPreviewResult>> QueryPreview { get; set; } =
+        (_, _, _) => Task.FromResult(new ApiQueryPreviewResult(ApiQuerySqlOutcome.Unavailable, null, null));
 
     public IReadOnlyList<ApiPreviewFilter>? LastPreviewFilters { get; private set; }
     public int? LastPreviewPageSize { get; private set; }
@@ -59,6 +61,7 @@ public sealed class FakeNeoReportsApiClient : INeoReportsApiClient
     public (string Name, string Cron)? LastSetSchedule { get; private set; }
     public (string Source, string Schema, string Table)? LastTablePreview { get; private set; }
     public (string Source, string ModelJson)? LastQuerySql { get; private set; }
+    public (string Source, string ModelJson)? LastQueryPreview { get; private set; }
 
     public Task<IReadOnlyList<ApiReportSummary>?> TryGetReportsAsync(CancellationToken cancellationToken = default) => Reports(cancellationToken);
 
@@ -163,5 +166,12 @@ public sealed class FakeNeoReportsApiClient : INeoReportsApiClient
     {
         LastQuerySql = (sourceName, modelJson);
         return QuerySql(sourceName, modelJson, cancellationToken);
+    }
+
+    public Task<ApiQueryPreviewResult> TryPreviewQueryAsync(
+        string sourceName, string modelJson, CancellationToken cancellationToken = default)
+    {
+        LastQueryPreview = (sourceName, modelJson);
+        return QueryPreview(sourceName, modelJson, cancellationToken);
     }
 }

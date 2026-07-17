@@ -267,6 +267,7 @@
 
                         <div style="display:flex;gap:8px">
                             <Button Variant="primary" Icon="wand" Loading="_generating" OnClick="GenerateAsync">Generate SQL</Button>
+                            <Button Variant="outline" Icon="player-play" Loading="_previewing" OnClick="RunPreviewAsync">Run preview</Button>
                         </div>
                     }
                 }
@@ -332,6 +333,49 @@
                     </Card>
                 }
 
+                @* Query result grid — the built query's own rows (ADR D49/K6), generated server-side and run capped. *@
+                @if (_tab == "visual" && _previewResult is { } pr)
+                {
+                    <Card Title="Query result" Sub="Bounded sample of the built query — read-only, capped server-side">
+                        <Action><button class="icon-btn" title="Close" @onclick="() => _previewResult = null"><i class="ti ti-x"></i></button></Action>
+                        <ChildContent>
+                            @switch (pr.Outcome)
+                            {
+                                case ApiQuerySqlOutcome.Ok when pr.Data is { } d:
+                                    <DataGrid Columns="@Math.Max(d.Columns.Count, 1)" Loading="false"
+                                              Empty="@(d.Rows.Count == 0)" EmptyIcon="table-off" EmptyTitle="No rows">
+                                        <Head>
+                                            <tr>@foreach (var c in d.Columns) { <th>@c.Name</th> }</tr>
+                                        </Head>
+                                        <Body>
+                                            @foreach (var row in d.Rows)
+                                            {
+                                                <tr>@foreach (var v in row) { <td class="mono">@(v?.ToString() ?? "—")</td> }</tr>
+                                            }
+                                        </Body>
+                                    </DataGrid>
+                                    @if (d.Truncated)
+                                    {
+                                        <div class="muted" style="font-size:12px;margin-top:8px">Showing the first @d.Rows.Count rows — more rows exist.</div>
+                                    }
+                                    break;
+                                case ApiQuerySqlOutcome.NotSupported:
+                                    <Banner Variant="info" Icon="info-circle">
+                                        <b>The visual query builder isn't available on this host.</b>
+                                        <span style="font-size:12px">It ships with the NeoReports.QueryBuilder.Pro package.</span>
+                                    </Banner>
+                                    break;
+                                case ApiQuerySqlOutcome.Invalid:
+                                    <Banner Variant="danger" Icon="alert-triangle"><span style="font-size:12px">@(pr.Error ?? "The query model is invalid.")</span></Banner>
+                                    break;
+                                default:
+                                    <Banner Variant="danger" Icon="alert-triangle"><span style="font-size:12px">The query couldn't be run against the source. See the server logs for details.</span></Banner>
+                                    break;
+                            }
+                        </ChildContent>
+                    </Card>
+                }
+
                 @* Per-table preview sample. *@
                 @if (_previewTarget is { } pt)
                 {
@@ -387,6 +431,8 @@
 
     private ApiQuerySqlResult? _generated;
     private bool _generating;
+    private ApiQueryPreviewResult? _previewResult;
+    private bool _previewing;
 
     private (string Schema, string Table)? _previewTarget;
     private ApiTablePreview? _preview;
@@ -490,6 +536,7 @@
         _keyColumn = null;
         _keyDataType = null;
         _generated = null;
+        _previewResult = null;
         _previewTarget = null;
         _preview = null;
     }
@@ -520,6 +567,7 @@
             _tables.Add(vm);
         }
         _generated = null;
+        _previewResult = null;
     }
 
     // Pre-fills the join's ON from a foreign key, whether it points from the new table to an existing
@@ -564,6 +612,7 @@
         _select.RemoveAll(s => s.Alias == removed.Alias);
         _where.RemoveAll(w => w.Alias == removed.Alias);
         _generated = null;
+        _previewResult = null;
     }
 
     private void OnKeyChanged(ChangeEventArgs e)
@@ -573,6 +622,7 @@
             ? _tables[0].Columns.FirstOrDefault(c => c.Name == _keyColumn)?.DataType
             : null;
         _generated = null;
+        _previewResult = null;
     }
 
     private void AddSelectColumn(ChangeEventArgs e)
@@ -591,6 +641,7 @@
             OutputName = opt.Value.Column,
         });
         _generated = null;
+        _previewResult = null;
     }
 
     private void AddWhere()
@@ -638,6 +689,25 @@
         finally
         {
             _generating = false;
+        }
+    }
+
+    // Runs the built query and shows its own rows (ADR D49/K6). The SQL is generated server-side from
+    // the same model JSON GenerateAsync sends — the raw-SQL escape hatch is not previewed here.
+    private async Task RunPreviewAsync()
+    {
+        if (_sourceName is null || _tables.Count == 0)
+            return;
+
+        _previewing = true;
+        try
+        {
+            var modelJson = BuildModelJson();
+            _previewResult = await Api.TryPreviewQueryAsync(_sourceName, modelJson);
+        }
+        finally
+        {
+            _previewing = false;
         }
     }
 
