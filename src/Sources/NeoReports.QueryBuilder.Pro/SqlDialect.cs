@@ -41,6 +41,9 @@ public sealed record SqlDialect(
     /// <summary>Oracle: <c>:</c> prefix, ANSI quoting, locale-independent numeric casts.</summary>
     public static readonly SqlDialect Oracle = new(":", QuoteAnsi, OracleCast);
 
+    /// <summary>SQLite: <c>@</c> prefix, ANSI quoting, no casts (operand-affinity coercion works — ADR D56).</summary>
+    public static readonly SqlDialect Sqlite = new("@", QuoteAnsi);
+
     /// <summary>Resolves a preset by source type id (as used by <c>ISchemaExplorer.Type</c>), or <c>null</c>.</summary>
     public static SqlDialect? ForType(string type) => type?.ToLowerInvariant() switch
     {
@@ -48,6 +51,7 @@ public sealed record SqlDialect(
         "mysql" => MySql,
         "sql" => SqlServer,
         "oracle" => Oracle,
+        "sqlite" => Sqlite,
         _ => null,
     };
 

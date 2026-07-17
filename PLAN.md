@@ -1098,7 +1098,7 @@ type doesn't support server-side filters" banner on a Postgres-sourced report.
   reproducing it again needs the report's actual persisted source config or the named source's
   registered type from the live session where it was seen.
 
-## Epic P — Broad source-type expansion (D55) — not started
+## Epic P — Broad source-type expansion (D55) — P1 done
 
 Requested directly by the maintainer (2026-07-16): "possibilitar todas as fontes possíveis, menos
 Kafka." Directional design in `## D55` (`DECISIONS.md`). Every source is a new package on the
@@ -1109,8 +1109,16 @@ opaque cursor, or stream-parse) and honest capability gaps (no query builder / s
 unless the source has a real catalog/query protocol — D36). Each source below still needs its own
 small design pass before code (like D43/K1). Ordered cheapest-highest-value first.
 
-- [ ] **P1 — SQLite** (`Microsoft.Data.Sqlite`) — rides `AdoKeysetSource` with a driver swap; gets
-  keyset + `ISchemaExplorer` almost for free. Cheapest possible source; also handy for tests/embedded.
+- [x] **P1 — SQLite** (`Microsoft.Data.Sqlite`) — new MIT package `NeoReports.Sources.Sqlite`
+  (`type: "sqlite"`), riding `AdoKeysetSource`/`AdoNamedKeysetSource`/`AdoConfigProperties`/
+  `AdoSourceHealth` unchanged (driver swap only) plus `AdoFilterTranslator("sqlite")` (no cast —
+  SQLite's operand-affinity rule already coerces a text-bound filter value, verified empirically) and
+  a new `SqlDialect.Sqlite` for the D49 query builder. Schema exploration is a **bespoke**
+  `SqliteSchemaExplorer` (not `AdoSchemaExplorer`) — SQLite has no `information_schema`, so it reads
+  `sqlite_master` + loops `PRAGMA table_info`/`PRAGMA foreign_key_list` per table, case-insensitively
+  matching a FK's `REFERENCES` target and falling back to `"rowid"` for a referenced table with no
+  declared primary key. Test suite needs no Docker/Testcontainers — a real temp-file-backed SQLite
+  database, always available, so every test is a plain `[Fact]`. Design in `## D56` (`DECISIONS.md`).
 - [ ] **P2 — ADO.NET cloud warehouses: Snowflake, Amazon Redshift** — same near-free `AdoKeysetSource`
   path (both have ADO.NET providers), inheriting keyset + schema exploration.
 - [ ] **P3 — File sources: CSV, Excel (XLSX), Parquet** (local or S3) — symmetric to the existing
