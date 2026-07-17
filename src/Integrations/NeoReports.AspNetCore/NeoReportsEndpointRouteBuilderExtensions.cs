@@ -1076,7 +1076,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         try
         {
             QueryPreviewResult result = await QueryPreviewRunner.PreviewAsync(
-                definition!.Type, definition.Properties, generated.Sql, generated.Parameters, generated.Schema,
+                definition!.Type, definition.Properties, generated,
                 QueryPreviewRunner.MaxRows, execution, http.RequestServices, cancellationToken).ConfigureAwait(false);
 
             ReportColumnView[] columns = generated.Schema.Columns

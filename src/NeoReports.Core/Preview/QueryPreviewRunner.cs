@@ -1,5 +1,6 @@
 using NeoReports.Abstractions;
 using NeoReports.Core.Configuration;
+using NeoReports.Core.QueryBuilder;
 
 namespace NeoReports.Core.Preview;
 
@@ -20,9 +21,7 @@ public static class QueryPreviewRunner
     /// <summary>Runs one preview page of a generated query against a registered source.</summary>
     /// <param name="sourceType">The source's type id (e.g. "postgres") — selects the <c>IConfigSourceProvider</c>.</param>
     /// <param name="sourceProperties">The resolved source definition's properties (connection string, etc.); the query, key and page size are overlaid here.</param>
-    /// <param name="sql">The generated keyset SQL (exposes <c>@cursor</c>, ends in <c>ORDER BY</c> the key).</param>
-    /// <param name="parameters">The generated query's bind parameters (WHERE filter values), by name without prefix.</param>
-    /// <param name="schema">The generated query's output schema — drives row materialization.</param>
+    /// <param name="query">The generated query — its keyset SQL (exposes <c>@cursor</c>, ends in <c>ORDER BY</c> the key), bind parameters, and output schema.</param>
     /// <param name="requestedRows">Caller-requested row cap; clamped to <see cref="MaxRows"/>.</param>
     /// <param name="execution">The execution context for this preview.</param>
     /// <param name="services">Service provider used to resolve the source's provider.</param>
@@ -31,21 +30,19 @@ public static class QueryPreviewRunner
     public static async Task<QueryPreviewResult> PreviewAsync(
         string sourceType,
         IReadOnlyDictionary<string, object?>? sourceProperties,
-        string sql,
-        IReadOnlyDictionary<string, object?> parameters,
-        ReportSchema schema,
+        GeneratedReportSql query,
         int requestedRows,
         ReportExecutionContext execution,
         IServiceProvider services,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceType);
-        ArgumentException.ThrowIfNullOrWhiteSpace(sql);
-        ArgumentNullException.ThrowIfNull(parameters);
-        ArgumentNullException.ThrowIfNull(schema);
+        ArgumentNullException.ThrowIfNull(query);
+        ArgumentException.ThrowIfNullOrWhiteSpace(query.Sql);
         ArgumentNullException.ThrowIfNull(execution);
         ArgumentNullException.ThrowIfNull(services);
 
+        ReportSchema schema = query.Schema;
         int rows = Math.Clamp(requestedRows <= 0 ? MaxRows : requestedRows, 1, MaxRows);
 
         // The keyset source's required 'key' property is only read to compute a next-cursor, which a
@@ -60,7 +57,7 @@ public static class QueryPreviewRunner
                 properties[kvp.Key] = kvp.Value;
         }
 
-        properties["sql"] = sql;
+        properties["sql"] = query.Sql;
         properties["key"] = keyColumn;
         properties["pageSize"] = rows;
         var config = new SourceConfig(sourceType, properties);
@@ -69,7 +66,7 @@ public static class QueryPreviewRunner
         IBatchSource<ReportRecord> source = provider.Create(config, schema, services);
 
         var mergedParameters = new Dictionary<string, object?>(execution.Parameters, StringComparer.Ordinal);
-        foreach (KeyValuePair<string, object?> kvp in parameters)
+        foreach (KeyValuePair<string, object?> kvp in query.Parameters)
             mergedParameters[kvp.Key] = kvp.Value;
         var previewExecution = new ReportExecutionContext(
             execution.JobId, execution.ReportName, mergedParameters, execution.Logger, cancellationToken);
