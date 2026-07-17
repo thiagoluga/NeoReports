@@ -83,6 +83,13 @@ public sealed record TablePreviewResponse(IReadOnlyList<string> Columns, IReadOn
 public sealed record GeneratedQuerySqlResponse(
     string Sql, IReadOnlyDictionary<string, object?> Parameters, IReadOnlyList<ReportColumnView> Schema);
 
+/// <summary>Response for <c>POST /sources/{name}/query-preview</c> — a bounded sample of the visual query's result (ADR D49, K6).</summary>
+/// <param name="Columns">The query's output columns, in order.</param>
+/// <param name="Rows">The sampled rows, each a positional array aligned to <paramref name="Columns"/>.</param>
+/// <param name="Truncated">Whether the sample filled the server-side row cap — i.e. more rows likely exist.</param>
+public sealed record QueryPreviewResponse(
+    IReadOnlyList<ReportColumnView> Columns, IReadOnlyList<object?[]> Rows, bool Truncated);
+
 /// <summary>Response returned when a report is triggered asynchronously.</summary>
 /// <param name="JobId">Identifier of the queued job.</param>
 /// <param name="Status">Initial job status (typically <c>Queued</c>).</param>
