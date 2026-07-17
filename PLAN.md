@@ -1098,7 +1098,7 @@ type doesn't support server-side filters" banner on a Postgres-sourced report.
   reproducing it again needs the report's actual persisted source config or the named source's
   registered type from the live session where it was seen.
 
-## Epic P — Broad source-type expansion (D55) — P1 done
+## Epic P — Broad source-type expansion (D55) — P1, P2 done
 
 Requested directly by the maintainer (2026-07-16): "possibilitar todas as fontes possíveis, menos
 Kafka." Directional design in `## D55` (`DECISIONS.md`). Every source is a new package on the
@@ -1119,8 +1119,17 @@ small design pass before code (like D43/K1). Ordered cheapest-highest-value firs
   matching a FK's `REFERENCES` target and falling back to `"rowid"` for a referenced table with no
   declared primary key. Test suite needs no Docker/Testcontainers — a real temp-file-backed SQLite
   database, always available, so every test is a plain `[Fact]`. Design in `## D56` (`DECISIONS.md`).
-- [ ] **P2 — ADO.NET cloud warehouses: Snowflake, Amazon Redshift** — same near-free `AdoKeysetSource`
-  path (both have ADO.NET providers), inheriting keyset + schema exploration.
+- [x] **P2 — ADO.NET cloud warehouses: Amazon Redshift, Snowflake.** `NeoReports.Sources.Redshift`
+  reuses the same `Npgsql` driver the Postgres provider already proves works in this framework —
+  Redshift speaks Postgres wire protocol — with a `PostgresCast` filter cast assumed from its
+  documented Postgres 8.0.2 lineage. `NeoReports.Sources.Snowflake` uses the official `Snowflake.Data`
+  driver; researched against Snowflake's own docs before coding (not guessed) that its bind-variable
+  prefix is `:`, not `@` — the same convention Oracle already uses in this codebase — and that its
+  documented implicit VARCHAR→NUMBER conversion means no filter cast is needed. **Maintainer decision
+  (2026-07-17): unit tests only, gap documented** — neither service has a Testcontainers/local
+  equivalent (paid cloud warehouses), so no test in this repo exercises a live query against either;
+  coverage is config validation, DI wiring, and pure-string `AdoFilterTranslator`/`SqlDialect`
+  behavior only. Design + the documented testing gap in `## D57` (`DECISIONS.md`).
 - [ ] **P3 — File sources: CSV, Excel (XLSX), Parquet** (local or S3) — symmetric to the existing
   Local/S3 destinations; stream-parsed for constant memory. A file's fixed columns allow a
   lightweight catalog but no server-side filters.

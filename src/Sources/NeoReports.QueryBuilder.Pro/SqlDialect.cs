@@ -44,6 +44,12 @@ public sealed record SqlDialect(
     /// <summary>SQLite: <c>@</c> prefix, ANSI quoting, no casts (operand-affinity coercion works — ADR D56).</summary>
     public static readonly SqlDialect Sqlite = new("@", QuoteAnsi);
 
+    /// <summary>Amazon Redshift: <c>@</c> prefix, ANSI quoting, the same casts as Postgres (its documented lineage — not empirically re-verified, ADR D57).</summary>
+    public static readonly SqlDialect Redshift = new("@", QuoteAnsi, PostgresCast);
+
+    /// <summary>Snowflake: <c>:</c> prefix (verified against driver docs, not <c>@</c>), ANSI quoting, no casts (documented implicit VARCHAR→NUMBER conversion — not empirically re-verified, ADR D57).</summary>
+    public static readonly SqlDialect Snowflake = new(":", QuoteAnsi);
+
     /// <summary>Resolves a preset by source type id (as used by <c>ISchemaExplorer.Type</c>), or <c>null</c>.</summary>
     public static SqlDialect? ForType(string type) => type?.ToLowerInvariant() switch
     {
@@ -52,6 +58,8 @@ public sealed record SqlDialect(
         "sql" => SqlServer,
         "oracle" => Oracle,
         "sqlite" => Sqlite,
+        "redshift" => Redshift,
+        "snowflake" => Snowflake,
         _ => null,
     };
 
