@@ -1,17 +1,22 @@
 using Amazon.S3;
 using Amazon.S3.Model;
 
-namespace NeoReports.Sources.Csv;
+namespace NeoReports.Sources.Files.Common;
 
 /// <summary>
-/// Opens an S3 object as a readable stream (ADR D58) — shared by the typed and dynamic CSV-source
-/// paths. When no client is supplied, builds one from ambient AWS credentials/region (mirroring
-/// <c>NeoReports.Destinations.S3.S3Destination.WithDefaultClient</c>) and ties its lifetime to the
-/// returned stream, since the client must stay alive for the whole streamed read; an explicitly
-/// passed client's lifetime stays the caller's own responsibility.
+/// Opens an S3 object as a readable stream — shared by every file-based source package (CSV, XLSX,
+/// ...) across both their typed and dynamic paths. When no client is supplied, builds one from
+/// ambient AWS credentials/region (mirroring <c>NeoReports.Destinations.S3.S3Destination.WithDefaultClient</c>)
+/// and ties its lifetime to the returned stream, since the client must stay alive for the whole
+/// streamed read; an explicitly passed client's lifetime stays the caller's own responsibility.
 /// </summary>
-internal static class S3Stream
+public static class S3Stream
 {
+    /// <summary>Opens the given S3 object for reading, resolving a default client if none is supplied.</summary>
+    /// <param name="client">An explicit S3 client (caller owns its lifetime), or <c>null</c> to build one from ambient AWS credentials/region.</param>
+    /// <param name="bucket">The S3 bucket.</param>
+    /// <param name="key">The object key.</param>
+    /// <param name="cancellationToken">Cancels the request.</param>
     public static async Task<Stream> OpenAsync(IAmazonS3? client, string bucket, string key, CancellationToken cancellationToken)
     {
         var ownsClient = client is null;

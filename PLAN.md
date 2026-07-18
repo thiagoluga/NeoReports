@@ -1098,7 +1098,7 @@ type doesn't support server-side filters" banner on a Postgres-sourced report.
   reproducing it again needs the report's actual persisted source config or the named source's
   registered type from the live session where it was seen.
 
-## Epic P — Broad source-type expansion (D55) — P1, P2, P3a done
+## Epic P — Broad source-type expansion (D55) — P1, P2, P3a, P3b done
 
 Requested directly by the maintainer (2026-07-16): "possibilitar todas as fontes possíveis, menos
 Kafka." Directional design in `## D55` (`DECISIONS.md`). Every source is a new package on the
@@ -1145,8 +1145,17 @@ small design pass before code (like D43/K1). Ordered cheapest-highest-value firs
     RFC 4180 parser mirrors the existing `CsvWriter`'s escaping rules exactly (no new dependency).
     No `ISchemaExplorer`/`IFilterTranslator` (a flat file has no catalog/query protocol — D36 honest
     gap); `ISourceHealthCheck` included (can the path/object be opened). Design in `## D58`.
-  - [ ] **P3b — Excel (XLSX)** — needs its own design pass: read via `DocumentFormat.OpenXml`'s
-    `OpenXmlReader` (SAX-style), not `ClosedXML` (memory-unsafe for reads).
+  - [x] **P3b — Excel (XLSX)** (`NeoReports.Sources.Xlsx`, `type: "xlsx"`, local or S3 in one
+    package). Reads via `DocumentFormat.OpenXml`'s `OpenXmlReader` (SAX-style), not `ClosedXML`
+    (memory-unsafe for reads) — verified (not assumed) as genuinely constant-memory, with three
+    bounded (not row-count-scaling) side-tables: shared strings, stylesheet-based date detection
+    (built-in ids **and** custom `FormatCode` strings — this project's own writer uses a custom
+    `"yyyy-mm-dd"` code), and `CellReference`-based column alignment for sparse rows. `S3Stream`
+    promoted from `NeoReports.Sources.Csv` into a new shared `NeoReports.Sources.Files.Common`
+    package (both file sources reference it, avoiding the P2 duplication-gate repeat). Empirically
+    verified that `SpreadsheetDocument.Open` transparently buffers a non-seekable stream (e.g. an S3
+    response), so no extra buffering code was needed for S3 support. No `ISchemaExplorer`/
+    `IFilterTranslator` (D36 honest gap); `ISourceHealthCheck` included. Design in `## D59`.
   - [ ] **P3c — Parquet** — needs its own design pass: evaluate `Parquet.Net` (or equivalent)
     for genuinely constant-memory, row-group-at-a-time reads.
 - [ ] **P4 — Generic HTTP/REST source** (its own ADR first). Settle: pagination strategy
