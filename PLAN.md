@@ -1098,7 +1098,7 @@ type doesn't support server-side filters" banner on a Postgres-sourced report.
   reproducing it again needs the report's actual persisted source config or the named source's
   registered type from the live session where it was seen.
 
-## Epic P — Broad source-type expansion (D55) — P1, P2, P3a, P3b done
+## Epic P — Broad source-type expansion (D55) — P1, P2, P3 (a/b/c) done
 
 Requested directly by the maintainer (2026-07-16): "possibilitar todas as fontes possíveis, menos
 Kafka." Directional design in `## D55` (`DECISIONS.md`). Every source is a new package on the
@@ -1130,7 +1130,7 @@ small design pass before code (like D43/K1). Ordered cheapest-highest-value firs
   equivalent (paid cloud warehouses), so no test in this repo exercises a live query against either;
   coverage is config validation, DI wiring, and pure-string `AdoFilterTranslator`/`SqlDialect`
   behavior only. Design + the documented testing gap in `## D57` (`DECISIONS.md`).
-- [ ] **P3 — File sources: CSV, Excel (XLSX), Parquet** (local or S3) — symmetric to the existing
+- [x] **P3 — File sources: CSV, Excel (XLSX), Parquet** (local or S3) — symmetric to the existing
   Local/S3 destinations; stream-parsed for constant memory. A file's fixed columns allow a
   lightweight catalog but no server-side filters. **Split into P3a/P3b/P3c (maintainer decision,
   2026-07-17)** after researching XLSX surfaced a real blocker (see `## D58`): `ClosedXML` doesn't
@@ -1156,8 +1156,21 @@ small design pass before code (like D43/K1). Ordered cheapest-highest-value firs
     verified that `SpreadsheetDocument.Open` transparently buffers a non-seekable stream (e.g. an S3
     response), so no extra buffering code was needed for S3 support. No `ISchemaExplorer`/
     `IFilterTranslator` (D36 honest gap); `ISourceHealthCheck` included. Design in `## D59`.
-  - [ ] **P3c — Parquet** — needs its own design pass: evaluate `Parquet.Net` (or equivalent)
-    for genuinely constant-memory, row-group-at-a-time reads.
+  - [x] **P3c — Parquet** (`NeoReports.Sources.Parquet`, `type: "parquet"`, local or S3 in one
+    package). Reads via `Parquet.Net` 6.0.3 one **row group** at a time — the finest granularity the
+    columnar format exposes, and the honest reading of rule 8's constant memory (bounded by a row
+    group, not the whole file; per-row streaming was deliberately removed from `Parquet.Net` because
+    Parquet is not row-oriented). Typed path lets `ParquetSerializer.DeserializeAsync<T>` do the
+    object mapping — so, unlike CSV/XLSX, no hand-rolled `ReflectedRowShape<T>` materializer — at the
+    cost of a `where T : class, new()` constraint (a settable-property class or `init`-only record,
+    not a positional record — the one real capability asymmetry, documented). Dynamic path reads
+    untyped (`DeserializeUntypedAsync`, column-name-keyed dictionaries; a null cell is an omitted key,
+    verified empirically) and materializes `ReportRecord`s by declared-schema name. The one genuinely
+    new problem vs XLSX: `Parquet.Net`'s reader throws on a non-seekable stream (the footer is read by
+    seeking), the mirror image of OpenXml's transparent buffering — solved by a new shared
+    `NeoReports.Sources.Files.Common.SeekableStream` helper that copies an S3 body to a
+    `DeleteOnClose` temp file. No `ISchemaExplorer`/`IFilterTranslator` (D36 honest gap);
+    `ISourceHealthCheck` included. Design in `## D60`.
 - [ ] **P4 — Generic HTTP/REST source** (its own ADR first). Settle: pagination strategy
   (cursor/`Link`/page/offset/none→stream-parse), response→rows mapping (JSON path + field map), auth
   (`${VAR}` for API key/Bearer/OAuth), Polly + `429`/`Retry-After` handling, and the honest capability
