@@ -61,7 +61,7 @@
     <PackageVersion Include="Aspire.Hosting.PostgreSQL" Version="9.5.2" />
     <PackageVersion Include="Aspire.Hosting.MySql" Version="9.5.2" />
     <PackageVersion Include="Aspire.Hosting.SqlServer" Version="9.5.2" />
-    <PackageVersion Include="Aspire.Hosting.MongoDB" Version="9.5.2" />
+    <PackageVersion Include="Aspire.Hosting.MongoDB" Version="13.4.6" />
   </ItemGroup>
 
 </Project>
