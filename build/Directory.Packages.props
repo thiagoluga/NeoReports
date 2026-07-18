@@ -59,7 +59,7 @@
          runnable sample and every runtime this repo otherwise ships/tests against. -->
     <PackageVersion Include="Aspire.Hosting.AppHost" Version="9.5.2" />
     <PackageVersion Include="Aspire.Hosting.PostgreSQL" Version="9.5.2" />
-    <PackageVersion Include="Aspire.Hosting.MySql" Version="9.5.2" />
+    <PackageVersion Include="Aspire.Hosting.MySql" Version="13.4.6" />
     <PackageVersion Include="Aspire.Hosting.SqlServer" Version="9.5.2" />
     <PackageVersion Include="Aspire.Hosting.MongoDB" Version="9.5.2" />
   </ItemGroup>
