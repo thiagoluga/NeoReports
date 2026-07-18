@@ -113,22 +113,22 @@ internal sealed class HttpBatchSource<T> : IBatchSource<T>
                     : AddQuery(_baseUrl, (_options.CursorRequestParam, state.Token));
 
             case HttpPaginationStrategy.Page:
-            {
-                int page = state.Page ?? _options.StartPage;
-                return AddQuery(
-                    _baseUrl,
-                    (_options.PageParam, page.ToString(CultureInfo.InvariantCulture)),
-                    (_options.PageSizeParam, pageSize.ToString(CultureInfo.InvariantCulture)));
-            }
+                {
+                    int page = state.Page ?? _options.StartPage;
+                    return AddQuery(
+                        _baseUrl,
+                        (_options.PageParam, page.ToString(CultureInfo.InvariantCulture)),
+                        (_options.PageSizeParam, pageSize.ToString(CultureInfo.InvariantCulture)));
+                }
 
             case HttpPaginationStrategy.Offset:
-            {
-                int offset = state.Offset ?? 0;
-                return AddQuery(
-                    _baseUrl,
-                    (_options.OffsetParam, offset.ToString(CultureInfo.InvariantCulture)),
-                    (_options.PageSizeParam, pageSize.ToString(CultureInfo.InvariantCulture)));
-            }
+                {
+                    int offset = state.Offset ?? 0;
+                    return AddQuery(
+                        _baseUrl,
+                        (_options.OffsetParam, offset.ToString(CultureInfo.InvariantCulture)),
+                        (_options.PageSizeParam, pageSize.ToString(CultureInfo.InvariantCulture)));
+                }
 
             default:
                 throw new InvalidOperationException($"Unsupported pagination strategy '{_options.PaginationStrategy}'.");
