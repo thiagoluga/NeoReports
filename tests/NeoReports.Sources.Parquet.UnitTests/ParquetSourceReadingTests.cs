@@ -127,8 +127,12 @@ public sealed class ParquetSourceReadingTests : IDisposable
     }
 }
 
+// Lowercase property names are the whole point of this fixture (proving case-insensitive column
+// matching against PascalCase file columns), not a naming-convention lapse.
+#pragma warning disable IDE1006
 public sealed record LowerNote
 {
     public long id { get; init; }
     public string customer { get; init; } = "";
 }
+#pragma warning restore IDE1006
