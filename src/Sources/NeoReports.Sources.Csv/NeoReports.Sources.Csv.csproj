@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
+    <Description>CSV file source (local or S3) with constant-memory streaming for NeoReports.</Description>
+    <PackageTags>reports;reporting;source;csv;file;s3</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\NeoReports.Abstractions\NeoReports.Abstractions.csproj" />
+    <ProjectReference Include="..\..\NeoReports.Core\NeoReports.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AWSSDK.S3" />
+  </ItemGroup>
+
+</Project>

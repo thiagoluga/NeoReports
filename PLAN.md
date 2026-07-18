@@ -1098,7 +1098,7 @@ type doesn't support server-side filters" banner on a Postgres-sourced report.
   reproducing it again needs the report's actual persisted source config or the named source's
   registered type from the live session where it was seen.
 
-## Epic P — Broad source-type expansion (D55) — P1, P2 done
+## Epic P — Broad source-type expansion (D55) — P1, P2, P3a done
 
 Requested directly by the maintainer (2026-07-16): "possibilitar todas as fontes possíveis, menos
 Kafka." Directional design in `## D55` (`DECISIONS.md`). Every source is a new package on the
@@ -1132,7 +1132,23 @@ small design pass before code (like D43/K1). Ordered cheapest-highest-value firs
   behavior only. Design + the documented testing gap in `## D57` (`DECISIONS.md`).
 - [ ] **P3 — File sources: CSV, Excel (XLSX), Parquet** (local or S3) — symmetric to the existing
   Local/S3 destinations; stream-parsed for constant memory. A file's fixed columns allow a
-  lightweight catalog but no server-side filters.
+  lightweight catalog but no server-side filters. **Split into P3a/P3b/P3c (maintainer decision,
+  2026-07-17)** after researching XLSX surfaced a real blocker (see `## D58`): `ClosedXML` doesn't
+  stream on read (multi-GB memory reports for ~65k rows), so a constant-memory XLSX read needs the
+  low-level `DocumentFormat.OpenXml` SAX reader — materially riskier than CSV — and Parquet needs
+  its own library evaluation. Each sub-item gets its own design pass.
+  - [x] **P3a — CSV** (`NeoReports.Sources.Csv`, `type: "csv"`, local or S3 in one package). Typed
+    path authored directly as `IStreamingSource<T>` (no cursor — `TypedBatchReader` already keeps
+    one enumerator alive per run for this contract); the dynamic path wraps it in a new public
+    `NeoReports.Core.Sources.StreamingToBatchSource<T>` (promoted from `NeoReports.Sources.Join.Pro`'s
+    internal one — file connectors are MIT, can't depend on a Pro package). Hand-rolled streaming
+    RFC 4180 parser mirrors the existing `CsvWriter`'s escaping rules exactly (no new dependency).
+    No `ISchemaExplorer`/`IFilterTranslator` (a flat file has no catalog/query protocol — D36 honest
+    gap); `ISourceHealthCheck` included (can the path/object be opened). Design in `## D58`.
+  - [ ] **P3b — Excel (XLSX)** — needs its own design pass: read via `DocumentFormat.OpenXml`'s
+    `OpenXmlReader` (SAX-style), not `ClosedXML` (memory-unsafe for reads).
+  - [ ] **P3c — Parquet** — needs its own design pass: evaluate `Parquet.Net` (or equivalent)
+    for genuinely constant-memory, row-group-at-a-time reads.
 - [ ] **P4 — Generic HTTP/REST source** (its own ADR first). Settle: pagination strategy
   (cursor/`Link`/page/offset/none→stream-parse), response→rows mapping (JSON path + field map), auth
   (`${VAR}` for API key/Bearer/OAuth), Polly + `429`/`Retry-After` handling, and the honest capability
