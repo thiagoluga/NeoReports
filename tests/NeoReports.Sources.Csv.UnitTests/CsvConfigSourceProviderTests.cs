@@ -1,6 +1,10 @@
+using System.Text;
+using Amazon.S3;
+using Amazon.S3.Model;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NeoReports.Abstractions;
+using NSubstitute;
 using Shouldly;
 using Xunit;
 
@@ -100,6 +104,32 @@ public sealed class CsvConfigSourceProviderTests : IDisposable
         result.Records.Count.ShouldBe(2);
         result.Records[0]["Id"].ShouldBe(1L);
         result.Records[0]["Customer"].ShouldBe("C1");
+    }
+
+    [Fact]
+    public async Task Reads_an_s3_object_via_a_di_registered_client()
+    {
+        var client = Substitute.For<IAmazonS3>();
+        var bytes = Encoding.UTF8.GetBytes("Id,Customer\r\n1,C1\r\n");
+        client.GetObjectAsync(Arg.Any<GetObjectRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new GetObjectResponse { ResponseStream = new MemoryStream(bytes) });
+
+        var services = new ServiceCollection();
+        services.AddSingleton(client);
+        await using var serviceProvider = services.BuildServiceProvider();
+
+        var provider = new CsvConfigSourceProvider();
+        var config = new SourceConfig("csv", new Dictionary<string, object?> { ["bucket"] = "my-bucket", ["key"] = "sales.csv" });
+        IBatchSource<ReportRecord> source = provider.Create(config, Schema, serviceProvider);
+
+        BatchResult<ReportRecord> result = await source.ReadBatchAsync(new BatchContext(Exec(), 1000, null, 1), CancellationToken.None);
+
+        result.Records.Count.ShouldBe(1);
+        result.Records[0]["Id"].ShouldBe(1L);
+        result.Records[0]["Customer"].ShouldBe("C1");
+        await client.Received(1).GetObjectAsync(
+            Arg.Is<GetObjectRequest>(r => r.BucketName == "my-bucket" && r.Key == "sales.csv"),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]

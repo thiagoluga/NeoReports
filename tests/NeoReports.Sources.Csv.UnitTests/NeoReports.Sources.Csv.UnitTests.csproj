@@ -20,6 +20,8 @@
     <PackageReference Include="Shouldly" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="AWSSDK.S3" />
+    <PackageReference Include="NSubstitute" />
   </ItemGroup>
 
 </Project>

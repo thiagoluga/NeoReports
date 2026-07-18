@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using NeoReports.Abstractions;
+using NeoReports.Core.Sources;
 
 namespace NeoReports.Sources.Join.Pro;
 
