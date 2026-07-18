@@ -123,7 +123,7 @@ public sealed class HttpConfigSourceProviderTests
         };
         HttpClient client = StubHttpMessageHandler.CreateClient(request =>
         {
-            int page = ParseQueryInt(request.RequestUri!, "page");
+            int page = HttpTestHelpers.ParseQueryInt(request.RequestUri!, "page");
             return JsonResponse(responses[page]);
         }, out StubHttpMessageHandler handler);
 
@@ -141,18 +141,6 @@ public sealed class HttpConfigSourceProviderTests
 
         records.Count.ShouldBe(2);
         handler.Requests.Count.ShouldBe(3); // page 1, page 2, page 3 (empty, ends pagination)
-    }
-
-    private static int ParseQueryInt(Uri uri, string key)
-    {
-        foreach (string pair in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
-        {
-            string[] kv = pair.Split('=', 2);
-            if (Uri.UnescapeDataString(kv[0]) == key)
-                return int.Parse(Uri.UnescapeDataString(kv[1]));
-        }
-
-        throw new KeyNotFoundException(key);
     }
 
     [Fact]

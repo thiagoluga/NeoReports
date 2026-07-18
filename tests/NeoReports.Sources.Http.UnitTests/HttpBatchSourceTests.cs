@@ -42,18 +42,6 @@ public sealed class HttpBatchSourceTests
     private static HttpResponseMessage JsonResponse(string json, HttpStatusCode status = HttpStatusCode.OK) =>
         new(status) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
 
-    private static int ParseQueryInt(Uri uri, string key)
-    {
-        foreach (string pair in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
-        {
-            string[] kv = pair.Split('=', 2);
-            if (Uri.UnescapeDataString(kv[0]) == key)
-                return int.Parse(Uri.UnescapeDataString(kv[1]));
-        }
-
-        throw new KeyNotFoundException(key);
-    }
-
     [Fact]
     public async Task Page_strategy_pages_until_a_shorter_than_full_response()
     {
@@ -65,7 +53,7 @@ public sealed class HttpBatchSourceTests
         };
 
         HttpClient client = StubHttpMessageHandler.CreateClient(
-            request => JsonResponse(responses[ParseQueryInt(request.RequestUri!, "page")]), out StubHttpMessageHandler handler);
+            request => JsonResponse(responses[HttpTestHelpers.ParseQueryInt(request.RequestUri!, "page")]), out StubHttpMessageHandler handler);
 
         var source = Source.Http("http://api.test/items", client)
             .Paginate(HttpPaginationStrategy.Page)
@@ -88,7 +76,7 @@ public sealed class HttpBatchSourceTests
         };
 
         HttpClient client = StubHttpMessageHandler.CreateClient(
-            request => JsonResponse(responses[ParseQueryInt(request.RequestUri!, "offset")]), out StubHttpMessageHandler handler);
+            request => JsonResponse(responses[HttpTestHelpers.ParseQueryInt(request.RequestUri!, "offset")]), out StubHttpMessageHandler handler);
 
         var source = Source.Http("http://api.test/items", client)
             .Paginate(HttpPaginationStrategy.Offset)

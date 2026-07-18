@@ -133,15 +133,8 @@ internal static class HttpConfigProperties
         return false;
     }
 
-    private static Dictionary<string, string> ToStringMap(JsonElement obj)
-    {
-        var map = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (JsonProperty property in obj.EnumerateObject())
-        {
-            if (property.Value.ValueKind == JsonValueKind.String)
-                map[property.Name] = property.Value.GetString()!;
-        }
-
-        return map;
-    }
+    private static Dictionary<string, string> ToStringMap(JsonElement obj) =>
+        obj.EnumerateObject()
+            .Where(property => property.Value.ValueKind == JsonValueKind.String)
+            .ToDictionary(property => property.Name, property => property.Value.GetString()!, StringComparer.Ordinal);
 }

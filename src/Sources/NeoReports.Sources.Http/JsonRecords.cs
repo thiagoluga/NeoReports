@@ -157,10 +157,7 @@ internal static class JsonRecords
                     break;
 
                 if (reader.TokenType == JsonTokenType.EndArray)
-                {
-                    consumed += (int)reader.BytesConsumed;
                     yield break;
-                }
 
                 // JsonDocument.ParseValue/JsonSerializer.Deserialize<T>(ref reader) both apply their
                 // own "exactly one value, nothing after it" validation to the reader's remaining span

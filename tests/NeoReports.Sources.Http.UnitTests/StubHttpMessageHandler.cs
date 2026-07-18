@@ -66,3 +66,20 @@ internal sealed class ThrottledReadStream : Stream
         base.Dispose(disposing);
     }
 }
+
+/// <summary>Shared test helpers, so query-string assertions don't need their own copy per test class.</summary>
+internal static class HttpTestHelpers
+{
+    /// <summary>Reads a query parameter's value as an int, throwing if the parameter is absent.</summary>
+    public static int ParseQueryInt(Uri uri, string key)
+    {
+        string[]? match = uri.Query.TrimStart('?')
+            .Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Select(pair => pair.Split('=', 2))
+            .FirstOrDefault(kv => Uri.UnescapeDataString(kv[0]) == key);
+
+        return match is not null
+            ? int.Parse(Uri.UnescapeDataString(match[1]))
+            : throw new KeyNotFoundException(key);
+    }
+}
