@@ -55,16 +55,10 @@ internal static class ParquetReportRecordMaterializer
         return records;
     }
 
-    private static string? FindFieldName(ParquetSchema fileSchema, string declaredName)
-    {
-        foreach (DataField field in fileSchema.DataFields)
-        {
-            if (string.Equals(field.Name, declaredName, StringComparison.OrdinalIgnoreCase))
-                return field.Name;
-        }
-
-        return null;
-    }
+    private static string? FindFieldName(ParquetSchema fileSchema, string declaredName) =>
+        fileSchema.DataFields
+            .FirstOrDefault(field => string.Equals(field.Name, declaredName, StringComparison.OrdinalIgnoreCase))
+            ?.Name;
 
     // A Parquet value already carries a native, correctly-typed CLR value (long, decimal, DateTime,
     // bool, string, byte[], ...) — the file's logical types are explicit in its metadata, so unlike
