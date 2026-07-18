@@ -1098,7 +1098,7 @@ type doesn't support server-side filters" banner on a Postgres-sourced report.
   reproducing it again needs the report's actual persisted source config or the named source's
   registered type from the live session where it was seen.
 
-## Epic P — Broad source-type expansion (D55) — P1, P2, P3 (a/b/c) done
+## Epic P — Broad source-type expansion (D55) — P1, P2, P3 (a/b/c), P4a done
 
 Requested directly by the maintainer (2026-07-16): "possibilitar todas as fontes possíveis, menos
 Kafka." Directional design in `## D55` (`DECISIONS.md`). Every source is a new package on the
@@ -1171,10 +1171,28 @@ small design pass before code (like D43/K1). Ordered cheapest-highest-value firs
     `NeoReports.Sources.Files.Common.SeekableStream` helper that copies an S3 body to a
     `DeleteOnClose` temp file. No `ISchemaExplorer`/`IFilterTranslator` (D36 honest gap);
     `ISourceHealthCheck` included. Design in `## D60`.
-- [ ] **P4 — Generic HTTP/REST source** (its own ADR first). Settle: pagination strategy
-  (cursor/`Link`/page/offset/none→stream-parse), response→rows mapping (JSON path + field map), auth
-  (`${VAR}` for API key/Bearer/OAuth), Polly + `429`/`Retry-After` handling, and the honest capability
-  gaps (no `ISchemaExplorer`, no server-side filters). MIT.
+- [x] **P4 — Generic HTTP/REST source.** `NeoReports.Sources.Http` (`type: "http"`, MIT) — typed
+  (`Source.Http(url).As<T>()`) and dynamic paths over `IBatchSource<T>`. **Split into P4a/P4b**
+  (maintainer-anticipated in the ADR, mirroring D58's CSV/XLSX/Parquet split): P4a ships now; P4b
+  (OAuth2 client-credentials) deferred to its own design pass — a stateful token-cache/refresh
+  concern materially bigger than the rest of P4.
+  - [x] **P4a — pagination, mapping, static auth, resilience.** Four paginated cursor strategies
+    (continuation token, RFC 5988/8288 `Link` header, page number, offset) as `IBatchSource<T>`
+    (chosen over the file family's `IStreamingSource<T>` specifically so a failed page retries in
+    isolation, idempotently, from its own cursor) plus a constant-memory `Utf8JsonReader`-streamed
+    path for single-response APIs with no pagination at all. Response→rows: hand-rolled dotted-path
+    JSON traversal (no JSONPath dependency, D58's precedent). Auth: static API-key header / Bearer
+    token via `${VAR}`. Resilience: a new, small, additive Core hook (`IRetryDelayHint`) lets a
+    thrown exception suggest its own retry delay — honors an HTTP `Retry-After` through the
+    *existing* batch-level Polly pipeline instead of a second mechanism, clamped to a 5-minute
+    ceiling given the single-worker architecture. Honest capability gaps: no `ISchemaExplorer`, no
+    `IFilterTranslator`, no `ISourceRowCounter` (most REST APIs don't return a total). A security
+    review of the `Link`-header strategy found the next-page URL (taken verbatim from the response)
+    could carry the configured credentials to a different host if the endpoint were compromised or
+    tampered with in transit; fixed to refuse cross-origin credential replay, mirroring
+    `HttpClient`'s own redirect behavior. Design in `## D61` (`DECISIONS.md`). PR
+    [#187](https://github.com/thiagoluga/NeoReports/pull/187).
+  - [ ] **P4b — OAuth2 client-credentials auth** (its own design pass).
 - [ ] **P5 — HTTP with richer query semantics: OData, GraphQL.** OData can push filters server-side
   (register an `IFilterTranslator`); GraphQL's Relay cursor pagination fits the cursor model cleanly.
 - [ ] **P6 — Search engines: Elasticsearch / OpenSearch** — `search_after`/scroll is a natural cursor.
