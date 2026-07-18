@@ -1,4 +1,8 @@
+using Amazon.S3;
+using Amazon.S3.Model;
+using Microsoft.Extensions.DependencyInjection;
 using NeoReports.Core.SourceRegistry;
+using NSubstitute;
 using Shouldly;
 using Xunit;
 
@@ -48,6 +52,29 @@ public sealed class CsvSourceHealthCheckTests : IDisposable
 
         result.Healthy.ShouldBeFalse();
         result.Error.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task CheckAsync_resolves_a_di_registered_client_for_the_s3_case()
+    {
+        var client = Substitute.For<IAmazonS3>();
+        client.GetObjectMetadataAsync(Arg.Any<GetObjectMetadataRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new GetObjectMetadataResponse());
+
+        var services = new ServiceCollection();
+        services.AddSingleton(client);
+        await using var serviceProvider = services.BuildServiceProvider();
+
+        var check = new CsvSourceHealthCheck();
+        var definition = new SourceDefinition("sales-file", "csv",
+            new Dictionary<string, object?> { ["bucket"] = "my-bucket", ["key"] = "sales.csv" });
+
+        var result = await check.CheckAsync(definition, serviceProvider, CancellationToken.None);
+
+        result.Healthy.ShouldBeTrue();
+        await client.Received(1).GetObjectMetadataAsync(
+            Arg.Is<GetObjectMetadataRequest>(r => r.BucketName == "my-bucket" && r.Key == "sales.csv"),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]

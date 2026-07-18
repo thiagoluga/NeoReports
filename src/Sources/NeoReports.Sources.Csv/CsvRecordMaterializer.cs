@@ -5,11 +5,10 @@ namespace NeoReports.Sources.Csv;
 
 /// <summary>
 /// Maps a CSV row's fields to a <typeparamref name="T"/> instance by header name (ADR D58). The
-/// reflection setup (find the longest constructor, or fall back to settable properties) is shared
-/// with the ADO family's own <c>NeoReports.Sources.Common.RecordMaterializer&lt;T&gt;</c> via
-/// <see cref="ReflectedRowShape{T}"/> — only the "read and convert one field" step differs, since a
-/// <c>DbDataReader</c> hands back typed values with an <c>IsDBNull</c> check while a CSV row hands
-/// back raw text needing type conversion.
+/// reflection setup AND the constructor/property materialization loop are shared with the ADO and
+/// XLSX families via <see cref="ReflectedRowShape{T}.Materialize"/> (ADR D59) — only the "read and
+/// convert one field" step differs, since a <c>DbDataReader</c> hands back typed values with an
+/// <c>IsDBNull</c> check while a CSV row hands back raw text needing type conversion.
 /// </summary>
 /// <typeparam name="T">The row type to materialize.</typeparam>
 internal sealed class CsvRecordMaterializer<T>
@@ -19,31 +18,8 @@ internal sealed class CsvRecordMaterializer<T>
     /// <summary>Materializes one row given the header's column-name-to-ordinal map.</summary>
     /// <param name="ordinalByName">Header column ordinal by name (case-insensitive).</param>
     /// <param name="row">The row's raw string fields, aligned to the header.</param>
-    public T Materialize(IReadOnlyDictionary<string, int> ordinalByName, string[] row)
-    {
-        if (_shape.Constructor is not null)
-        {
-            var args = new object?[_shape.ConstructorParameters.Length];
-            for (var i = 0; i < _shape.ConstructorParameters.Length; i++)
-            {
-                var name = _shape.ConstructorParameters[i].Name!;
-                args[i] = ordinalByName.TryGetValue(name, out var ordinal) && ordinal < row.Length
-                    ? ConvertValue(row[ordinal], _shape.ConstructorParameters[i].ParameterType)
-                    : ReflectedRowShape<T>.DefaultFor(_shape.ConstructorParameters[i].ParameterType);
-            }
-
-            return (T)_shape.Constructor.Invoke(args);
-        }
-
-        var instance = Activator.CreateInstance<T>();
-        foreach (var prop in _shape.SettableProperties)
-        {
-            if (ordinalByName.TryGetValue(prop.Name, out var ordinal) && ordinal < row.Length)
-                prop.SetValue(instance, ConvertValue(row[ordinal], prop.PropertyType));
-        }
-
-        return instance;
-    }
+    public T Materialize(IReadOnlyDictionary<string, int> ordinalByName, string[] row) =>
+        _shape.Materialize(ordinalByName, row.Length, (ordinal, targetType) => ConvertValue(row[ordinal], targetType));
 
     // A CSV field has no null representation — an empty field is a genuine empty string for a
     // string-typed target, never coerced to null. Only for a non-string target does an empty/

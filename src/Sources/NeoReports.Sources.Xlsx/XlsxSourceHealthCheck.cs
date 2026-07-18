@@ -1,16 +1,16 @@
 using NeoReports.Core.SourceRegistry;
 using NeoReports.Sources.Files.Common;
 
-namespace NeoReports.Sources.Csv;
+namespace NeoReports.Sources.Xlsx;
 
 /// <summary>
-/// On-demand health check for a registered CSV source (ADR D42/D58, <c>type: "csv"</c>). The check
+/// On-demand health check for a registered XLSX source (ADR D42/D59, <c>type: "xlsx"</c>). The check
 /// itself is shared across every file-based source — see <see cref="FileSourceHealth"/>.
 /// </summary>
-public sealed class CsvSourceHealthCheck : ISourceHealthCheck
+public sealed class XlsxSourceHealthCheck : ISourceHealthCheck
 {
     /// <inheritdoc />
-    public string Type => "csv";
+    public string Type => "xlsx";
 
     /// <inheritdoc />
     public Task<SourceHealthResult> CheckAsync(SourceDefinition definition, IServiceProvider services, CancellationToken cancellationToken) =>

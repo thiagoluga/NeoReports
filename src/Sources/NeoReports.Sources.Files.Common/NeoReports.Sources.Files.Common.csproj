@@ -2,14 +2,13 @@
 
   <PropertyGroup>
     <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
-    <Description>CSV file source (local or S3) with constant-memory streaming for NeoReports.</Description>
-    <PackageTags>reports;reporting;source;csv;file;s3</PackageTags>
+    <Description>Shared file/S3 streaming plumbing reused by NeoReports' file-based source packages.</Description>
+    <PackageTags>reports;reporting;source;file;s3</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\NeoReports.Abstractions\NeoReports.Abstractions.csproj" />
     <ProjectReference Include="..\..\NeoReports.Core\NeoReports.Core.csproj" />
-    <ProjectReference Include="..\NeoReports.Sources.Files.Common\NeoReports.Sources.Files.Common.csproj" />
   </ItemGroup>
 
   <ItemGroup>

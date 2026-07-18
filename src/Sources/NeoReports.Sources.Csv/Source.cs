@@ -1,5 +1,6 @@
 using Amazon.S3;
 using NeoReports.Abstractions;
+using NeoReports.Sources.Files.Common;
 
 namespace NeoReports.Sources.Csv;
 

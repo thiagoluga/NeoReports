@@ -2,8 +2,8 @@
 
   <PropertyGroup>
     <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
-    <Description>CSV file source (local or S3) with constant-memory streaming for NeoReports.</Description>
-    <PackageTags>reports;reporting;source;csv;file;s3</PackageTags>
+    <Description>XLSX (Excel) file source (local or S3) with constant-memory streaming for NeoReports.</Description>
+    <PackageTags>reports;reporting;source;xlsx;excel;file;s3</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>
@@ -13,7 +13,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="AWSSDK.S3" />
+    <PackageReference Include="DocumentFormat.OpenXml" />
   </ItemGroup>
 
 </Project>
