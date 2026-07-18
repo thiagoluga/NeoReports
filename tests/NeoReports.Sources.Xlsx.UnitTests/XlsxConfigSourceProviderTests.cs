@@ -82,6 +82,24 @@ public sealed class XlsxConfigSourceProviderTests : IDisposable
     }
 
     [Fact]
+    public async Task Honors_a_hasHeader_property_supplied_as_a_string()
+    {
+        // JSON config commonly round-trips a boolean as text depending on how it was authored/parsed;
+        // TryGetBool must accept "false" the same way it accepts a native bool.
+        var path = await WriteXlsxAsync(Schema, new object?[][] { new object?[] { 1L, "C1" } },
+            new XlsxOptions().Header(false));
+
+        var provider = new XlsxConfigSourceProvider();
+        var config = new SourceConfig("xlsx", new Dictionary<string, object?> { ["path"] = path, ["hasHeader"] = "false" });
+        IBatchSource<ReportRecord> source = provider.Create(config, Schema, services: null!);
+
+        BatchResult<ReportRecord> result = await source.ReadBatchAsync(new BatchContext(Exec(), 1000, null, 1), CancellationToken.None);
+
+        result.Records.Count.ShouldBe(1);
+        result.Records[0]["Id"].ShouldBe(1L);
+    }
+
+    [Fact]
     public async Task Falls_back_to_positional_alignment_when_the_sheet_has_no_header()
     {
         var path = await WriteXlsxAsync(Schema, new object?[][] { new object?[] { 1L, "C1" }, new object?[] { 2L, "C2" } },

@@ -103,6 +103,87 @@ public sealed class XlsxSourceReadingTests : IDisposable
     }
 
     [Fact]
+    public async Task A_builtin_date_format_id_is_recognized_without_a_custom_format_code()
+    {
+        // Unlike this project's own writer (which always uses a custom "yyyy-mm-dd" FormatCode), a
+        // cell can be styled with a spec-reserved built-in NumberFormatId and no <numFmts> entry at
+        // all — the built-in-id branch of NumberFormatCache, not the FormatCode-string heuristic.
+        var path = Path.Combine(_dir, $"{Guid.NewGuid():N}.xlsx");
+        var when = new DateTime(2026, 3, 15);
+        using (var workbook = new XLWorkbook())
+        {
+            var ws = workbook.Worksheets.Add("Sheet1");
+            ws.Cell(1, 1).Value = "When";
+            ws.Cell(2, 1).Value = when;
+            ws.Cell(2, 1).Style.NumberFormat.NumberFormatId = 14; // built-in short date (m/d/yyyy)
+            workbook.SaveAs(path);
+        }
+
+        var schema = new ReportSchema(new[] { new ReportColumn("When", ColumnType.Date) });
+        var records = await CollectDynamicAsync(path, schema);
+
+        records[0]["When"].ShouldBe(when);
+    }
+
+    [Fact]
+    public async Task An_elapsed_time_only_bracket_format_is_still_recognized_as_a_date()
+    {
+        // "[h]" alone (no trailing mm:ss) exercises the branch where StripLiteralsAndNonElapsedBrackets
+        // must keep the bracket's inner content, not just discard every bracket outright — an elapsed
+        // format with nothing else surviving the strip would otherwise be missed.
+        var path = Path.Combine(_dir, $"{Guid.NewGuid():N}.xlsx");
+        using (var workbook = new XLWorkbook())
+        {
+            var ws = workbook.Worksheets.Add("Sheet1");
+            ws.Cell(1, 1).Value = "Elapsed";
+            ws.Cell(2, 1).Value = 1.5; // 36 elapsed hours as an OA serial
+            ws.Cell(2, 1).Style.NumberFormat.Format = "[h]";
+            workbook.SaveAs(path);
+        }
+
+        var schema = new ReportSchema(new[] { new ReportColumn("Elapsed", ColumnType.Date) });
+        var records = await CollectDynamicAsync(path, schema);
+
+        records[0]["Elapsed"].ShouldBeOfType<DateTime>();
+    }
+
+    [Fact]
+    public async Task A_quoted_literal_containing_date_letters_is_not_misread_as_a_date()
+    {
+        // The literal text "Days" contains 'D' and 's', both date/time tokens — but only when NOT
+        // inside quotes. This is the mirror case of the bracket regression test, proving the
+        // quote-stripping half of the heuristic independently of the bracket-stripping half.
+        var path = Path.Combine(_dir, $"{Guid.NewGuid():N}.xlsx");
+        using (var workbook = new XLWorkbook())
+        {
+            var ws = workbook.Worksheets.Add("Sheet1");
+            ws.Cell(1, 1).Value = "Count";
+            ws.Cell(2, 1).Value = 42;
+            ws.Cell(2, 1).Style.NumberFormat.Format = "0 \"Days\"";
+            workbook.SaveAs(path);
+        }
+
+        var schema = new ReportSchema(new[] { new ReportColumn("Count", ColumnType.Integer) });
+        var records = await CollectDynamicAsync(path, schema);
+
+        records[0]["Count"].ShouldBe(42L);
+    }
+
+    [Fact]
+    public async Task Reading_an_unknown_sheet_name_throws()
+    {
+        var path = Path.Combine(_dir, $"{Guid.NewGuid():N}.xlsx");
+        using (var workbook = new XLWorkbook())
+        {
+            workbook.Worksheets.Add("Sheet1");
+            workbook.SaveAs(path);
+        }
+
+        await Should.ThrowAsync<InvalidOperationException>(() =>
+            CollectAsync(Source.XlsxFile(path, new XlsxReaderOptions().SheetName("DoesNotExist")).As<CustomerNote>()));
+    }
+
+    [Fact]
     public async Task Resolves_a_shared_string_referenced_by_multiple_rows()
     {
         var schema = new ReportSchema(new[]
