@@ -1,6 +1,7 @@
 using System.Text.Json;
 using NeoReports.Abstractions;
 using NeoReports.Core.Sources;
+using NeoReports.Sources.Http.Common;
 
 namespace NeoReports.Sources.Http;
 

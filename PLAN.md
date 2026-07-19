@@ -1098,7 +1098,7 @@ type doesn't support server-side filters" banner on a Postgres-sourced report.
   reproducing it again needs the report's actual persisted source config or the named source's
   registered type from the live session where it was seen.
 
-## Epic P — Broad source-type expansion (D55) — P1, P2, P3 (a/b/c), P4a done
+## Epic P — Broad source-type expansion (D55) — P1, P2, P3 (a/b/c), P4a, P5a done
 
 Requested directly by the maintainer (2026-07-16): "possibilitar todas as fontes possíveis, menos
 Kafka." Directional design in `## D55` (`DECISIONS.md`). Every source is a new package on the
@@ -1193,8 +1193,31 @@ small design pass before code (like D43/K1). Ordered cheapest-highest-value firs
     `HttpClient`'s own redirect behavior. Design in `## D61` (`DECISIONS.md`). PR
     [#187](https://github.com/thiagoluga/NeoReports/pull/187).
   - [ ] **P4b — OAuth2 client-credentials auth** (its own design pass).
-- [ ] **P5 — HTTP with richer query semantics: OData, GraphQL.** OData can push filters server-side
-  (register an `IFilterTranslator`); GraphQL's Relay cursor pagination fits the cursor model cleanly.
+- [ ] **P5 — HTTP with richer query semantics: OData, GraphQL.** **Split into P5a/P5b (maintainer-
+  anticipated pattern, mirroring D58/D61)**: OData has a real query protocol (server-side `$filter`
+  pushdown, `$count`) — a materially different contract surface (touches the shared `IFilterTranslator`
+  seam) from GraphQL's honest-gap-only shape (no universal filter language). Design in `## D62`
+  (`DECISIONS.md`).
+  - [x] **P5a — OData.** `NeoReports.Sources.OData` (`type: "odata"`) — `@odata.nextLink`/`$skip`
+    pagination, `ODataFilterTranslator : IFilterTranslator` (the first non-SQL Epic-P source to push
+    filters server-side; required generalizing `IFilterTranslator` off `"sql"` — see D62), `$count`-based
+    `ISourceRowCounter` (first non-SQL row counter in the epic). Extracted `NeoReports.Sources.Http.Common`
+    from the shipped `NeoReports.Sources.Http` (P4a) for shared plumbing, mirroring D59's
+    `Files.Common` extraction — also promoted the shared `QueryStrings.AddQuery`/`HttpHealthProbe`
+    helpers there during code review once both packages turned out to need them byte-for-byte
+    identically. Code review caught and fixed three real correctness bugs before merge: OData system
+    query-option names (`$filter` etc.) were being percent-encoded (`%24filter`, breaking real
+    servers), `Uuid` filter literals were quoted like strings instead of OData v4's unquoted
+    `Edm.Guid` form, and a `Decimal`/`Money` filter value with a thousands separator leaked an invalid
+    comma into the generated `$filter`. Security review caught a follow-on regression in the
+    query-encoding fix (the corrected `AddQuery` had stopped escaping query-parameter *keys* entirely,
+    which — for the HTTP family's author-configurable `pageParam`/`cursorRequestParam` — could let a
+    crafted config value inject an extra query parameter) — fixed to escape every key character except
+    a literal `$` (the one character OData's fixed system-option names need preserved). Design +
+    the `IFilterTranslator` seam change in `## D62`.
+  - [ ] **P5b — GraphQL.** `NeoReports.Sources.GraphQl` (`type: "graphql"`) — Relay cursor connections
+    (`edges`/`node`/`pageInfo`) as the pagination model; no `IFilterTranslator`/`ISchemaExplorer` (no
+    universal GraphQL filter/catalog protocol — honest D36 gap). Own design pass, own ADR.
 - [ ] **P6 — Search engines: Elasticsearch / OpenSearch** — `search_after`/scroll is a natural cursor.
 - [ ] **P7 — SaaS APIs (special cases of P4, often with SDKs): Salesforce, HubSpot, Google Sheets,
   Airtable.** Each a thin source over its API/SDK plus that provider's auth.

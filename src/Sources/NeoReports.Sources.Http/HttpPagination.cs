@@ -1,5 +1,5 @@
-using System.Text.Json;
 using System.Text.Json.Serialization;
+using NeoReports.Sources.Http.Common;
 
 namespace NeoReports.Sources.Http;
 
@@ -19,22 +19,16 @@ internal sealed record HttpCursorState(
 
 /// <summary>
 /// Encodes/decodes <see cref="HttpCursorState"/> into the single opaque <c>string?</c> cursor the
-/// pipeline carries (D3 rule: the cursor is never a raw structured value) — Base64(UTF-8(JSON)).
+/// pipeline carries (D3 rule: the cursor is never a raw structured value) — a thin wrapper over the
+/// shared <see cref="OpaqueCursor"/> Base64(UTF-8(JSON)) mechanism.
 /// </summary>
 internal static class HttpPagination
 {
     private static readonly HttpCursorState FirstPage = new();
 
     /// <summary>Encodes pagination state into the opaque cursor string.</summary>
-    public static string Encode(HttpCursorState state) =>
-        Convert.ToBase64String(JsonSerializer.SerializeToUtf8Bytes(state));
+    public static string Encode(HttpCursorState state) => OpaqueCursor.Encode(state);
 
     /// <summary>Decodes the opaque cursor string; a <c>null</c> cursor (first page) decodes to empty state.</summary>
-    public static HttpCursorState Decode(string? cursor)
-    {
-        if (cursor is null)
-            return FirstPage;
-
-        return JsonSerializer.Deserialize<HttpCursorState>(Convert.FromBase64String(cursor)) ?? FirstPage;
-    }
+    public static HttpCursorState Decode(string? cursor) => OpaqueCursor.Decode<HttpCursorState>(cursor) ?? FirstPage;
 }

@@ -27,10 +27,11 @@ public class RedshiftFilterTranslatorTests
     {
         var filters = new[] { new PreviewFilter("Amount", PreviewFilterOperator.GreaterThan, "2000.00") };
         var translator = new AdoFilterTranslator("redshift", castParameter: AdoFilterTranslator.PostgresCast);
+        var properties = new Dictionary<string, object?> { ["sql"] = BaseSql };
 
-        translator.TryTranslate(BaseSql, filters, Schema, out var translatedSql, out var parameters).ShouldBeTrue();
+        translator.TryTranslate(properties, filters, Schema, out var propertyOverrides, out var parameters).ShouldBeTrue();
 
-        translatedSql.ShouldContain("t.Amount > @filter0::numeric");
+        ((string)propertyOverrides["sql"]!).ShouldContain("t.Amount > @filter0::numeric");
         parameters["filter0"].ShouldBe("2000.00");
     }
 }

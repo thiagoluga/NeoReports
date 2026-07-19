@@ -2,10 +2,10 @@ using System.Net;
 using NeoReports.Abstractions;
 using NeoReports.Core.Pipeline;
 
-namespace NeoReports.Sources.Http;
+namespace NeoReports.Sources.Http.Common;
 
 /// <summary>
-/// A request against an HTTP source failed (ADR D61): a non-2xx response, or the configured
+/// A request against an HTTP-family source failed (ADR D61): a non-2xx response, or the configured
 /// records path/mapping didn't match the response shape. Implements <see cref="IRetryDelayHint"/>
 /// so a <c>Retry-After</c> response header is honored by the engine's existing batch-level
 /// resilience pipeline instead of a second, HTTP-specific retry mechanism. 4xx and 5xx are not

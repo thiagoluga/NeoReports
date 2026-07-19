@@ -9,8 +9,10 @@ namespace NeoReports.Sources.Postgres.IntegrationTests;
 /// <summary>
 /// G5 (ADR D45): <see cref="AdoFilterTranslator"/> translation — pure string/dictionary logic,
 /// shared by every relational provider, so it lives in <c>NeoReports.Sources.Common</c> with no
-/// database dependency. Assertions target the built <c>translatedSql</c> text and parameter
-/// dictionary directly (never string-concatenated values).
+/// database dependency. Assertions target the built <c>propertyOverrides["sql"]</c> text and
+/// parameter dictionary directly (never string-concatenated values). Signature generalized by ADR
+/// D62 (<c>IFilterTranslator</c> off <c>"sql"</c>) — <c>AdoFilterTranslator</c> now reads
+/// <c>"sql"</c> from the passed-in properties bag itself.
 /// </summary>
 public class AdoFilterTranslatorTests
 {
@@ -24,16 +26,27 @@ public class AdoFilterTranslatorTests
         new ReportColumn("Date", ColumnType.DateTime),
     });
 
+    private static Dictionary<string, object?> Properties(string sql = Sql) => new() { ["sql"] = sql };
+
     [Fact]
     public void No_filters_returns_the_original_sql_unchanged()
     {
         var translator = new AdoFilterTranslator("postgres");
 
-        var ok = translator.TryTranslate(Sql, Array.Empty<PreviewFilter>(), Schema, out var translatedSql, out var parameters);
+        var ok = translator.TryTranslate(Properties(), Array.Empty<PreviewFilter>(), Schema, out var propertyOverrides, out var parameters);
 
         ok.ShouldBeTrue();
-        translatedSql.ShouldBe(Sql);
+        propertyOverrides["sql"].ShouldBe(Sql);
         parameters.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Missing_sql_property_throws_configuration_exception()
+    {
+        var translator = new AdoFilterTranslator("postgres");
+        var filters = new[] { new PreviewFilter("Customer", PreviewFilterOperator.Equals, "Acme") };
+
+        Should.Throw<ConfigurationException>(() => translator.TryTranslate(new Dictionary<string, object?>(), filters, Schema, out _, out _));
     }
 
     [Fact]
@@ -42,9 +55,9 @@ public class AdoFilterTranslatorTests
         var translator = new AdoFilterTranslator("postgres");
         var filters = new[] { new PreviewFilter("Customer", PreviewFilterOperator.Equals, "Acme") };
 
-        translator.TryTranslate(Sql, filters, Schema, out var translatedSql, out var parameters);
+        translator.TryTranslate(Properties(), filters, Schema, out var propertyOverrides, out var parameters);
 
-        translatedSql.ShouldBe($"SELECT * FROM ({Sql}) t WHERE t.Customer = @filter0");
+        propertyOverrides["sql"].ShouldBe($"SELECT * FROM ({Sql}) t WHERE t.Customer = @filter0");
         parameters["filter0"].ShouldBe("Acme");
     }
 
@@ -58,9 +71,9 @@ public class AdoFilterTranslatorTests
             new PreviewFilter("Customer", PreviewFilterOperator.NotEquals, "Globex"),
         };
 
-        translator.TryTranslate(Sql, filters, Schema, out var translatedSql, out var parameters);
+        translator.TryTranslate(Properties(), filters, Schema, out var propertyOverrides, out var parameters);
 
-        translatedSql.ShouldBe($"SELECT * FROM ({Sql}) t WHERE t.Amount > @filter0 AND t.Customer <> @filter1");
+        propertyOverrides["sql"].ShouldBe($"SELECT * FROM ({Sql}) t WHERE t.Amount > @filter0 AND t.Customer <> @filter1");
         parameters["filter0"].ShouldBe("100");
         parameters["filter1"].ShouldBe("Globex");
     }
@@ -77,9 +90,9 @@ public class AdoFilterTranslatorTests
         var translator = new AdoFilterTranslator("postgres");
         var filters = new[] { new PreviewFilter("Amount", op, "42") };
 
-        translator.TryTranslate(Sql, filters, Schema, out var translatedSql, out _);
+        translator.TryTranslate(Properties(), filters, Schema, out var propertyOverrides, out _);
 
-        translatedSql.ShouldBe($"SELECT * FROM ({Sql}) t WHERE t.Amount {expectedSqlOperator} @filter0");
+        propertyOverrides["sql"].ShouldBe($"SELECT * FROM ({Sql}) t WHERE t.Amount {expectedSqlOperator} @filter0");
     }
 
     [Fact]
@@ -88,9 +101,9 @@ public class AdoFilterTranslatorTests
         var translator = new AdoFilterTranslator("postgres");
         var filters = new[] { new PreviewFilter("Customer", PreviewFilterOperator.Contains, "cme") };
 
-        translator.TryTranslate(Sql, filters, Schema, out var translatedSql, out var parameters);
+        translator.TryTranslate(Properties(), filters, Schema, out var propertyOverrides, out var parameters);
 
-        translatedSql.ShouldBe($"SELECT * FROM ({Sql}) t WHERE t.Customer LIKE @filter0");
+        propertyOverrides["sql"].ShouldBe($"SELECT * FROM ({Sql}) t WHERE t.Customer LIKE @filter0");
         parameters["filter0"].ShouldBe("%cme%");
     }
 
@@ -100,9 +113,9 @@ public class AdoFilterTranslatorTests
         var translator = new AdoFilterTranslator("postgres");
         var filters = new[] { new PreviewFilter("Customer", PreviewFilterOperator.StartsWith, "Ac") };
 
-        translator.TryTranslate(Sql, filters, Schema, out var translatedSql, out var parameters);
+        translator.TryTranslate(Properties(), filters, Schema, out var propertyOverrides, out var parameters);
 
-        translatedSql.ShouldBe($"SELECT * FROM ({Sql}) t WHERE t.Customer LIKE @filter0");
+        propertyOverrides["sql"].ShouldBe($"SELECT * FROM ({Sql}) t WHERE t.Customer LIKE @filter0");
         parameters["filter0"].ShouldBe("Ac%");
     }
 
@@ -112,9 +125,9 @@ public class AdoFilterTranslatorTests
         var translator = new AdoFilterTranslator("oracle", parameterPrefix: ":");
         var filters = new[] { new PreviewFilter("Customer", PreviewFilterOperator.Equals, "Acme") };
 
-        translator.TryTranslate(Sql, filters, Schema, out var translatedSql, out var parameters);
+        translator.TryTranslate(Properties(), filters, Schema, out var propertyOverrides, out var parameters);
 
-        translatedSql.ShouldBe($"SELECT * FROM ({Sql}) t WHERE t.Customer = :filter0");
+        propertyOverrides["sql"].ShouldBe($"SELECT * FROM ({Sql}) t WHERE t.Customer = :filter0");
         parameters["filter0"].ShouldBe("Acme");
     }
 
@@ -131,7 +144,7 @@ public class AdoFilterTranslatorTests
         var translator = new AdoFilterTranslator("postgres");
         var filters = new[] { new PreviewFilter("Customer", (PreviewFilterOperator)999, "Acme") };
 
-        Should.Throw<ArgumentOutOfRangeException>(() => translator.TryTranslate(Sql, filters, Schema, out _, out _));
+        Should.Throw<ArgumentOutOfRangeException>(() => translator.TryTranslate(Properties(), filters, Schema, out _, out _));
     }
 
     [Theory]
@@ -180,9 +193,9 @@ public class AdoFilterTranslatorTests
         var translator = new AdoFilterTranslator("mysql");
         var filters = new[] { new PreviewFilter("Amount", PreviewFilterOperator.GreaterThan, "100.00") };
 
-        translator.TryTranslate(Sql, filters, Schema, out var translatedSql, out _);
+        translator.TryTranslate(Properties(), filters, Schema, out var propertyOverrides, out _);
 
-        translatedSql.ShouldBe($"SELECT * FROM ({Sql}) t WHERE t.Amount > @filter0");
+        propertyOverrides["sql"].ShouldBe($"SELECT * FROM ({Sql}) t WHERE t.Amount > @filter0");
     }
 
     [Theory]
@@ -193,9 +206,9 @@ public class AdoFilterTranslatorTests
         var translator = new AdoFilterTranslator("postgres", castParameter: AdoFilterTranslator.PostgresCast);
         var filters = new[] { new PreviewFilter(column, PreviewFilterOperator.GreaterThan, "100") };
 
-        translator.TryTranslate(Sql, filters, Schema, out var translatedSql, out _);
+        translator.TryTranslate(Properties(), filters, Schema, out var propertyOverrides, out _);
 
-        translatedSql.ShouldBe($"SELECT * FROM ({Sql}) t WHERE t.{column} > @filter0::{sqlType}");
+        propertyOverrides["sql"].ShouldBe($"SELECT * FROM ({Sql}) t WHERE t.{column} > @filter0::{sqlType}");
     }
 
     [Fact]
@@ -204,9 +217,9 @@ public class AdoFilterTranslatorTests
         var translator = new AdoFilterTranslator("postgres", castParameter: AdoFilterTranslator.PostgresCast);
         var filters = new[] { new PreviewFilter("Customer", PreviewFilterOperator.Equals, "Acme") };
 
-        translator.TryTranslate(Sql, filters, Schema, out var translatedSql, out _);
+        translator.TryTranslate(Properties(), filters, Schema, out var propertyOverrides, out _);
 
-        translatedSql.ShouldBe($"SELECT * FROM ({Sql}) t WHERE t.Customer = @filter0");
+        propertyOverrides["sql"].ShouldBe($"SELECT * FROM ({Sql}) t WHERE t.Customer = @filter0");
     }
 
     [Theory]
@@ -220,10 +233,10 @@ public class AdoFilterTranslatorTests
         var translator = new AdoFilterTranslator("postgres", castParameter: AdoFilterTranslator.PostgresCast);
         var filters = new[] { new PreviewFilter("Amount", op, "100") };
 
-        var ok = translator.TryTranslate(Sql, filters, Schema, out var translatedSql, out var parameters);
+        var ok = translator.TryTranslate(Properties(), filters, Schema, out var propertyOverrides, out var parameters);
 
         ok.ShouldBeFalse();
-        translatedSql.ShouldBe(Sql);
+        propertyOverrides["sql"].ShouldBe(Sql);
         parameters.ShouldBeEmpty();
     }
 
@@ -233,9 +246,9 @@ public class AdoFilterTranslatorTests
         var translator = new AdoFilterTranslator("oracle", parameterPrefix: ":", castParameter: AdoFilterTranslator.OracleCast);
         var filters = new[] { new PreviewFilter("Amount", PreviewFilterOperator.GreaterThan, "2000.00") };
 
-        translator.TryTranslate(Sql, filters, Schema, out var translatedSql, out _);
+        translator.TryTranslate(Properties(), filters, Schema, out var propertyOverrides, out _);
 
-        translatedSql.ShouldBe(
+        propertyOverrides["sql"].ShouldBe(
             $"SELECT * FROM ({Sql}) t WHERE t.Amount > " +
             "TO_NUMBER(:filter0, 'FM999999999999999990.099999999999999999', 'NLS_NUMERIC_CHARACTERS=''.,''')");
     }
@@ -248,9 +261,9 @@ public class AdoFilterTranslatorTests
         var translator = new AdoFilterTranslator("oracle", parameterPrefix: ":", castParameter: AdoFilterTranslator.OracleCast);
         var filters = new[] { new PreviewFilter("Date", PreviewFilterOperator.Equals, "2026-01-01") };
 
-        translator.TryTranslate(Sql, filters, Schema, out var translatedSql, out _);
+        translator.TryTranslate(Properties(), filters, Schema, out var propertyOverrides, out _);
 
-        translatedSql.ShouldBe($"SELECT * FROM ({Sql}) t WHERE t.Date = :filter0");
+        propertyOverrides["sql"].ShouldBe($"SELECT * FROM ({Sql}) t WHERE t.Date = :filter0");
     }
 
     [Fact]
@@ -261,8 +274,8 @@ public class AdoFilterTranslatorTests
         var translator = new AdoFilterTranslator("sql", innerQuerySuffix: " OFFSET 0 ROWS");
         var filters = new[] { new PreviewFilter("Customer", PreviewFilterOperator.Equals, "Acme") };
 
-        translator.TryTranslate(Sql, filters, Schema, out var translatedSql, out _);
+        translator.TryTranslate(Properties(), filters, Schema, out var propertyOverrides, out _);
 
-        translatedSql.ShouldBe($"SELECT * FROM ({Sql} OFFSET 0 ROWS) t WHERE t.Customer = @filter0");
+        propertyOverrides["sql"].ShouldBe($"SELECT * FROM ({Sql} OFFSET 0 ROWS) t WHERE t.Customer = @filter0");
     }
 }

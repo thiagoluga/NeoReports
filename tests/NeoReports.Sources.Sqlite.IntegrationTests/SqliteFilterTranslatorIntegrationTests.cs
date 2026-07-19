@@ -42,8 +42,9 @@ public sealed class SqliteFilterTranslatorIntegrationTests : IClassFixture<Sqlit
     public async Task Filtering_a_numeric_column_with_a_text_bound_value_returns_only_matching_rows()
     {
         var filters = new[] { new PreviewFilter("Amount", PreviewFilterOperator.GreaterThan, "2000.00") };
-        new AdoFilterTranslator("sqlite").TryTranslate(BaseSql, filters, Schema, out var translatedSql, out var filterParameters)
+        new AdoFilterTranslator("sqlite").TryTranslate(new Dictionary<string, object?> { ["sql"] = BaseSql }, filters, Schema, out var propertyOverrides, out var filterParameters)
             .ShouldBeTrue();
+        var translatedSql = (string)propertyOverrides["sql"]!;
 
         BatchResult<ReportRecord> result = await ReadFilteredAsync(translatedSql, filterParameters, pageSize: 2500);
 
@@ -59,8 +60,9 @@ public sealed class SqliteFilterTranslatorIntegrationTests : IClassFixture<Sqlit
     public async Task Filtering_a_text_column_with_contains_returns_only_matching_rows()
     {
         var filters = new[] { new PreviewFilter("Customer", PreviewFilterOperator.Contains, "C25") };
-        new AdoFilterTranslator("sqlite").TryTranslate(BaseSql, filters, Schema, out var translatedSql, out var filterParameters)
+        new AdoFilterTranslator("sqlite").TryTranslate(new Dictionary<string, object?> { ["sql"] = BaseSql }, filters, Schema, out var propertyOverrides, out var filterParameters)
             .ShouldBeTrue();
+        var translatedSql = (string)propertyOverrides["sql"]!;
 
         BatchResult<ReportRecord> result = await ReadFilteredAsync(translatedSql, filterParameters, pageSize: 2500);
 
@@ -76,8 +78,9 @@ public sealed class SqliteFilterTranslatorIntegrationTests : IClassFixture<Sqlit
         // involved at all), which only gives the chronologically correct answer because the seeded
         // fixture's dates are zero-padded (SqliteFileFixture); confirms that assumption empirically.
         var filters = new[] { new PreviewFilter("Date", PreviewFilterOperator.GreaterThan, "2026-01-15") };
-        new AdoFilterTranslator("sqlite").TryTranslate(BaseSql, filters, Schema, out var translatedSql, out var filterParameters)
+        new AdoFilterTranslator("sqlite").TryTranslate(new Dictionary<string, object?> { ["sql"] = BaseSql }, filters, Schema, out var propertyOverrides, out var filterParameters)
             .ShouldBeTrue();
+        var translatedSql = (string)propertyOverrides["sql"]!;
 
         BatchResult<ReportRecord> result = await ReadFilteredAsync(translatedSql, filterParameters, pageSize: 2500);
 

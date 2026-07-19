@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using NeoReports.Abstractions;
+using NeoReports.Sources.Http.Common;
 using Shouldly;
 using Xunit;
 

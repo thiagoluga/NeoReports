@@ -64,8 +64,9 @@ public sealed class OracleFilterTranslatorIntegrationTests
         // without the NLS-independent cast this fails with ORA-01722 against a session whose
         // numeric locale doesn't treat '.' as the decimal separator.
         var filters = new[] { new PreviewFilter("Amount", PreviewFilterOperator.GreaterThan, "2000.00") };
-        OracleTranslator().TryTranslate(BaseSql, filters, Schema, out var translatedSql, out var filterParameters)
+        OracleTranslator().TryTranslate(new Dictionary<string, object?> { ["sql"] = BaseSql }, filters, Schema, out var propertyOverrides, out var filterParameters)
             .ShouldBeTrue();
+        var translatedSql = (string)propertyOverrides["sql"]!;
 
         BatchResult<ReportRecord> result = await ReadFilteredAsync(translatedSql, filterParameters, pageSize: 2500);
 
@@ -83,8 +84,9 @@ public sealed class OracleFilterTranslatorIntegrationTests
         // (adding an explicit S element was tried and instead broke *positive* values, since Oracle
         // then requires an explicit leading '+').
         var filters = new[] { new PreviewFilter("Amount", PreviewFilterOperator.LessThan, "-1") };
-        OracleTranslator().TryTranslate(BaseSql, filters, Schema, out var translatedSql, out var filterParameters)
+        OracleTranslator().TryTranslate(new Dictionary<string, object?> { ["sql"] = BaseSql }, filters, Schema, out var propertyOverrides, out var filterParameters)
             .ShouldBeTrue();
+        var translatedSql = (string)propertyOverrides["sql"]!;
 
         BatchResult<ReportRecord> result = await ReadFilteredAsync(translatedSql, filterParameters, pageSize: 10);
 
@@ -102,8 +104,9 @@ public sealed class OracleFilterTranslatorIntegrationTests
         // AdoFilterTranslator.OracleCast's remarks) — the session's default NLS_DATE_FORMAT is
         // what implicitly parses the bare text token here, and that format is DD-MON-RR.
         var filters = new[] { new PreviewFilter("Date", PreviewFilterOperator.Equals, "01-JAN-26") };
-        OracleTranslator().TryTranslate(BaseSql, filters, Schema, out var translatedSql, out var filterParameters)
+        OracleTranslator().TryTranslate(new Dictionary<string, object?> { ["sql"] = BaseSql }, filters, Schema, out var propertyOverrides, out var filterParameters)
             .ShouldBeTrue();
+        var translatedSql = (string)propertyOverrides["sql"]!;
 
         BatchResult<ReportRecord> result = await ReadFilteredAsync(translatedSql, filterParameters, pageSize: 2500);
 
@@ -117,8 +120,9 @@ public sealed class OracleFilterTranslatorIntegrationTests
         Skip.IfNot(_fixture.Available, "Docker/Oracle container not available.");
 
         var filters = new[] { new PreviewFilter("Customer", PreviewFilterOperator.Equals, "C1") };
-        OracleTranslator().TryTranslate(BaseSql, filters, Schema, out var translatedSql, out var filterParameters)
+        OracleTranslator().TryTranslate(new Dictionary<string, object?> { ["sql"] = BaseSql }, filters, Schema, out var propertyOverrides, out var filterParameters)
             .ShouldBeTrue();
+        var translatedSql = (string)propertyOverrides["sql"]!;
 
         BatchResult<ReportRecord> result = await ReadFilteredAsync(translatedSql, filterParameters, pageSize: 10);
 

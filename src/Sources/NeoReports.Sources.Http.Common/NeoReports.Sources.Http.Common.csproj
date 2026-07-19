@@ -2,14 +2,13 @@
 
   <PropertyGroup>
     <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
-    <Description>Generic HTTP/REST source with cursor/Link-header/page/offset pagination for NeoReports.</Description>
-    <PackageTags>reports;reporting;source;http;rest;api</PackageTags>
+    <Description>Shared HTTP plumbing (auth, opaque cursors, JSON record parsing) reused by NeoReports' HTTP-family source packages.</Description>
+    <PackageTags>reports;reporting;source;http</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\NeoReports.Abstractions\NeoReports.Abstractions.csproj" />
     <ProjectReference Include="..\..\NeoReports.Core\NeoReports.Core.csproj" />
-    <ProjectReference Include="..\NeoReports.Sources.Http.Common\NeoReports.Sources.Http.Common.csproj" />
   </ItemGroup>
 
 </Project>

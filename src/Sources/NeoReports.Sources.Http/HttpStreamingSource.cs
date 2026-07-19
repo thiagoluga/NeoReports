@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using NeoReports.Abstractions;
+using NeoReports.Sources.Http.Common;
 
 namespace NeoReports.Sources.Http;
 
@@ -43,7 +44,7 @@ internal sealed class HttpStreamingSource<T> : IStreamingSource<T>
     public async IAsyncEnumerable<T> ReadAsync(ReportExecutionContext execution, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, _baseUrl);
-        HttpRequests.ApplyAuth(request, _options);
+        HttpRequests.ApplyAuth(request, _options.ToAuth());
 
         using HttpResponseMessage response = await _client
             .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)

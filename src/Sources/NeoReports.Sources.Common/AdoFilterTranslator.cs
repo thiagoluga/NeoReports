@@ -76,19 +76,21 @@ public sealed class AdoFilterTranslator : IFilterTranslator
 
     /// <inheritdoc />
     public bool TryTranslate(
-        string sql,
+        IReadOnlyDictionary<string, object?> properties,
         IReadOnlyList<PreviewFilter> filters,
         ReportSchema schema,
-        out string translatedSql,
+        out IReadOnlyDictionary<string, object?> propertyOverrides,
         out IReadOnlyDictionary<string, object?> parameters)
     {
-        ArgumentNullException.ThrowIfNull(sql);
         ArgumentNullException.ThrowIfNull(filters);
         ArgumentNullException.ThrowIfNull(schema);
 
+        if (properties is null || !properties.TryGetValue("sql", out object? sqlValue) || sqlValue is not string sql)
+            throw new ConfigurationException("The ADO source has no 'sql' property to filter.");
+
         if (filters.Count == 0)
         {
-            translatedSql = sql;
+            propertyOverrides = new Dictionary<string, object?> { ["sql"] = sql };
             parameters = new Dictionary<string, object?>();
             return true;
         }
@@ -108,7 +110,7 @@ public sealed class AdoFilterTranslator : IFilterTranslator
             if (filter.Operator is PreviewFilterOperator.Contains or PreviewFilterOperator.StartsWith
                 && schema.Find(filter.Column)?.Type != ColumnType.String)
             {
-                translatedSql = sql;
+                propertyOverrides = new Dictionary<string, object?> { ["sql"] = sql };
                 parameters = new Dictionary<string, object?>();
                 return false;
             }
@@ -138,7 +140,8 @@ public sealed class AdoFilterTranslator : IFilterTranslator
         }
 
         string innerSql = _innerQuerySuffix is null ? sql : sql + _innerQuerySuffix;
-        translatedSql = $"SELECT * FROM ({innerSql}) t WHERE {string.Join(" AND ", conditions)}";
+        string translatedSql = $"SELECT * FROM ({innerSql}) t WHERE {string.Join(" AND ", conditions)}";
+        propertyOverrides = new Dictionary<string, object?> { ["sql"] = translatedSql };
         parameters = values;
         return true;
     }

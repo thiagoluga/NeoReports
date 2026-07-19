@@ -2,8 +2,8 @@
 
   <PropertyGroup>
     <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
-    <Description>Generic HTTP/REST source with cursor/Link-header/page/offset pagination for NeoReports.</Description>
-    <PackageTags>reports;reporting;source;http;rest;api</PackageTags>
+    <Description>OData v4 source with $filter pushdown, $top/$skip and @odata.nextLink pagination, and $count row counting for NeoReports.</Description>
+    <PackageTags>reports;reporting;source;odata;rest;api</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

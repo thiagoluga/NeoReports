@@ -47,8 +47,9 @@ public sealed class SqlFilterTranslatorIntegrationTests : IClassFixture<SqlServe
         Skip.IfNot(_fixture.Available, "Docker/SQL Server container not available.");
 
         var filters = new[] { new PreviewFilter("Amount", PreviewFilterOperator.GreaterThan, "2000.00") };
-        SqlTranslator().TryTranslate(BaseSql, filters, Schema, out var translatedSql, out var filterParameters)
+        SqlTranslator().TryTranslate(new Dictionary<string, object?> { ["sql"] = BaseSql }, filters, Schema, out var propertyOverrides, out var filterParameters)
             .ShouldBeTrue();
+        var translatedSql = (string)propertyOverrides["sql"]!;
 
         BatchResult<ReportRecord> result = await ReadFilteredAsync(translatedSql, filterParameters, pageSize: 2500);
 
@@ -62,8 +63,9 @@ public sealed class SqlFilterTranslatorIntegrationTests : IClassFixture<SqlServe
         Skip.IfNot(_fixture.Available, "Docker/SQL Server container not available.");
 
         var filters = new[] { new PreviewFilter("Date", PreviewFilterOperator.Equals, "2026-01-01T00:00:00") };
-        SqlTranslator().TryTranslate(BaseSql, filters, Schema, out var translatedSql, out var filterParameters)
+        SqlTranslator().TryTranslate(new Dictionary<string, object?> { ["sql"] = BaseSql }, filters, Schema, out var propertyOverrides, out var filterParameters)
             .ShouldBeTrue();
+        var translatedSql = (string)propertyOverrides["sql"]!;
 
         BatchResult<ReportRecord> result = await ReadFilteredAsync(translatedSql, filterParameters, pageSize: 10);
 

@@ -310,18 +310,21 @@ public sealed class FakeFilterTranslator : IFilterTranslator
     public string? LastValue { get; private set; }
 
     public bool TryTranslate(
-        string sql, IReadOnlyList<PreviewFilter> filters, ReportSchema schema, out string translatedSql,
+        IReadOnlyDictionary<string, object?> properties, IReadOnlyList<PreviewFilter> filters, ReportSchema schema,
+        out IReadOnlyDictionary<string, object?> propertyOverrides,
         out IReadOnlyDictionary<string, object?> parameters)
     {
+        var sql = (string)properties["sql"]!;
+
         if (filters.Count == 0)
         {
-            translatedSql = sql;
+            propertyOverrides = new Dictionary<string, object?> { ["sql"] = sql };
             parameters = new Dictionary<string, object?>();
             return true;
         }
 
         LastValue = filters[0].Value;
-        translatedSql = $"SELECT * FROM ({sql}) t WHERE t.{filters[0].Column} = @filter0";
+        propertyOverrides = new Dictionary<string, object?> { ["sql"] = $"SELECT * FROM ({sql}) t WHERE t.{filters[0].Column} = @filter0" };
         parameters = new Dictionary<string, object?> { ["filter0"] = filters[0].Value };
         return true;
     }
