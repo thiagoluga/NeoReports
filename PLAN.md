@@ -1214,7 +1214,7 @@ small design pass before code (like D43/K1). Ordered cheapest-highest-value firs
     which — for the HTTP family's author-configurable `pageParam`/`cursorRequestParam` — could let a
     crafted config value inject an extra query parameter) — fixed to escape every key character except
     a literal `$` (the one character OData's fixed system-option names need preserved). Design +
-    the `IFilterTranslator` seam change in `## D62`.
+    the `IFilterTranslator` seam change in `## D62`. PR [#189](https://github.com/thiagoluga/NeoReports/pull/189).
   - [ ] **P5b — GraphQL.** `NeoReports.Sources.GraphQl` (`type: "graphql"`) — Relay cursor connections
     (`edges`/`node`/`pageInfo`) as the pagination model; no `IFilterTranslator`/`ISchemaExplorer` (no
     universal GraphQL filter/catalog protocol — honest D36 gap). Own design pass, own ADR.
