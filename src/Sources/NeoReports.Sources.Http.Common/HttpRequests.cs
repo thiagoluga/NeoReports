@@ -26,19 +26,28 @@ public static class HttpRequests
     }
 
     /// <summary>
+    /// Reads the response's <c>Retry-After</c> header (delta-seconds or HTTP-date form), clamped to
+    /// non-negative — shared so any HTTP-family failure path (a non-2xx response, or a source-level
+    /// failure signaled a different way on an otherwise-successful response, e.g. GraphQL's
+    /// <c>200</c>-with-<c>errors</c>) honors the same header the same way.
+    /// </summary>
+    public static TimeSpan? ReadRetryAfter(HttpResponseMessage response)
+    {
+        if (response.Headers.RetryAfter is not { } header)
+            return null;
+
+        TimeSpan? retryAfter = header.Delta ?? (header.Date is { } date ? date - DateTimeOffset.UtcNow : null);
+        return retryAfter is { } delay && delay < TimeSpan.Zero ? TimeSpan.Zero : retryAfter;
+    }
+
+    /// <summary>
     /// Builds an <see cref="HttpSourceException"/> from a non-2xx response, reading
     /// <c>Retry-After</c> before the response body is consumed/disposed (D61 — <c>EnsureSuccessStatusCode</c>
     /// would discard it) and capturing a bounded snippet of the body for the error message.
     /// </summary>
     public static async Task<HttpSourceException> BuildExceptionAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
-        TimeSpan? retryAfter = null;
-        if (response.Headers.RetryAfter is { } header)
-        {
-            retryAfter = header.Delta ?? (header.Date is { } date ? date - DateTimeOffset.UtcNow : null);
-            if (retryAfter is { } delay && delay < TimeSpan.Zero)
-                retryAfter = TimeSpan.Zero;
-        }
+        TimeSpan? retryAfter = ReadRetryAfter(response);
 
         string snippet;
         try

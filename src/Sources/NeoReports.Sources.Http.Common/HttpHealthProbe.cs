@@ -23,10 +23,15 @@ public static class HttpHealthProbe
         return response;
     }
 
-    /// <summary>Sends a single probe request with the configured auth applied.</summary>
-    public static async Task<HttpResponseMessage> SendAsync(HttpClient client, HttpMethod method, string targetUrl, HttpAuth auth, CancellationToken cancellationToken)
+    /// <summary>
+    /// Sends a single probe request with the configured auth applied. <paramref name="content"/> is
+    /// optional — a <c>POST</c>-only, single-endpoint transport (e.g. GraphQL's probe query) supplies
+    /// a body here instead of using <see cref="ProbeAsync"/>'s <c>HEAD</c>/<c>GET</c> fallback, which
+    /// doesn't apply to it.
+    /// </summary>
+    public static async Task<HttpResponseMessage> SendAsync(HttpClient client, HttpMethod method, string targetUrl, HttpAuth auth, CancellationToken cancellationToken, HttpContent? content = null)
     {
-        using var request = new HttpRequestMessage(method, targetUrl);
+        using var request = new HttpRequestMessage(method, targetUrl) { Content = content };
         HttpRequests.ApplyAuth(request, auth);
         return await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
     }

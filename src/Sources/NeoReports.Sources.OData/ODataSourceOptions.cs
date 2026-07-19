@@ -58,17 +58,7 @@ public sealed class ODataSourceOptions
     /// </summary>
     internal int? TopValue { get; private set; }
 
-    /// <summary>Static request headers applied to every request.</summary>
-    internal IReadOnlyDictionary<string, string>? StaticHeaders { get; private set; }
-
-    /// <summary>Header name an API key is sent under, when configured.</summary>
-    internal string? ApiKeyHeaderName { get; private set; }
-
-    /// <summary>API key value, when configured.</summary>
-    internal string? ApiKeyValue { get; private set; }
-
-    /// <summary>Bearer token value, when configured (<c>Authorization: Bearer &lt;token&gt;</c>).</summary>
-    internal string? BearerTokenValue { get; private set; }
+    private readonly MutableHttpAuth _auth = new();
 
     /// <summary>
     /// Path probed by the health check, relative to the resource URL; when unset, the resource URL
@@ -137,28 +127,21 @@ public sealed class ODataSourceOptions
     /// <summary>Adds a static request header, applied to every request.</summary>
     public ODataSourceOptions Header(string name, string value)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        ArgumentNullException.ThrowIfNull(value);
-        var headers = new Dictionary<string, string>(StaticHeaders ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
-        {
-            [name] = value
-        };
-        StaticHeaders = headers;
+        _auth.Header(name, value);
         return this;
     }
 
     /// <summary>Sends a static API key as a request header (static auth only; OAuth2 is deferred, ADR D61/D62).</summary>
     public ODataSourceOptions ApiKey(string headerName, string value)
     {
-        ApiKeyHeaderName = headerName ?? throw new ArgumentNullException(nameof(headerName));
-        ApiKeyValue = value ?? throw new ArgumentNullException(nameof(value));
+        _auth.ApiKey(headerName, value);
         return this;
     }
 
     /// <summary>Sends a static bearer token (<c>Authorization: Bearer &lt;token&gt;</c>) (static auth only; ADR D61/D62).</summary>
     public ODataSourceOptions Bearer(string token)
     {
-        BearerTokenValue = token ?? throw new ArgumentNullException(nameof(token));
+        _auth.Bearer(token);
         return this;
     }
 
@@ -170,5 +153,5 @@ public sealed class ODataSourceOptions
     }
 
     /// <summary>Projects this instance's auth-related fields into the shared, source-agnostic <see cref="HttpAuth"/> shape.</summary>
-    internal HttpAuth ToAuth() => new(StaticHeaders, ApiKeyHeaderName, ApiKeyValue, BearerTokenValue);
+    internal HttpAuth ToAuth() => _auth.ToAuth();
 }
