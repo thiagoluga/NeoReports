@@ -24,18 +24,12 @@ internal static class GraphQlErrors
             return false;
         }
 
-        var messages = new List<string>();
-        foreach (JsonElement error in errors.EnumerateArray())
-        {
-            string text = error.ValueKind == JsonValueKind.Object
+        message = string.Join("; ", errors.EnumerateArray().Select(error =>
+            error.ValueKind == JsonValueKind.Object
                 && error.TryGetProperty("message", out JsonElement messageElement)
                 && messageElement.ValueKind == JsonValueKind.String
-                    ? messageElement.GetString()!
-                    : error.GetRawText();
-            messages.Add(text);
-        }
-
-        message = string.Join("; ", messages);
+                ? messageElement.GetString()!
+                : error.GetRawText()));
         return true;
     }
 }
