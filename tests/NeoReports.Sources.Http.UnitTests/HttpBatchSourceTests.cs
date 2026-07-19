@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using NeoReports.Abstractions;
+using NeoReports.Sources.Http.Common;
 using Shouldly;
 using Xunit;
 
@@ -64,6 +65,27 @@ public sealed class HttpBatchSourceTests
 
         all.Select(i => i.Id).ShouldBe(new long[] { 1, 2, 3, 4, 5 });
         handler.Requests.Count.ShouldBe(3);
+    }
+
+    [Fact]
+    public async Task A_maliciously_configured_page_param_name_cannot_inject_an_extra_query_parameter()
+    {
+        // pageParam/pageSizeParam/etc. come from a dynamic report's author-configured properties —
+        // untrusted enough that a crafted value like "page&evil=1" must not be able to break the
+        // query string's structure and inject an unrelated parameter (security review finding).
+        HttpClient client = StubHttpMessageHandler.CreateClient(_ => JsonResponse("""{"items":[]}"""), out StubHttpMessageHandler handler);
+
+        var source = Source.Http("http://api.test/items", client)
+            .Paginate(HttpPaginationStrategy.Page)
+            .PageParams(pageParam: "page&evil=1")
+            .RecordsAt("items")
+            .As<Item>();
+
+        await CollectAsync(source, pageSize: 2);
+
+        string rawQuery = handler.Requests[0].RequestUri!.Query;
+        rawQuery.ShouldNotContain("evil=1");
+        rawQuery.ShouldContain(Uri.EscapeDataString("page&evil=1"));
     }
 
     [Fact]

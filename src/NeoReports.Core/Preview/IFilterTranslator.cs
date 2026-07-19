@@ -17,24 +17,39 @@ public interface IFilterTranslator
     string Type { get; }
 
     /// <summary>
-    /// Wraps <paramref name="sql"/> so the filters are applied server-side, and returns the bind
-    /// values for them. Values are always returned for parameter binding — never string-concatenated
-    /// into <paramref name="translatedSql"/>.
+    /// Applies the filters against the source's effective <paramref name="properties"/> bag, and
+    /// returns the property keys to overwrite to express the filtered query plus (when the source
+    /// type has a bind-parameter mechanism) the bind values for them. Values are always returned
+    /// for parameter binding — never string-concatenated into a returned property — but a
+    /// translator with no bind-parameter mechanism (e.g. an OData translator that inlines the whole
+    /// expression into a URL) always returns an empty <paramref name="parameters"/> dictionary.
     /// </summary>
-    /// <param name="sql">The keyset query to filter.</param>
+    /// <param name="properties">
+    /// The source's effective property bag (e.g. a SQL-family source's <c>"sql"</c> property) —
+    /// whatever this translator's source type needs to build a filtered variant of. A translator
+    /// that requires a specific key (e.g. <c>AdoFilterTranslator</c>'s <c>"sql"</c>) reads it from
+    /// here itself and throws <see cref="ConfigurationException"/> when it's absent.
+    /// </param>
     /// <param name="filters">The filters to apply; never empty when called.</param>
     /// <param name="schema">
     /// The report's declared output schema — lets a translator look up each filter column's
     /// declared <see cref="ColumnType"/> (e.g. to cast a bind parameter to the column's real SQL
     /// type on a dialect that doesn't implicitly convert across a comparison).
     /// </param>
-    /// <param name="translatedSql">The filtered query text.</param>
-    /// <param name="parameters">Bind values for the filter parameters referenced in <paramref name="translatedSql"/>.</param>
+    /// <param name="propertyOverrides">
+    /// The property keys to merge/overwrite into a copy of <paramref name="properties"/> to apply
+    /// the filter (e.g. <c>{["sql"] = translatedSql}</c> for the SQL family, <c>{["filter"] = ...}</c>
+    /// for OData).
+    /// </param>
+    /// <param name="parameters">
+    /// Bind values for the filter parameters referenced in <paramref name="propertyOverrides"/>;
+    /// empty when the translator has no bind-parameter mechanism.
+    /// </param>
     /// <returns><c>true</c> when the filters were translated; <c>false</c> when this source type cannot apply them.</returns>
     bool TryTranslate(
-        string sql,
+        IReadOnlyDictionary<string, object?> properties,
         IReadOnlyList<PreviewFilter> filters,
         ReportSchema schema,
-        out string translatedSql,
+        out IReadOnlyDictionary<string, object?> propertyOverrides,
         out IReadOnlyDictionary<string, object?> parameters);
 }

@@ -10,9 +10,11 @@ namespace NeoReports.Core.Preview;
 /// Runs a bounded, read-only sample of a registered report: one page, no output writing, no upload,
 /// no job record (ADR D45). Unfiltered previews reuse the exact reader machinery a real run uses
 /// (<see cref="CompiledReport.ReaderFactory"/>), so the sample matches what the report would actually
-/// write. Filtered previews are SQL-family-only (dynamic, config-registered reports whose source type
-/// has a registered <see cref="IFilterTranslator"/>) and read directly from a source built for the
-/// filtered query — typed (code-first) reports have no structured source representation to filter.
+/// write. Filtered previews only apply to dynamic (config-registered) reports whose source type has
+/// a registered <see cref="IFilterTranslator"/> (originally SQL-family-only per ADR D45; generalized
+/// off the SQL-specific <c>"sql"</c> shape by ADR D62 so a source type like OData can implement it
+/// too) and read directly from a source built for the filtered query — typed (code-first) reports
+/// have no structured source representation to filter.
 /// </summary>
 public static class ReportPreviewRunner
 {
@@ -65,10 +67,12 @@ public static class ReportPreviewRunner
             .ConfigureAwait(false);
     }
 
-    // Every filter column is interpolated directly into SQL text by IFilterTranslator implementations
-    // (there is no safe way to parametrize an identifier) — restricting it to the report's own
-    // already-declared, trusted schema columns is what keeps that safe. Without this check, an
-    // attacker-supplied Column value would flow straight into the query.
+    // Every filter column is interpolated directly into the translator's query representation by
+    // IFilterTranslator implementations — SQL text for the ADO family, a URL $filter expression for
+    // OData (ADR D62), and potentially other source-specific syntax for a future implementer — none
+    // of which has a safe way to parametrize an identifier. Restricting it to the report's own
+    // already-declared, trusted schema columns is what keeps every implementation safe. Without this
+    // check, an attacker-supplied Column value would flow straight into the query.
     private static void ValidateFilterColumns(CompiledReport report, IReadOnlyList<PreviewFilter> filters)
     {
         PreviewFilter? invalid = filters.FirstOrDefault(f => report.Schema.IndexOf(f.Column) < 0);
@@ -124,19 +128,36 @@ public static class ReportPreviewRunner
             return unfiltered with { FiltersApplied = false };
         }
 
-        if (effectiveProperties is null || !effectiveProperties.TryGetValue("sql", out var sqlValue) || sqlValue is not string sql)
-            throw new ConfigurationException($"Source for report '{report.Name}' has no 'sql' property to filter.");
+        bool translated;
+        IReadOnlyDictionary<string, object?> propertyOverrides;
+        IReadOnlyDictionary<string, object?> filterParameters;
+        try
+        {
+            translated = translator.TryTranslate(
+                effectiveProperties ?? new Dictionary<string, object?>(),
+                filters,
+                report.Schema,
+                out propertyOverrides,
+                out filterParameters);
+        }
+        catch (ConfigurationException ex)
+        {
+            // A translator's own required-property check (e.g. AdoFilterTranslator's "no 'sql'
+            // property") has no access to the report name — re-thrown here with it added back so the
+            // 400 this surfaces as (NeoReportsEndpointRouteBuilderExtensions) stays as debuggable as
+            // every other ConfigurationException in this method.
+            throw new ConfigurationException($"Source for report '{report.Name}': {ex.Message}", ex);
+        }
 
-        if (!translator.TryTranslate(sql, filters, report.Schema, out string translatedSql, out IReadOnlyDictionary<string, object?> filterParameters))
+        if (!translated)
             throw new ConfigurationException($"Filters could not be translated for source type '{effectiveType}'.");
 
         // AdoKeysetSource reads its own baked-in pageSize property, not BatchContext.PageSize, so the
         // capped preview size must be overridden here too, not just passed to ReadBatchAsync below.
-        var filteredProperties = new Dictionary<string, object?>(effectiveProperties, StringComparer.Ordinal)
-        {
-            ["sql"] = translatedSql,
-            ["pageSize"] = pageSize,
-        };
+        var filteredProperties = new Dictionary<string, object?>(effectiveProperties ?? new Dictionary<string, object?>(), StringComparer.Ordinal);
+        foreach ((string key, object? value) in propertyOverrides)
+            filteredProperties[key] = value;
+        filteredProperties["pageSize"] = pageSize;
         var filteredConfig = new SourceConfig(effectiveType, filteredProperties);
 
         IConfigSourceProvider provider = ReportConfigCompiler.ResolveSource(services, effectiveType);

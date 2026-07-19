@@ -1,7 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 
-namespace NeoReports.Sources.Http;
+namespace NeoReports.Sources.Http.Common;
 
 /// <summary>
 /// Minimal dotted-path JSON traversal (ADR D61) — no JSONPath library; the repo's established
@@ -9,7 +9,7 @@ namespace NeoReports.Sources.Http;
 /// <c>data.items</c>", "the field lives at <c>author.name</c>". Full JSONPath filter expressions
 /// are out of scope (query pushdown belongs to P5's OData/GraphQL).
 /// </summary>
-internal static class JsonRecords
+public static class JsonRecords
 {
     /// <summary>Splits a dotted path into its segments; an empty/null path yields no segments (the root).</summary>
     public static string[] SplitPath(string? path) =>
@@ -69,7 +69,7 @@ internal static class JsonRecords
 
     /// <summary>
     /// Streams the elements of the records array from a response body one at a time, so the
-    /// <see cref="HttpPaginationStrategy.None"/> strategy stays constant-memory even for a large
+    /// <c>HttpPaginationStrategy.None</c> strategy stays constant-memory even for a large
     /// single response — only ever one element's bytes are materialized. Uses a growable buffer
     /// refilled from the stream, retrying a token read when the buffer doesn't yet hold enough data
     /// (<c>isFinalBlock</c> false), since <see cref="Utf8JsonReader"/> is a ref struct and cannot

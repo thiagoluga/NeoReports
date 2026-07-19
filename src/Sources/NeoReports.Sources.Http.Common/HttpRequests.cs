@@ -1,29 +1,28 @@
 using System.Net.Http.Headers;
 
-namespace NeoReports.Sources.Http;
+namespace NeoReports.Sources.Http.Common;
 
 /// <summary>
-/// Request-building/error-handling logic shared by <see cref="HttpBatchSource{T}"/> and
-/// <see cref="HttpStreamingSource{T}"/> (ADR D61) — kept in one place to avoid duplicating it
-/// across the two strategies, the same duplication-gate discipline earlier Epic P sources followed
-/// (e.g. <c>FileSourceHealth</c>).
+/// Request-building/error-handling logic shared across the HTTP-family sources' paginated and
+/// streaming strategies (ADR D61) — kept in one place to avoid duplicating it, the same
+/// duplication-gate discipline earlier Epic P sources followed (e.g. <c>FileSourceHealth</c>).
 /// </summary>
-internal static class HttpRequests
+public static class HttpRequests
 {
     /// <summary>Applies configured static headers, API key, and bearer token to a request.</summary>
-    public static void ApplyAuth(HttpRequestMessage request, HttpSourceOptions options)
+    public static void ApplyAuth(HttpRequestMessage request, HttpAuth auth)
     {
-        if (options.StaticHeaders is not null)
+        if (auth.StaticHeaders is not null)
         {
-            foreach (KeyValuePair<string, string> header in options.StaticHeaders)
+            foreach (KeyValuePair<string, string> header in auth.StaticHeaders)
                 request.Headers.TryAddWithoutValidation(header.Key, header.Value);
         }
 
-        if (options.ApiKeyHeaderName is not null)
-            request.Headers.TryAddWithoutValidation(options.ApiKeyHeaderName, options.ApiKeyValue);
+        if (auth.ApiKeyHeaderName is not null)
+            request.Headers.TryAddWithoutValidation(auth.ApiKeyHeaderName, auth.ApiKeyValue);
 
-        if (options.BearerTokenValue is not null)
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", options.BearerTokenValue);
+        if (auth.BearerTokenValue is not null)
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth.BearerTokenValue);
     }
 
     /// <summary>

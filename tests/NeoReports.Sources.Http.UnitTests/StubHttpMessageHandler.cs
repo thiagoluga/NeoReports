@@ -1,3 +1,5 @@
+using NeoReports.Sources.Http.Common;
+
 namespace NeoReports.Sources.Http.UnitTests;
 
 /// <summary>Test double for <see cref="HttpMessageHandler"/>: answers every request from a delegate, and records requests seen.</summary>

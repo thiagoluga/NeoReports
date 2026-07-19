@@ -1,7 +1,7 @@
 using System.Text.Json;
 using NeoReports.Abstractions;
 
-namespace NeoReports.Sources.Http;
+namespace NeoReports.Sources.Http.Common;
 
 /// <summary>
 /// Materializes a positional <see cref="ReportRecord"/> from one JSON record element (ADR D61) —
@@ -10,7 +10,7 @@ namespace NeoReports.Sources.Http;
 /// "match by declared schema name" pattern <c>AdoConfigProperties.MaterializeReportRecord</c> /
 /// <c>CsvReportRecordMaterializer</c> / <c>ParquetReportRecordMaterializer</c> already established.
 /// </summary>
-internal static class HttpReportRecordMaterializer
+public static class JsonRecordMaterializer
 {
     /// <summary>Builds a <see cref="ReportRecord"/> aligned to <paramref name="schema"/> from one record element.</summary>
     /// <param name="record">The parsed JSON record.</param>

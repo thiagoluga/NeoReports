@@ -1,17 +1,17 @@
-namespace NeoReports.Sources.Http;
+namespace NeoReports.Sources.Http.Common;
 
 /// <summary>
-/// Resolves the <see cref="HttpClient"/> an HTTP source uses (ADR D61): a DI-registered instance
-/// first — the same "resolve a DI-registered client first, else self-manage" precedent
+/// Resolves the <see cref="HttpClient"/> an HTTP-family source uses (ADR D61): a DI-registered
+/// instance first — the same "resolve a DI-registered client first, else self-manage" precedent
 /// <c>FileSourceProperties</c>/<c>FileSourceHealth</c> established for <c>IAmazonS3</c> — falling
 /// back to one process-wide shared instance. No <c>Microsoft.Extensions.Http</c>/
-/// <c>IHttpClientFactory</c> dependency: the source builds absolute request URIs and applies
-/// headers per-request rather than presetting <c>BaseAddress</c>/<c>DefaultRequestHeaders</c> on the
+/// <c>IHttpClientFactory</c> dependency: sources build absolute request URIs and apply headers
+/// per-request rather than presetting <c>BaseAddress</c>/<c>DefaultRequestHeaders</c> on the
 /// client, so nothing about the client itself needs to vary per source configuration — a single
 /// shared, pooled <see cref="HttpClient"/> is exactly as safe here as the documented "share one
 /// HttpClient for the app's lifetime" alternative to the factory.
 /// </summary>
-internal static class HttpClients
+public static class HttpClients
 {
     // Cookies disabled: the default HttpClientHandler's CookieContainer is scoped to this one
     // shared instance, so without this, a Set-Cookie response from one report's source would

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using NeoReports.Abstractions;
+using NeoReports.Sources.Http.Common;
 
 namespace NeoReports.Sources.Http;
 
@@ -62,7 +63,7 @@ internal sealed class HttpBatchSource<T> : IBatchSource<T>
         // "don't forward Authorization across a different authority" rule HttpClient itself applies
         // to redirects — rather than silently leaking them to a compromised or malicious endpoint's
         // arbitrary next-page URL.
-        if (!IsSameOrigin(requestUri))
+        if (!HttpOrigin.IsSameOrigin(requestUri, new Uri(_baseUrl, UriKind.Absolute)))
         {
             throw new HttpSourceException(null, null,
                 $"The next-page URL from the response's 'Link' header ('{requestUri}') has a different " +
@@ -70,7 +71,7 @@ internal sealed class HttpBatchSource<T> : IBatchSource<T>
         }
 
         using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
-        HttpRequests.ApplyAuth(request, _options);
+        HttpRequests.ApplyAuth(request, _options.ToAuth());
 
         using HttpResponseMessage response = await _client
             .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
@@ -110,12 +111,12 @@ internal sealed class HttpBatchSource<T> : IBatchSource<T>
             case HttpPaginationStrategy.Cursor:
                 return state.Token is null
                     ? new Uri(_baseUrl)
-                    : AddQuery(_baseUrl, (_options.CursorRequestParam, state.Token));
+                    : QueryStrings.AddQuery(_baseUrl, (_options.CursorRequestParam, state.Token));
 
             case HttpPaginationStrategy.Page:
                 {
                     int page = state.Page ?? _options.StartPage;
-                    return AddQuery(
+                    return QueryStrings.AddQuery(
                         _baseUrl,
                         (_options.PageParam, page.ToString(CultureInfo.InvariantCulture)),
                         (_options.PageSizeParam, pageSize.ToString(CultureInfo.InvariantCulture)));
@@ -124,7 +125,7 @@ internal sealed class HttpBatchSource<T> : IBatchSource<T>
             case HttpPaginationStrategy.Offset:
                 {
                     int offset = state.Offset ?? 0;
-                    return AddQuery(
+                    return QueryStrings.AddQuery(
                         _baseUrl,
                         (_options.OffsetParam, offset.ToString(CultureInfo.InvariantCulture)),
                         (_options.PageSizeParam, pageSize.ToString(CultureInfo.InvariantCulture)));
@@ -133,23 +134,6 @@ internal sealed class HttpBatchSource<T> : IBatchSource<T>
             default:
                 throw new InvalidOperationException($"Unsupported pagination strategy '{_options.PaginationStrategy}'.");
         }
-    }
-
-    private bool IsSameOrigin(Uri requestUri)
-    {
-        var baseUri = new Uri(_baseUrl, UriKind.Absolute);
-        return string.Equals(requestUri.Scheme, baseUri.Scheme, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(requestUri.Host, baseUri.Host, StringComparison.OrdinalIgnoreCase)
-            && requestUri.Port == baseUri.Port;
-    }
-
-    private static Uri AddQuery(string baseUrl, params (string Key, string Value)[] queryParams)
-    {
-        var builder = new UriBuilder(baseUrl);
-        string existing = builder.Query.TrimStart('?');
-        string added = string.Join("&", queryParams.Select(p => $"{Uri.EscapeDataString(p.Key)}={Uri.EscapeDataString(p.Value)}"));
-        builder.Query = existing.Length > 0 ? $"{existing}&{added}" : added;
-        return builder.Uri;
     }
 
     private static BatchResult<T> BuildLinkHeaderResult(List<T> records, HttpResponseMessage response)

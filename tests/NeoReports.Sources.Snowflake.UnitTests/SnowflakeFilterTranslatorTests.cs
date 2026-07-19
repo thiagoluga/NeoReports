@@ -28,9 +28,11 @@ public class SnowflakeFilterTranslatorTests
     {
         var filters = new[] { new PreviewFilter("Amount", PreviewFilterOperator.GreaterThan, "2000.00") };
         var translator = new AdoFilterTranslator("snowflake", parameterPrefix: ":");
+        var properties = new Dictionary<string, object?> { ["sql"] = BaseSql };
 
-        translator.TryTranslate(BaseSql, filters, Schema, out var translatedSql, out var parameters).ShouldBeTrue();
+        translator.TryTranslate(properties, filters, Schema, out var propertyOverrides, out var parameters).ShouldBeTrue();
 
+        var translatedSql = (string)propertyOverrides["sql"]!;
         translatedSql.ShouldContain("t.Amount > :filter0");
         translatedSql.ShouldNotContain("::"); // no cast — relies on Snowflake's documented implicit conversion
         parameters["filter0"].ShouldBe("2000.00");

@@ -1,3 +1,5 @@
+using NeoReports.Sources.Http.Common;
+
 namespace NeoReports.Sources.Http;
 
 /// <summary>Pagination scheme a REST endpoint uses (ADR D61).</summary>
@@ -157,4 +159,7 @@ public sealed class HttpSourceOptions
         HealthCheckPath = path ?? throw new ArgumentNullException(nameof(path));
         return this;
     }
+
+    /// <summary>Projects this instance's auth-related fields into the shared, source-agnostic <see cref="HttpAuth"/> shape.</summary>
+    internal HttpAuth ToAuth() => new(StaticHeaders, ApiKeyHeaderName, ApiKeyValue, BearerTokenValue);
 }
