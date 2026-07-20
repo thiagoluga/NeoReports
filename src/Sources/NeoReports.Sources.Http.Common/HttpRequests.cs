@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Text.Json;
 
 namespace NeoReports.Sources.Http.Common;
 
@@ -65,5 +66,34 @@ public static class HttpRequests
             message += $" Response: {snippet}";
 
         return new HttpSourceException(response.StatusCode, retryAfter, message);
+    }
+
+    /// <summary>
+    /// Sends a <c>GET</c> request with <paramref name="auth"/> applied, throws on a non-2xx response
+    /// (<see cref="BuildExceptionAsync"/>), and returns the parsed response body (caller disposes) —
+    /// the "send, check status, parse JSON" tail shared by every GET-only HTTP-family batch source
+    /// (P7a's HubSpot/Airtable; promoted here once that tail was flagged as new-code duplication by
+    /// SonarCloud's gate, ADR D65 — the same "promote on a real, evidenced duplicate" discipline as
+    /// <c>QueryStrings</c>/<c>HttpHealthProbe</c>/<c>MutableHttpAuth</c>, just driven by tooling
+    /// rather than manual code review this time). Sources whose request needs more than <c>GET</c> +
+    /// auth (e.g. a POST body) still build their own request and only reuse the lower-level pieces.
+    /// </summary>
+    public static async Task<JsonDocument> GetJsonAsync(HttpClient client, Uri requestUri, HttpAuth auth, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+        ApplyAuth(request, auth);
+
+        using HttpResponseMessage response = await client
+            .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!response.IsSuccessStatusCode)
+            throw await BuildExceptionAsync(response, cancellationToken).ConfigureAwait(false);
+
+        Stream body = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        await using (body.ConfigureAwait(false))
+        {
+            return await JsonDocument.ParseAsync(body, cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
     }
 }

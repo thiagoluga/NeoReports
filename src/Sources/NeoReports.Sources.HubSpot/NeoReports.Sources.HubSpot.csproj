@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
+    <Description>HubSpot CRM source (private-app Bearer token, cursor pagination) for NeoReports.</Description>
+    <PackageTags>reports;reporting;source;hubspot;crm;saas;rest;api</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\NeoReports.Abstractions\NeoReports.Abstractions.csproj" />
+    <ProjectReference Include="..\..\NeoReports.Core\NeoReports.Core.csproj" />
+    <ProjectReference Include="..\NeoReports.Sources.Http.Common\NeoReports.Sources.Http.Common.csproj" />
+  </ItemGroup>
+
+</Project>
