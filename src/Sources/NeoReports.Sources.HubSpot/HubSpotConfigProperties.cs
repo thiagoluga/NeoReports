@@ -35,20 +35,7 @@ internal static class HubSpotConfigProperties
                 options.Properties(names);
         }
 
-        if (PropertyBag.TryGetObject(properties, "fieldMap", out JsonElement fieldMapElement))
-            options.FieldsFrom(PropertyBag.ToStringMap(fieldMapElement));
-
-        if (PropertyBag.TryGetObject(properties, "headers", out JsonElement headersElement))
-        {
-            foreach (KeyValuePair<string, string> header in PropertyBag.ToStringMap(headersElement))
-                options.Header(header.Key, header.Value);
-        }
-
-        if (PropertyBag.TryGetString(properties, "bearerToken", out string? bearerToken))
-            options.Bearer(bearerToken);
-
-        if (PropertyBag.TryGetString(properties, "healthCheckPath", out string? healthCheckPath))
-            options.HealthCheckAt(healthCheckPath);
+        PropertyBag.ApplyCommonFieldsAndAuth(properties, options);
 
         return options;
     }

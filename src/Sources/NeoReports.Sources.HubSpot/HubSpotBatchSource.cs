@@ -54,42 +54,28 @@ internal sealed class HubSpotBatchSource<T> : IBatchSource<T>
         HubSpotCursorState state = HubSpotPagination.Decode(context.Cursor);
         Uri requestUri = BuildRequestUri(state, context.PageSize);
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
-        HttpRequests.ApplyAuth(request, _options.ToAuth());
+        using JsonDocument document = await HttpRequests.GetJsonAsync(_client, requestUri, _options.ToAuth(), cancellationToken).ConfigureAwait(false);
 
-        using HttpResponseMessage response = await _client
-            .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (!response.IsSuccessStatusCode)
-            throw await HttpRequests.BuildExceptionAsync(response, cancellationToken).ConfigureAwait(false);
-
-        Stream body = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        await using (body.ConfigureAwait(false))
+        JsonElement root = document.RootElement;
+        JsonElement results = JsonRecords.GetArray(root, "results");
+        var records = new List<T>(context.PageSize);
+        foreach (JsonElement item in results.EnumerateArray())
         {
-            using JsonDocument document = await JsonDocument.ParseAsync(body, cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (!JsonRecords.TryGetField(item, "properties", out JsonElement envelope))
+                throw new HttpSourceException(null, null, "A result in the HubSpot response is missing 'properties'.");
 
-            JsonElement root = document.RootElement;
-            JsonElement results = JsonRecords.GetArray(root, "results");
-            var records = new List<T>(context.PageSize);
-            foreach (JsonElement item in results.EnumerateArray())
-            {
-                if (!JsonRecords.TryGetField(item, "properties", out JsonElement envelope))
-                    throw new HttpSourceException(null, null, "A result in the HubSpot response is missing 'properties'.");
-
-                records.Add(_materialize(envelope));
-            }
-
-            string? after = JsonRecords.TryGetField(root, "paging.next.after", out JsonElement afterValue)
-                && afterValue.ValueKind == JsonValueKind.String
-                && afterValue.GetString() is { Length: > 0 } text
-                    ? text
-                    : null;
-
-            bool hasMore = after is not null;
-            string? cursor = hasMore ? HubSpotPagination.Encode(new HubSpotCursorState(after)) : null;
-            return new BatchResult<T>(records, cursor, hasMore);
+            records.Add(_materialize(envelope));
         }
+
+        string? after = JsonRecords.TryGetField(root, "paging.next.after", out JsonElement afterValue)
+            && afterValue.ValueKind == JsonValueKind.String
+            && afterValue.GetString() is { Length: > 0 } text
+                ? text
+                : null;
+
+        bool hasMore = after is not null;
+        string? cursor = hasMore ? HubSpotPagination.Encode(new HubSpotCursorState(after)) : null;
+        return new BatchResult<T>(records, cursor, hasMore);
     }
 
     private Uri BuildRequestUri(HubSpotCursorState state, int pageSize)

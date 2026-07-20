@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Net;
+using NeoReports.Core.SourceRegistry;
 
 namespace NeoReports.Sources.Http.Common;
 
@@ -44,5 +46,35 @@ public static class HttpHealthProbe
 
         var baseUri = new Uri(baseUrl, UriKind.Absolute);
         return new Uri(baseUri, healthCheckPath).ToString();
+    }
+
+    /// <summary>
+    /// Runs a full <see cref="ISourceHealthCheck.CheckAsync"/> implementation: times <paramref name="probe"/>
+    /// (which reads the source's own config properties and issues the request — typically
+    /// <see cref="ProbeAsync"/> or <see cref="SendAsync"/>), and converts the outcome into a
+    /// <see cref="SourceHealthResult"/> — success/non-2xx/exception, all caught here — the "check
+    /// status, build result, catch" tail shared by every HTTP-family health check (promoted once
+    /// SonarCloud's new-code duplication gate flagged it as a real duplicate across P7a's HubSpot and
+    /// Airtable health checks, ADR D65; the same "promote on a real, evidenced duplicate" discipline
+    /// as <c>QueryStrings</c>/<c>MutableHttpAuth</c>, just tooling-driven this time). A health check
+    /// whose config-property reads should themselves count toward the caught/reported failure passes
+    /// them inside <paramref name="probe"/>, not before calling this method.
+    /// </summary>
+    public static async Task<SourceHealthResult> CheckAsync(Func<Task<HttpResponseMessage>> probe, CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            using HttpResponseMessage response = await probe().ConfigureAwait(false);
+            stopwatch.Stop();
+            return response.IsSuccessStatusCode
+                ? new SourceHealthResult(Healthy: true, Error: null, stopwatch.Elapsed)
+                : new SourceHealthResult(Healthy: false, $"HTTP {(int)response.StatusCode} ({response.StatusCode}).", stopwatch.Elapsed);
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+            return new SourceHealthResult(Healthy: false, ex.Message, stopwatch.Elapsed);
+        }
     }
 }

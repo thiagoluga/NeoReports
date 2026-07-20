@@ -85,4 +85,58 @@ public static class PropertyBag
         obj.EnumerateObject()
             .Where(property => property.Value.ValueKind == JsonValueKind.String)
             .ToDictionary(property => property.Name, property => property.Value.GetString()!, StringComparer.Ordinal);
+
+    /// <summary>
+    /// Reads and applies the <c>fieldMap</c>/<c>headers</c>/<c>bearerToken</c>/<c>healthCheckPath</c>
+    /// properties every dynamic-path HTTP-family source's fluent options class accepts identically —
+    /// promoted here once this exact block was flagged as new-code duplication by SonarCloud's gate
+    /// between P7a's HubSpot and Airtable (ADR D65; the same "promote on a real, evidenced duplicate"
+    /// discipline as <c>QueryStrings</c>/<c>MutableHttpAuth</c>, just tooling-driven this time).
+    /// Generic over <see cref="ICommonHttpOptions{TSelf}"/> rather than delegate parameters so a
+    /// call site is a single line with no per-caller boilerplate to (re-)duplicate.
+    /// </summary>
+    public static void ApplyCommonFieldsAndAuth<TOptions>(IReadOnlyDictionary<string, object?> properties, TOptions options)
+        where TOptions : ICommonHttpOptions<TOptions>
+    {
+        if (TryGetObject(properties, "fieldMap", out JsonElement fieldMapElement))
+            options.FieldsFrom(ToStringMap(fieldMapElement));
+
+        if (TryGetObject(properties, "headers", out JsonElement headersElement))
+        {
+            foreach (KeyValuePair<string, string> headerEntry in ToStringMap(headersElement))
+                options.Header(headerEntry.Key, headerEntry.Value);
+        }
+
+        if (TryGetString(properties, "bearerToken", out string? bearerToken))
+            options.Bearer(bearerToken);
+
+        if (TryGetString(properties, "healthCheckPath", out string? healthCheckPath))
+            options.HealthCheckAt(healthCheckPath);
+    }
+}
+
+/// <summary>
+/// Marks a fluent HTTP-family source options class as accepting the shared "fieldMap"/"headers"/
+/// "bearerToken"/"healthCheckPath" dynamic-path properties (ADR D65), so
+/// <see cref="PropertyBag.ApplyCommonFieldsAndAuth{TOptions}"/> can apply them generically instead of
+/// each options class's <c>ConfigProperties.ReadOptions</c> keeping its own copy of that block. The
+/// self-referencing type parameter (CRTP) is what lets the shared helper call these fluent setters
+/// without boxing or reflection — every existing HTTP-family options class's <c>FieldsFrom</c>/
+/// <c>Header</c>/<c>Bearer</c>/<c>HealthCheckAt</c> methods already have exactly this shape, so
+/// implementing it costs nothing beyond the interface declaration itself.
+/// </summary>
+/// <typeparam name="TSelf">The implementing options class itself.</typeparam>
+public interface ICommonHttpOptions<TSelf> where TSelf : ICommonHttpOptions<TSelf>
+{
+    /// <summary>Maps report columns to dotted JSON field paths (dynamic path only).</summary>
+    TSelf FieldsFrom(IReadOnlyDictionary<string, string> fieldMap);
+
+    /// <summary>Adds a static request header, applied to every request.</summary>
+    TSelf Header(string name, string value);
+
+    /// <summary>Sends a static bearer token (<c>Authorization: Bearer &lt;token&gt;</c>).</summary>
+    TSelf Bearer(string token);
+
+    /// <summary>Sets the path the health check probes, relative to the source's resolved base URL.</summary>
+    TSelf HealthCheckAt(string path);
 }

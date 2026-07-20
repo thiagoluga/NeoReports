@@ -6,9 +6,11 @@ namespace NeoReports.Sources.Airtable;
 /// Fluent, mutable options for the Airtable source (ADR D65) — mirrors the shape of
 /// <c>NeoReports.Sources.HubSpot.HubSpotSourceOptions</c>, but with no <c>properties</c>-selection
 /// knob — unlike HubSpot, Airtable's response already includes every field the record has a value
-/// for by default.
+/// for by default. Implements <see cref="ICommonHttpOptions{TSelf}"/> so
+/// <see cref="PropertyBag.ApplyCommonFieldsAndAuth{TOptions}"/> can apply the shared dynamic-path
+/// properties without <c>AirtableConfigProperties</c> keeping its own copy of that block.
 /// </summary>
-public sealed class AirtableSourceOptions
+public sealed class AirtableSourceOptions : ICommonHttpOptions<AirtableSourceOptions>
 {
     /// <summary>Airtable API host override, for the rare self-hosted-proxy/mocking case. Default <c>https://api.airtable.com/v0</c>.</summary>
     internal string BaseUrlValue { get; private set; } = "https://api.airtable.com/v0";

@@ -5,9 +5,11 @@ namespace NeoReports.Sources.HubSpot;
 /// <summary>
 /// Fluent, mutable options for the HubSpot source (ADR D65) — mirrors the shape of
 /// <c>NeoReports.Sources.OData.ODataSourceOptions</c>, but with no pagination-strategy choice
-/// (HubSpot has exactly one paging mechanism).
+/// (HubSpot has exactly one paging mechanism). Implements <see cref="ICommonHttpOptions{TSelf}"/> so
+/// <see cref="PropertyBag.ApplyCommonFieldsAndAuth{TOptions}"/> can apply the shared dynamic-path
+/// properties without <c>HubSpotConfigProperties</c> keeping its own copy of that block.
 /// </summary>
-public sealed class HubSpotSourceOptions
+public sealed class HubSpotSourceOptions : ICommonHttpOptions<HubSpotSourceOptions>
 {
     /// <summary>HubSpot API host override, for the rare self-hosted-proxy/mocking case. Default <c>https://api.hubapi.com</c>.</summary>
     internal string BaseUrlValue { get; private set; } = "https://api.hubapi.com";

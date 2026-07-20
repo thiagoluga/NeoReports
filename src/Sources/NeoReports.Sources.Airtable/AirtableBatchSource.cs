@@ -53,43 +53,29 @@ internal sealed class AirtableBatchSource<T> : IBatchSource<T>
         AirtableCursorState state = AirtablePagination.Decode(context.Cursor);
         Uri requestUri = BuildRequestUri(state, context.PageSize);
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
-        HttpRequests.ApplyAuth(request, _options.ToAuth());
+        using JsonDocument document = await HttpRequests.GetJsonAsync(_client, requestUri, _options.ToAuth(), cancellationToken).ConfigureAwait(false);
 
-        using HttpResponseMessage response = await _client
-            .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (!response.IsSuccessStatusCode)
-            throw await HttpRequests.BuildExceptionAsync(response, cancellationToken).ConfigureAwait(false);
-
-        Stream body = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        await using (body.ConfigureAwait(false))
+        JsonElement root = document.RootElement;
+        JsonElement recordsArray = JsonRecords.GetArray(root, "records");
+        var records = new List<T>(context.PageSize);
+        foreach (JsonElement item in recordsArray.EnumerateArray())
         {
-            using JsonDocument document = await JsonDocument.ParseAsync(body, cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (!JsonRecords.TryGetField(item, "fields", out JsonElement envelope))
+                throw new HttpSourceException(null, null, "A record in the Airtable response is missing 'fields'.");
 
-            JsonElement root = document.RootElement;
-            JsonElement recordsArray = JsonRecords.GetArray(root, "records");
-            var records = new List<T>(context.PageSize);
-            foreach (JsonElement item in recordsArray.EnumerateArray())
-            {
-                if (!JsonRecords.TryGetField(item, "fields", out JsonElement envelope))
-                    throw new HttpSourceException(null, null, "A record in the Airtable response is missing 'fields'.");
-
-                records.Add(_materialize(envelope));
-            }
-
-            string? offset = root.ValueKind == JsonValueKind.Object
-                && root.TryGetProperty("offset", out JsonElement offsetValue)
-                && offsetValue.ValueKind == JsonValueKind.String
-                && offsetValue.GetString() is { Length: > 0 } text
-                    ? text
-                    : null;
-
-            bool hasMore = offset is not null;
-            string? cursor = hasMore ? AirtablePagination.Encode(new AirtableCursorState(offset)) : null;
-            return new BatchResult<T>(records, cursor, hasMore);
+            records.Add(_materialize(envelope));
         }
+
+        string? offset = root.ValueKind == JsonValueKind.Object
+            && root.TryGetProperty("offset", out JsonElement offsetValue)
+            && offsetValue.ValueKind == JsonValueKind.String
+            && offsetValue.GetString() is { Length: > 0 } text
+                ? text
+                : null;
+
+        bool hasMore = offset is not null;
+        string? cursor = hasMore ? AirtablePagination.Encode(new AirtableCursorState(offset)) : null;
+        return new BatchResult<T>(records, cursor, hasMore);
     }
 
     private Uri BuildRequestUri(AirtableCursorState state, int pageSize)

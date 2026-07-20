@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using NeoReports.Core.SourceRegistry;
 using NeoReports.Sources.Http.Common;
 
@@ -17,12 +16,11 @@ public sealed class HubSpotSourceHealthCheck : ISourceHealthCheck
     public string Type => "hubspot";
 
     /// <inheritdoc />
-    public async Task<SourceHealthResult> CheckAsync(SourceDefinition definition, IServiceProvider services, CancellationToken cancellationToken)
+    public Task<SourceHealthResult> CheckAsync(SourceDefinition definition, IServiceProvider services, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(definition);
 
-        var stopwatch = Stopwatch.StartNew();
-        try
+        return HttpHealthProbe.CheckAsync(async () =>
         {
             string objectType = HubSpotConfigProperties.RequireObjectType(definition.Properties);
             HubSpotSourceOptions options = HubSpotConfigProperties.ReadOptions(definition.Properties);
@@ -34,17 +32,7 @@ public sealed class HubSpotSourceHealthCheck : ISourceHealthCheck
             // the same bug class D64 fixed for Elasticsearch).
             string targetUrl = HubSpotUrls.ObjectCollection(options.BaseUrlValue, objectType, options.HealthCheckPath);
 
-            using HttpResponseMessage response = await HttpHealthProbe.ProbeAsync(client, targetUrl, options.ToAuth(), cancellationToken).ConfigureAwait(false);
-
-            stopwatch.Stop();
-            return response.IsSuccessStatusCode
-                ? new SourceHealthResult(Healthy: true, Error: null, stopwatch.Elapsed)
-                : new SourceHealthResult(Healthy: false, $"HTTP {(int)response.StatusCode} ({response.StatusCode}).", stopwatch.Elapsed);
-        }
-        catch (Exception ex)
-        {
-            stopwatch.Stop();
-            return new SourceHealthResult(Healthy: false, ex.Message, stopwatch.Elapsed);
-        }
+            return await HttpHealthProbe.ProbeAsync(client, targetUrl, options.ToAuth(), cancellationToken).ConfigureAwait(false);
+        }, cancellationToken);
     }
 }
