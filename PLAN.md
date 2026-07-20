@@ -1098,7 +1098,7 @@ type doesn't support server-side filters" banner on a Postgres-sourced report.
   reproducing it again needs the report's actual persisted source config or the named source's
   registered type from the live session where it was seen.
 
-## Epic P — Broad source-type expansion (D55) — P1, P2, P3 (a/b/c), P4a, P5 (a/b), P6 done
+## Epic P — Broad source-type expansion (D55) — P1, P2, P3 (a/b/c), P4a, P5 (a/b), P6, P7a done
 
 Requested directly by the maintainer (2026-07-16): "possibilitar todas as fontes possíveis, menos
 Kafka." Directional design in `## D55` (`DECISIONS.md`). Every source is a new package on the
@@ -1255,4 +1255,29 @@ small design pass before code (like D43/K1). Ordered cheapest-highest-value firs
   the wildcard-escaping helper's completeness. Design in `## D64` (`DECISIONS.md`). PR
   [#193](https://github.com/thiagoluga/NeoReports/pull/193).
 - [ ] **P7 — SaaS APIs (special cases of P4, often with SDKs): Salesforce, HubSpot, Google Sheets,
-  Airtable.** Each a thin source over its API/SDK plus that provider's auth.
+  Airtable.** Each a thin source over its API/SDK plus that provider's auth. **Split into P7a (this)/
+  P7b/P7c (maintainer-anticipated pattern, mirroring D58/D61/D62)**: HubSpot and Airtable are both
+  static-Bearer-token, single-fixed-cursor-pagination REST APIs — no new auth or pagination mechanism
+  needed. Google Sheets (no server-side row pagination at all) and Salesforce (relative-URL
+  `nextRecordsUrl` pagination, real OAuth2 — ties into P4b) are materially different shapes, deferred
+  to their own design passes. Design in `## D65` (`DECISIONS.md`).
+  - [x] **P7a — HubSpot, Airtable.** `NeoReports.Sources.HubSpot` (`type: "hubspot"`) and
+    `NeoReports.Sources.Airtable` (`type: "airtable"`) — each its own small `IBatchSource<T>` built
+    directly on `NeoReports.Sources.Http.Common` (not a wrapper over the generic HTTP source — its
+    typed builder/internal `HttpBatchSource<T>` can't be reused across packages), materializing each
+    record from a nested envelope field (HubSpot's `properties`, Airtable's `fields`) rather than the
+    whole record. Deliberately not DRY'd into one shared base class for just these two consumers
+    (CLAUDE.md's "three similar files beats a premature abstraction"). Code review caught the same
+    bug in both new health checks: a configured `healthCheckPath` resolved via `HttpHealthProbe.CombineUrl`'s
+    `Uri` relative-resolution, which replaces the base URL's last path segment instead of appending
+    after it — the identical bug class already found and fixed for Elasticsearch (D64); fixed by
+    routing it through each package's own plain-concatenation URL builder instead. Security review
+    found nothing. **SonarCloud's new-code duplication gate then caught real duplication** — between
+    the two new packages, and (for two of three flagged blocks) against the already-shipped
+    Http/OData/GraphQl/Elasticsearch packages too — resolved by promoting three shared tails into
+    `Http.Common` (`HttpRequests.GetJsonAsync`, `HttpHealthProbe.CheckAsync`,
+    `PropertyBag.ApplyCommonFieldsAndAuth` + a new `ICommonHttpOptions<TSelf>` marker interface),
+    purely additive, every already-shipped package's tests re-verified green. Design in `## D65`
+    (`DECISIONS.md`). PR [#195](https://github.com/thiagoluga/NeoReports/pull/195).
+  - [ ] **P7b — Google Sheets** (its own design pass — no server-side pagination).
+  - [ ] **P7c — Salesforce** (its own design pass — relative-URL pagination + real OAuth2, ties into P4b).
