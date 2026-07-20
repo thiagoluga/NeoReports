@@ -1098,7 +1098,7 @@ type doesn't support server-side filters" banner on a Postgres-sourced report.
   reproducing it again needs the report's actual persisted source config or the named source's
   registered type from the live session where it was seen.
 
-## Epic P — Broad source-type expansion (D55) — P1, P2, P3 (a/b/c), P4a, P5 (a/b) done
+## Epic P — Broad source-type expansion (D55) — P1, P2, P3 (a/b/c), P4a, P5 (a/b), P6 done
 
 Requested directly by the maintainer (2026-07-16): "possibilitar todas as fontes possíveis, menos
 Kafka." Directional design in `## D55` (`DECISIONS.md`). Every source is a new package on the
@@ -1227,6 +1227,32 @@ small design pass before code (like D43/K1). Ordered cheapest-highest-value firs
     over-strict health check, and a `PrimitiveObjectConverter` reuse that would have silently
     reformatted date-like config variable values before sending them to the server. Design in
     `## D63` (`DECISIONS.md`). PR [#191](https://github.com/thiagoluga/NeoReports/pull/191).
-- [ ] **P6 — Search engines: Elasticsearch / OpenSearch** — `search_after`/scroll is a natural cursor.
+- [x] **P6 — Search engines: Elasticsearch / OpenSearch.** `NeoReports.Sources.Elasticsearch`
+  (`type: "elasticsearch"`, one type for both engines — wire-compatible for every endpoint this
+  source touches) — `search_after` keyset pagination, deliberately **without** Point-in-Time (PIT):
+  PIT's endpoint shape genuinely diverges between Elasticsearch (`POST /{index}/_pit`) and OpenSearch
+  (`POST /{index}/_search/point_in_time`), which would force either two code paths or a second
+  registered type; plain `search_after` is identical on both and stable since Elasticsearch 5.1 — the
+  accepted tradeoff (a documented D36 gap) is a rare consistency risk under concurrent sort-key
+  mutation, milder than the P5a `Skip` strategy's since it's forward-only keyset paging, not offset.
+  `ElasticsearchFilterTranslator : IFilterTranslator` — genuine server-side filter pushdown built as a
+  `System.Text.Json.Nodes` tree rather than string concatenation, which structurally rules out the
+  URL-encoding bug class P5a's `$filter` translator needed a review pass to fix (a value embedded as a
+  real JSON node can't "break out" of its slot the way a URL literal could). `_count`-based
+  `ISourceRowCounter`. Reuses `NeoReports.Sources.Http.Common` for the fourth time (`HttpClients`,
+  `HttpRequests`, `JsonRecords`, `JsonRecordMaterializer`, `OpaqueCursor`, `PropertyBag`,
+  `MutableHttpAuth`, `HttpHealthProbe`) — zero further extraction needed. Code review caught and fixed
+  three real bugs before merge: the cursor's `search_after` was built from any hit that happened to
+  carry `sort` rather than specifically the page's last hit (a full page whose *final* hit lacked
+  `sort` while an earlier one had it would silently resume from a stale position instead of tripping
+  the missing-sort guard — risking duplicate rows); the health check's `healthCheckPath` resolved
+  against the bare base `url` instead of the documented `{url}/{index}`; and date/time filter literals
+  were parsed in the host process's local timezone instead of UTC (Elasticsearch date fields are
+  conventionally UTC — a host-timezone-dependent parse shifted the filter boundary differently per
+  deployment). Security review found nothing: `search_after` values never leave the request body back
+  to the one fixed configured URL (no OData-`@odata.nextLink`-style cross-origin credential surface),
+  and the `JsonNode`-tree filter construction is structurally immune to query injection regardless of
+  the wildcard-escaping helper's completeness. Design in `## D64` (`DECISIONS.md`). PR
+  [#193](https://github.com/thiagoluga/NeoReports/pull/193).
 - [ ] **P7 — SaaS APIs (special cases of P4, often with SDKs): Salesforce, HubSpot, Google Sheets,
   Airtable.** Each a thin source over its API/SDK plus that provider's auth.
