@@ -1098,7 +1098,7 @@ type doesn't support server-side filters" banner on a Postgres-sourced report.
   reproducing it again needs the report's actual persisted source config or the named source's
   registered type from the live session where it was seen.
 
-## Epic P — Broad source-type expansion (D55) — P1, P2, P3a, P3b done
+## Epic P — Broad source-type expansion (D55) — P1, P2, P3 (a/b/c), P4a, P5 (a/b) done
 
 Requested directly by the maintainer (2026-07-16): "possibilitar todas as fontes possíveis, menos
 Kafka." Directional design in `## D55` (`DECISIONS.md`). Every source is a new package on the
@@ -1130,7 +1130,7 @@ small design pass before code (like D43/K1). Ordered cheapest-highest-value firs
   equivalent (paid cloud warehouses), so no test in this repo exercises a live query against either;
   coverage is config validation, DI wiring, and pure-string `AdoFilterTranslator`/`SqlDialect`
   behavior only. Design + the documented testing gap in `## D57` (`DECISIONS.md`).
-- [ ] **P3 — File sources: CSV, Excel (XLSX), Parquet** (local or S3) — symmetric to the existing
+- [x] **P3 — File sources: CSV, Excel (XLSX), Parquet** (local or S3) — symmetric to the existing
   Local/S3 destinations; stream-parsed for constant memory. A file's fixed columns allow a
   lightweight catalog but no server-side filters. **Split into P3a/P3b/P3c (maintainer decision,
   2026-07-17)** after researching XLSX surfaced a real blocker (see `## D58`): `ClosedXML` doesn't
@@ -1156,14 +1156,77 @@ small design pass before code (like D43/K1). Ordered cheapest-highest-value firs
     verified that `SpreadsheetDocument.Open` transparently buffers a non-seekable stream (e.g. an S3
     response), so no extra buffering code was needed for S3 support. No `ISchemaExplorer`/
     `IFilterTranslator` (D36 honest gap); `ISourceHealthCheck` included. Design in `## D59`.
-  - [ ] **P3c — Parquet** — needs its own design pass: evaluate `Parquet.Net` (or equivalent)
-    for genuinely constant-memory, row-group-at-a-time reads.
-- [ ] **P4 — Generic HTTP/REST source** (its own ADR first). Settle: pagination strategy
-  (cursor/`Link`/page/offset/none→stream-parse), response→rows mapping (JSON path + field map), auth
-  (`${VAR}` for API key/Bearer/OAuth), Polly + `429`/`Retry-After` handling, and the honest capability
-  gaps (no `ISchemaExplorer`, no server-side filters). MIT.
-- [ ] **P5 — HTTP with richer query semantics: OData, GraphQL.** OData can push filters server-side
-  (register an `IFilterTranslator`); GraphQL's Relay cursor pagination fits the cursor model cleanly.
+  - [x] **P3c — Parquet** (`NeoReports.Sources.Parquet`, `type: "parquet"`, local or S3 in one
+    package). Reads via `Parquet.Net` 6.0.3 one **row group** at a time — the finest granularity the
+    columnar format exposes, and the honest reading of rule 8's constant memory (bounded by a row
+    group, not the whole file; per-row streaming was deliberately removed from `Parquet.Net` because
+    Parquet is not row-oriented). Typed path lets `ParquetSerializer.DeserializeAsync<T>` do the
+    object mapping — so, unlike CSV/XLSX, no hand-rolled `ReflectedRowShape<T>` materializer — at the
+    cost of a `where T : class, new()` constraint (a settable-property class or `init`-only record,
+    not a positional record — the one real capability asymmetry, documented). Dynamic path reads
+    untyped (`DeserializeUntypedAsync`, column-name-keyed dictionaries; a null cell is an omitted key,
+    verified empirically) and materializes `ReportRecord`s by declared-schema name. The one genuinely
+    new problem vs XLSX: `Parquet.Net`'s reader throws on a non-seekable stream (the footer is read by
+    seeking), the mirror image of OpenXml's transparent buffering — solved by a new shared
+    `NeoReports.Sources.Files.Common.SeekableStream` helper that copies an S3 body to a
+    `DeleteOnClose` temp file. No `ISchemaExplorer`/`IFilterTranslator` (D36 honest gap);
+    `ISourceHealthCheck` included. Design in `## D60`.
+- [x] **P4 — Generic HTTP/REST source.** `NeoReports.Sources.Http` (`type: "http"`, MIT) — typed
+  (`Source.Http(url).As<T>()`) and dynamic paths over `IBatchSource<T>`. **Split into P4a/P4b**
+  (maintainer-anticipated in the ADR, mirroring D58's CSV/XLSX/Parquet split): P4a ships now; P4b
+  (OAuth2 client-credentials) deferred to its own design pass — a stateful token-cache/refresh
+  concern materially bigger than the rest of P4.
+  - [x] **P4a — pagination, mapping, static auth, resilience.** Four paginated cursor strategies
+    (continuation token, RFC 5988/8288 `Link` header, page number, offset) as `IBatchSource<T>`
+    (chosen over the file family's `IStreamingSource<T>` specifically so a failed page retries in
+    isolation, idempotently, from its own cursor) plus a constant-memory `Utf8JsonReader`-streamed
+    path for single-response APIs with no pagination at all. Response→rows: hand-rolled dotted-path
+    JSON traversal (no JSONPath dependency, D58's precedent). Auth: static API-key header / Bearer
+    token via `${VAR}`. Resilience: a new, small, additive Core hook (`IRetryDelayHint`) lets a
+    thrown exception suggest its own retry delay — honors an HTTP `Retry-After` through the
+    *existing* batch-level Polly pipeline instead of a second mechanism, clamped to a 5-minute
+    ceiling given the single-worker architecture. Honest capability gaps: no `ISchemaExplorer`, no
+    `IFilterTranslator`, no `ISourceRowCounter` (most REST APIs don't return a total). A security
+    review of the `Link`-header strategy found the next-page URL (taken verbatim from the response)
+    could carry the configured credentials to a different host if the endpoint were compromised or
+    tampered with in transit; fixed to refuse cross-origin credential replay, mirroring
+    `HttpClient`'s own redirect behavior. Design in `## D61` (`DECISIONS.md`). PR
+    [#187](https://github.com/thiagoluga/NeoReports/pull/187).
+  - [ ] **P4b — OAuth2 client-credentials auth** (its own design pass).
+- [x] **P5 — HTTP with richer query semantics: OData, GraphQL.** **Split into P5a/P5b (maintainer-
+  anticipated pattern, mirroring D58/D61)**: OData has a real query protocol (server-side `$filter`
+  pushdown, `$count`) — a materially different contract surface (touches the shared `IFilterTranslator`
+  seam) from GraphQL's honest-gap-only shape (no universal filter language). Design in `## D62`
+  (`DECISIONS.md`).
+  - [x] **P5a — OData.** `NeoReports.Sources.OData` (`type: "odata"`) — `@odata.nextLink`/`$skip`
+    pagination, `ODataFilterTranslator : IFilterTranslator` (the first non-SQL Epic-P source to push
+    filters server-side; required generalizing `IFilterTranslator` off `"sql"` — see D62), `$count`-based
+    `ISourceRowCounter` (first non-SQL row counter in the epic). Extracted `NeoReports.Sources.Http.Common`
+    from the shipped `NeoReports.Sources.Http` (P4a) for shared plumbing, mirroring D59's
+    `Files.Common` extraction — also promoted the shared `QueryStrings.AddQuery`/`HttpHealthProbe`
+    helpers there during code review once both packages turned out to need them byte-for-byte
+    identically. Code review caught and fixed three real correctness bugs before merge: OData system
+    query-option names (`$filter` etc.) were being percent-encoded (`%24filter`, breaking real
+    servers), `Uuid` filter literals were quoted like strings instead of OData v4's unquoted
+    `Edm.Guid` form, and a `Decimal`/`Money` filter value with a thousands separator leaked an invalid
+    comma into the generated `$filter`. Security review caught a follow-on regression in the
+    query-encoding fix (the corrected `AddQuery` had stopped escaping query-parameter *keys* entirely,
+    which — for the HTTP family's author-configurable `pageParam`/`cursorRequestParam` — could let a
+    crafted config value inject an extra query parameter) — fixed to escape every key character except
+    a literal `$` (the one character OData's fixed system-option names need preserved). Design +
+    the `IFilterTranslator` seam change in `## D62`. PR [#189](https://github.com/thiagoluga/NeoReports/pull/189).
+  - [x] **P5b — GraphQL.** `NeoReports.Sources.GraphQl` (`type: "graphql"`) — Relay cursor connections
+    (`edges`/`node`/`pageInfo`) as the pagination model; no `IFilterTranslator`/`ISchemaExplorer`/
+    `ISourceRowCounter` (no universal GraphQL filter/catalog/count protocol — honest D36 gap). `POST`
+    transport with a `200`-with-`errors` response treated as a failure (checked before `data` is
+    read, `Retry-After` still honored on that path). Promoted `MutableHttpAuth` into `Http.Common`
+    (the auth-field bookkeeping every HTTP-family source's options class had independently
+    duplicated — now shared across Http/OData/GraphQL) and generalized `HttpHealthProbe.SendAsync`
+    with an optional body. Code review caught and fixed a real infinite-loop risk
+    (`hasNextPage:true` with no `endCursor`), a dropped `Retry-After` on the errors-on-200 path, an
+    over-strict health check, and a `PrimitiveObjectConverter` reuse that would have silently
+    reformatted date-like config variable values before sending them to the server. Design in
+    `## D63` (`DECISIONS.md`). PR [#191](https://github.com/thiagoluga/NeoReports/pull/191).
 - [ ] **P6 — Search engines: Elasticsearch / OpenSearch** — `search_after`/scroll is a natural cursor.
 - [ ] **P7 — SaaS APIs (special cases of P4, often with SDKs): Salesforce, HubSpot, Google Sheets,
   Airtable.** Each a thin source over its API/SDK plus that provider's auth.

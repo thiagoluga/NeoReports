@@ -43,8 +43,9 @@ public sealed class MySqlFilterTranslatorIntegrationTests : IClassFixture<MySqlS
         Skip.IfNot(_fixture.Available, "Docker/MySQL container not available.");
 
         var filters = new[] { new PreviewFilter("Amount", PreviewFilterOperator.GreaterThan, "2000.00") };
-        new AdoFilterTranslator("mysql").TryTranslate(BaseSql, filters, Schema, out var translatedSql, out var filterParameters)
+        new AdoFilterTranslator("mysql").TryTranslate(new Dictionary<string, object?> { ["sql"] = BaseSql }, filters, Schema, out var propertyOverrides, out var filterParameters)
             .ShouldBeTrue();
+        var translatedSql = (string)propertyOverrides["sql"]!;
 
         BatchResult<ReportRecord> result = await ReadFilteredAsync(translatedSql, filterParameters, pageSize: 2500);
 
@@ -58,8 +59,9 @@ public sealed class MySqlFilterTranslatorIntegrationTests : IClassFixture<MySqlS
         Skip.IfNot(_fixture.Available, "Docker/MySQL container not available.");
 
         var filters = new[] { new PreviewFilter("Date", PreviewFilterOperator.Equals, "2026-01-01T00:00:00") };
-        new AdoFilterTranslator("mysql").TryTranslate(BaseSql, filters, Schema, out var translatedSql, out var filterParameters)
+        new AdoFilterTranslator("mysql").TryTranslate(new Dictionary<string, object?> { ["sql"] = BaseSql }, filters, Schema, out var propertyOverrides, out var filterParameters)
             .ShouldBeTrue();
+        var translatedSql = (string)propertyOverrides["sql"]!;
 
         BatchResult<ReportRecord> result = await ReadFilteredAsync(translatedSql, filterParameters, pageSize: 10);
 

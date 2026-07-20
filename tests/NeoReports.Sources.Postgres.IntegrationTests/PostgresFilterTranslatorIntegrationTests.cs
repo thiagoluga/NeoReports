@@ -50,8 +50,9 @@ public sealed class PostgresFilterTranslatorIntegrationTests : IClassFixture<Pos
         // UI's plain text input, whatever the target column's real type. Seeded amounts top out
         // around 3750.00 (id * 1.5, id up to 2500), so this leaves a sizable matching subset.
         var filters = new[] { new PreviewFilter("Amount", PreviewFilterOperator.GreaterThan, "2000.00") };
-        PostgresTranslator().TryTranslate(BaseSql, filters, Schema, out var translatedSql, out var filterParameters)
+        PostgresTranslator().TryTranslate(new Dictionary<string, object?> { ["sql"] = BaseSql }, filters, Schema, out var propertyOverrides, out var filterParameters)
             .ShouldBeTrue();
+        var translatedSql = (string)propertyOverrides["sql"]!;
 
         BatchResult<ReportRecord> result = await ReadFilteredAsync(translatedSql, filterParameters, pageSize: 2500);
 
@@ -65,8 +66,9 @@ public sealed class PostgresFilterTranslatorIntegrationTests : IClassFixture<Pos
         Skip.IfNot(_fixture.Available, "Docker/PostgreSQL container not available.");
 
         var filters = new[] { new PreviewFilter("Date", PreviewFilterOperator.Equals, "2026-01-01T00:00:00") };
-        PostgresTranslator().TryTranslate(BaseSql, filters, Schema, out var translatedSql, out var filterParameters)
+        PostgresTranslator().TryTranslate(new Dictionary<string, object?> { ["sql"] = BaseSql }, filters, Schema, out var propertyOverrides, out var filterParameters)
             .ShouldBeTrue();
+        var translatedSql = (string)propertyOverrides["sql"]!;
 
         BatchResult<ReportRecord> result = await ReadFilteredAsync(translatedSql, filterParameters, pageSize: 10);
 
@@ -80,8 +82,9 @@ public sealed class PostgresFilterTranslatorIntegrationTests : IClassFixture<Pos
         Skip.IfNot(_fixture.Available, "Docker/PostgreSQL container not available.");
 
         var filters = new[] { new PreviewFilter("Customer", PreviewFilterOperator.Equals, "C1") };
-        PostgresTranslator().TryTranslate(BaseSql, filters, Schema, out var translatedSql, out var filterParameters)
+        PostgresTranslator().TryTranslate(new Dictionary<string, object?> { ["sql"] = BaseSql }, filters, Schema, out var propertyOverrides, out var filterParameters)
             .ShouldBeTrue();
+        var translatedSql = (string)propertyOverrides["sql"]!;
 
         BatchResult<ReportRecord> result = await ReadFilteredAsync(translatedSql, filterParameters, pageSize: 10);
 
