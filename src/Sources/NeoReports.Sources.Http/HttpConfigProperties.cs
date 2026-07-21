@@ -69,24 +69,30 @@ internal static class HttpConfigProperties
         if (PropertyBag.TryGetString(properties, "bearerToken", out string? bearerToken))
             options.Bearer(bearerToken);
 
-        bool hasOAuth2TokenEndpoint = PropertyBag.TryGetString(properties, "oauth2TokenEndpoint", out string? oauth2TokenEndpoint);
-        bool hasOAuth2ClientId = PropertyBag.TryGetString(properties, "oauth2ClientId", out string? oauth2ClientId);
-        bool hasOAuth2ClientSecret = PropertyBag.TryGetString(properties, "oauth2ClientSecret", out string? oauth2ClientSecret);
-        if (hasOAuth2TokenEndpoint || hasOAuth2ClientId || hasOAuth2ClientSecret)
-        {
-            if (!(hasOAuth2TokenEndpoint && hasOAuth2ClientId && hasOAuth2ClientSecret))
-            {
-                throw new ConfigurationException(
-                    "The HTTP source's OAuth2 client-credentials properties ('oauth2TokenEndpoint', 'oauth2ClientId', 'oauth2ClientSecret') must all be configured together.");
-            }
-
-            string? oauth2Scope = PropertyBag.TryGetString(properties, "oauth2Scope", out string? scope) ? scope : null;
-            options.OAuth2ClientCredentials(oauth2TokenEndpoint!, oauth2ClientId!, oauth2ClientSecret!, oauth2Scope);
-        }
+        ReadOAuth2ClientCredentials(properties, options);
 
         if (PropertyBag.TryGetString(properties, "healthCheckPath", out string? healthCheckPath))
             options.HealthCheckAt(healthCheckPath);
 
         return options;
+    }
+
+    /// <summary>Reads the OAuth2 client-credentials properties (P4b, ADR D68), when any are configured; the token endpoint, client id, and client secret are required together.</summary>
+    private static void ReadOAuth2ClientCredentials(IReadOnlyDictionary<string, object?> properties, HttpSourceOptions options)
+    {
+        bool hasTokenEndpoint = PropertyBag.TryGetString(properties, "oauth2TokenEndpoint", out string? tokenEndpoint);
+        bool hasClientId = PropertyBag.TryGetString(properties, "oauth2ClientId", out string? clientId);
+        bool hasClientSecret = PropertyBag.TryGetString(properties, "oauth2ClientSecret", out string? clientSecret);
+        if (!hasTokenEndpoint && !hasClientId && !hasClientSecret)
+            return;
+
+        if (!hasTokenEndpoint || !hasClientId || !hasClientSecret)
+        {
+            throw new ConfigurationException(
+                "The HTTP source's OAuth2 client-credentials properties ('oauth2TokenEndpoint', 'oauth2ClientId', 'oauth2ClientSecret') must all be configured together.");
+        }
+
+        string? scope = PropertyBag.TryGetString(properties, "oauth2Scope", out string? scopeValue) ? scopeValue : null;
+        options.OAuth2ClientCredentials(tokenEndpoint!, clientId!, clientSecret!, scope);
     }
 }

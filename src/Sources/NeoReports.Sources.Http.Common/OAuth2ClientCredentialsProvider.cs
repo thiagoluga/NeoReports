@@ -115,7 +115,7 @@ public sealed class OAuth2ClientCredentialsProvider
                 : DefaultExpirySeconds;
 
             string token = tokenElement.GetString()!;
-            var expiresAt = DateTimeOffset.UtcNow.AddSeconds(Math.Max(expiresIn - ExpiryBufferSeconds, 0));
+            DateTimeOffset expiresAt = DateTimeOffset.UtcNow.AddSeconds(Math.Max(expiresIn - ExpiryBufferSeconds, 0));
             Volatile.Write(ref _cached, new CachedToken(token, expiresAt));
             return token;
         }
