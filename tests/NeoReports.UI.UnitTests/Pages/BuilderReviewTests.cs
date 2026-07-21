@@ -23,7 +23,7 @@ public sealed class BuilderReviewTests : NeoReportsTestContext
         Wizard.SqlQuery = "SELECT Id FROM Sales";
 
         var cut = RenderReview();
-        cut.FindAll(".edit-link").First().Click();
+        cut.FindAll(".edit-link")[0].Click();
 
         Services.GetRequiredService<NavigationManager>().Uri.ShouldEndWith("builder?resume=true");
 
