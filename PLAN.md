@@ -1098,7 +1098,7 @@ type doesn't support server-side filters" banner on a Postgres-sourced report.
   reproducing it again needs the report's actual persisted source config or the named source's
   registered type from the live session where it was seen.
 
-## Epic P — Broad source-type expansion (D55) — P1, P2, P3 (a/b/c), P4a, P5 (a/b), P6, P7 (a/b/c) done — P4b remains
+## Epic P — Broad source-type expansion (D55) — P1, P2, P3 (a/b/c), P4 (a/b), P5 (a/b), P6, P7 (a/b/c) — ALL DONE
 
 Requested directly by the maintainer (2026-07-16): "possibilitar todas as fontes possíveis, menos
 Kafka." Directional design in `## D55` (`DECISIONS.md`). Every source is a new package on the
@@ -1192,7 +1192,23 @@ small design pass before code (like D43/K1). Ordered cheapest-highest-value firs
     tampered with in transit; fixed to refuse cross-origin credential replay, mirroring
     `HttpClient`'s own redirect behavior. Design in `## D61` (`DECISIONS.md`). PR
     [#187](https://github.com/thiagoluga/NeoReports/pull/187).
-  - [ ] **P4b — OAuth2 client-credentials auth** (its own design pass).
+  - [x] **P4b — OAuth2 client-credentials auth.** `OAuth2ClientCredentialsProvider` (new, `Http.Common`,
+    source-agnostic) — RFC 6749 §4.4 grant, `client_secret_basic` client auth, caches the fetched token
+    with a 30-second expiry buffer (3600s default when `expires_in` is absent), `SemaphoreSlim`-guarded
+    refresh. The token is resolved to a plain string *before* building the existing, still-synchronous
+    `HttpAuth` snapshot (a new `HttpOAuth2.ResolveAuthAsync` helper in `NeoReports.Sources.Http`) — no
+    breaking change to `HttpAuth`/`ApplyAuth` or any of the 7 already-shipped HTTP-family sources,
+    verified via all 251 tests across every sibling package passing unmodified. Typed
+    (`.OAuth2ClientCredentials(...)`, mutually exclusive with `.Bearer(...)`) and dynamic-config paths
+    both supported. Deliberately scoped to the generic HTTP source only — each sibling source's own ADR
+    already made a considered, provider-specific auth call; adopting OAuth2 elsewhere is a separate
+    future decision. Code review caught 3 real issues, all fixed: a dynamic-config path that silently
+    produced no auth when only some of the 3 required OAuth2 properties were configured (now throws);
+    a hand-rolled non-2xx exception that skipped the shared response-body-snippet diagnostics (now
+    reuses `HttpRequests.BuildExceptionAsync`); and a torn-read risk in the token cache under
+    concurrent callers (fixed by bundling token+expiry into one immutable record swapped via
+    `Volatile.Read`/`Write`). Design in `## D68` (`DECISIONS.md`). PR
+    [#201](https://github.com/thiagoluga/NeoReports/pull/201). **Epic P (P1–P7) is now fully complete.**
 - [x] **P5 — HTTP with richer query semantics: OData, GraphQL.** **Split into P5a/P5b (maintainer-
   anticipated pattern, mirroring D58/D61)**: OData has a real query protocol (server-side `$filter`
   pushdown, `$count`) — a materially different contract surface (touches the shared `IFilterTranslator`
