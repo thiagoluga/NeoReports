@@ -1270,7 +1270,7 @@ small design pass before code (like D43/K1). Ordered cheapest-highest-value firs
   and the `JsonNode`-tree filter construction is structurally immune to query injection regardless of
   the wildcard-escaping helper's completeness. Design in `## D64` (`DECISIONS.md`). PR
   [#193](https://github.com/thiagoluga/NeoReports/pull/193).
-- [ ] **P7 — SaaS APIs (special cases of P4, often with SDKs): Salesforce, HubSpot, Google Sheets,
+- [x] **P7 — SaaS APIs (special cases of P4, often with SDKs): Salesforce, HubSpot, Google Sheets,
   Airtable.** Each a thin source over its API/SDK plus that provider's auth. **Split into P7a (this)/
   P7b/P7c (maintainer-anticipated pattern, mirroring D58/D61/D62)**: HubSpot and Airtable are both
   static-Bearer-token, single-fixed-cursor-pagination REST APIs — no new auth or pagination mechanism
