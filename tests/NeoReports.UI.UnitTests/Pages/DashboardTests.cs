@@ -1,4 +1,5 @@
 using Bunit;
+using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
 using NeoReports.UI.Pages;
 using NeoReports.UI.Services;
@@ -9,6 +10,17 @@ namespace NeoReports.UI.UnitTests.Pages;
 
 public sealed class DashboardTests : NeoReportsTestContext
 {
+    [Fact]
+    public void New_report_navigates_to_the_builder()
+    {
+        Api.Jobs = (_, _, _, _, _) => Task.FromResult<IReadOnlyList<ApiJobView>?>(Array.Empty<ApiJobView>());
+
+        var cut = Render<Dashboard>();
+        cut.FindAll("button").First(b => b.TextContent.Contains("New report")).Click();
+
+        Services.GetRequiredService<NavigationManager>().Uri.ShouldEndWith("builder");
+    }
+
     [Fact]
     public void Engine_unreachable_shows_unreachable_states_and_hides_the_sources_card()
     {

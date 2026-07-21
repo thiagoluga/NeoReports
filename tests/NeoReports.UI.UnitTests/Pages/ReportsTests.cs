@@ -34,6 +34,30 @@ public sealed class ReportsTests : NeoReportsTestContext
     }
 
     [Fact]
+    public void Header_new_report_button_navigates_to_the_builder()
+    {
+        Api.Reports = _ => Task.FromResult<IReadOnlyList<ApiReportSummary>?>([Report("clientsVip")]);
+        Api.Jobs = (_, _, _, _, _) => Task.FromResult<IReadOnlyList<ApiJobView>?>(Array.Empty<ApiJobView>());
+
+        var cut = Render<Reports>();
+        cut.FindAll("button").First(b => b.TextContent.Contains("New report")).Click();
+
+        Services.GetRequiredService<NavigationManager>().Uri.ShouldEndWith("builder");
+    }
+
+    [Fact]
+    public void Empty_state_new_report_button_navigates_to_the_builder()
+    {
+        Api.Reports = _ => Task.FromResult<IReadOnlyList<ApiReportSummary>?>(Array.Empty<ApiReportSummary>());
+        Api.Jobs = (_, _, _, _, _) => Task.FromResult<IReadOnlyList<ApiJobView>?>(Array.Empty<ApiJobView>());
+
+        var cut = Render<Reports>();
+        cut.FindAll("button").Last(b => b.TextContent.Contains("New report")).Click();
+
+        Services.GetRequiredService<NavigationManager>().Uri.ShouldEndWith("builder");
+    }
+
+    [Fact]
     public void Search_filters_reports_by_name_case_insensitively()
     {
         Api.Reports = _ => Task.FromResult<IReadOnlyList<ApiReportSummary>?>([Report("clientsVip"), Report("salesDaily")]);

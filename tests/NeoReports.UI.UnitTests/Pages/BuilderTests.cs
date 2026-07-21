@@ -87,6 +87,62 @@ public sealed class BuilderTests : NeoReportsTestContext
     }
 
     [Fact]
+    public void Navigating_to_builder_with_no_query_param_resets_the_wizard()
+    {
+        // Simulates any external "start fresh" entry point (New report, the Topbar's persistent
+        // Builder link, etc.) — resetting is the default so a future entry point that forgets any
+        // special convention still gets safe (blank-wizard) behavior instead of silently reusing a
+        // previous report's fields.
+        SetupEngineAvailable(["sql"]);
+        Render<Builder>();
+        Wizard.SqlQuery = "SELECT Id FROM Sales";
+        Wizard.ReportName = "leftover-report";
+
+        Render<Builder>();
+
+        Wizard.SqlQuery.ShouldBe("");
+        Wizard.ReportName.ShouldBe("");
+    }
+
+    [Fact]
+    public void Navigating_to_builder_with_resume_true_preserves_wizard_state()
+    {
+        // Simulates clicking "Back"/"Change"/an "edit" link from a later wizard step — the real
+        // Blazor router constructs a fresh Builder instance on every route change, and only those
+        // 3 internal links pass ?resume=true.
+        SetupEngineAvailable(["sql"]);
+        Render<Builder>();
+        Wizard.SqlQuery = "SELECT Id FROM Sales";
+        Wizard.ReportName = "in-progress-report";
+
+        var nav = Services.GetRequiredService<NavigationManager>();
+        nav.NavigateTo(nav.GetUriWithQueryParameter("resume", true));
+        Render<Builder>();
+
+        Wizard.SqlQuery.ShouldBe("SELECT Id FROM Sales");
+        Wizard.ReportName.ShouldBe("in-progress-report");
+    }
+
+    [Fact]
+    public void Edit_mode_takes_priority_over_a_stray_resume_true_query_param()
+    {
+        var detail = new ApiReportDetail(
+            Name: "clientsVip", Columns: [], PageSize: 500, Formats: ["csv"], Destinations: ["local"],
+            FailureStrategy: "abort", RetryMaxAttempts: 1, RetryBackoff: "Constant", RetryBaseDelaySeconds: 1,
+            RetryUseJitter: false, Origin: "config", Deletable: true);
+        Api.ReportDetail = (_, _) => Task.FromResult<ApiReportDetail?>(detail);
+        SetupEngineAvailable(["sql"]);
+        var nav = Services.GetRequiredService<NavigationManager>();
+        nav.NavigateTo(nav.GetUriWithQueryParameter("edit", "clientsVip"));
+        nav.NavigateTo(nav.GetUriWithQueryParameter("resume", true));
+
+        Render<Builder>();
+
+        Wizard.IsEditing.ShouldBeTrue();
+        Wizard.ReportName.ShouldBe("clientsVip");
+    }
+
+    [Fact]
     public void Switching_the_inline_source_type_clears_stale_generic_property_rows()
     {
         SetupEngineAvailable(["http", "elasticsearch"]);
@@ -103,10 +159,6 @@ public sealed class BuilderTests : NeoReportsTestContext
     [Fact]
     public void Re_selecting_the_same_inline_source_type_keeps_its_property_rows()
     {
-        // Wizard.SourceProperties is set AFTER Render, not before — Builder.OnInitializedAsync
-        // unconditionally calls Wizard.Reset() outside edit mode (a pre-existing, separately
-        // noteworthy behavior — see the spawned follow-up task), so anything set before Render on
-        // this route would just be wiped by that Reset() and never reach the assertion below.
         SetupEngineAvailable(["http"]);
         var cut = Render<Builder>();
         Wizard.SourceType = "http";

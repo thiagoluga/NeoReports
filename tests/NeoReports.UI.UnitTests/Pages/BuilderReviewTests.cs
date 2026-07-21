@@ -17,6 +17,21 @@ public sealed class BuilderReviewTests : NeoReportsTestContext
     }
 
     [Fact]
+    public void Source_edit_link_passes_resume_true_so_step_1_keeps_the_wizard_state()
+    {
+        Wizard.SourceType = "sql";
+        Wizard.SqlQuery = "SELECT Id FROM Sales";
+
+        var cut = RenderReview();
+        cut.FindAll(".edit-link")[0].Click();
+
+        Services.GetRequiredService<NavigationManager>().Uri.ShouldEndWith("builder?resume=true");
+
+        Render<Builder>();
+        Wizard.SqlQuery.ShouldBe("SELECT Id FROM Sales");
+    }
+
+    [Fact]
     public void Creating_a_new_report_navigates_to_its_detail_page_on_success()
     {
         Wizard.ReportName = "clientsVip";

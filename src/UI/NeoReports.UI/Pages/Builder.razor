@@ -88,19 +88,28 @@
 
     /// <summary>
     /// Set by ReportDetail's "Edit" button (<c>?edit=name</c>) — hydrates the wizard from that
-    /// report instead of starting blank. Found missing entirely during a 2026-07 UI audit: the
-    /// Scoped <see cref="BuilderState"/> was never reset between visits, so "New report" after
-    /// saving one report silently reused its leftover fields.
+    /// report instead of starting blank.
     /// </summary>
     [Parameter]
     [SupplyParameterFromQuery(Name = "edit")]
     public string? EditName { get; set; }
 
+    /// <summary>
+    /// Set only by the wizard's own internal "Back"/"Change"/"edit" links that return to step 1
+    /// (<c>?resume=true</c>) — every other route to <c>/builder</c> discards the Scoped
+    /// <see cref="BuilderState"/> by default. Defaulting to reset (D69, DECISIONS.md) keeps a
+    /// forgotten-on-a-new-entry-point mistake safe (a blank wizard) rather than dangerous
+    /// (silently reusing a previous report's fields).
+    /// </summary>
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "resume")]
+    public bool IsResuming { get; set; }
+
     protected override async Task OnInitializedAsync()
     {
         if (!string.IsNullOrWhiteSpace(EditName))
             await LoadForEditAsync(EditName);
-        else
+        else if (!IsResuming)
             Wizard.Reset();
 
         ApiCapabilities? capabilities = await Api.TryGetCapabilitiesAsync();
