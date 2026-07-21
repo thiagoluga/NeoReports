@@ -30,7 +30,7 @@
                 <div class="r-meta">@(string.IsNullOrWhiteSpace(Wizard.ConnectionStringVariable) ? "no connection string variable set" : $"${{{Wizard.ConnectionStringVariable}}}")</div>
             }
         </div>
-        <button class="btn link" @onclick="@(() => Nav.NavigateTo("builder"))">Change →</button>
+        <button class="btn link" @onclick="@(() => Nav.NavigateTo("builder?resume=true"))">Change →</button>
     </div>
 
     @* Engine configuration — the fields that actually build the ReportConfig sent to the
@@ -160,7 +160,7 @@
     </Card>
 
     <div class="wizard-footer">
-        <Button Variant="outline" Icon="arrow-left" OnClick="@(() => Nav.NavigateTo("builder"))">Back</Button>
+        <Button Variant="outline" Icon="arrow-left" OnClick="@(() => Nav.NavigateTo("builder?resume=true"))">Back</Button>
         <Button Variant="primary" IconRight="arrow-right" OnClick="@(() => Nav.NavigateTo("builder/format"))">Continue</Button>
     </div>
 </div>

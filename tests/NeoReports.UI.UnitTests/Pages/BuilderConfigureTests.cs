@@ -190,6 +190,24 @@ public sealed class BuilderConfigureTests : NeoReportsTestContext
         nav.Uri.ShouldEndWith("builder/format");
 
         cut.FindAll("button").First(b => b.TextContent.Contains("Back")).Click();
-        nav.Uri.ShouldEndWith("builder");
+        nav.Uri.ShouldEndWith("builder?resume=true");
+    }
+
+    [Fact]
+    public void Back_passes_resume_true_so_a_fresh_Builder_instance_keeps_the_wizard_state()
+    {
+        // Proves the actual round trip, not just the navigation target: a real "Back" click
+        // followed by a fresh Builder render (what Blazor's router does on every route change)
+        // must NOT wipe what was already entered here.
+        Wizard.SqlQuery = "SELECT Id FROM Sales";
+        Wizard.ReportName = "in-progress-report";
+
+        var cut = Render<BuilderConfigure>();
+        cut.FindAll("button").First(b => b.TextContent.Contains("Back")).Click();
+
+        Render<Builder>();
+
+        Wizard.SqlQuery.ShouldBe("SELECT Id FROM Sales");
+        Wizard.ReportName.ShouldBe("in-progress-report");
     }
 }
