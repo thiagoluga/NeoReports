@@ -1,0 +1,28 @@
+@* PropertyListEditor — editable key/value rows for a source's dynamic-config property bag (ADR
+   D42). Shared between SourcesList.razor's "Registered sources" form and BuilderConfigure.razor's
+   generic (non-ADO) source properties editor — extracted once the same foreach+add-button block
+   started appearing in both places.
+   Usage: <PropertyListEditor Rows="_formProperties" KeyPlaceholder="connectionString" ValuePlaceholder="${SALES_DB}" /> *@
+
+@foreach (var row in Rows)
+{
+    <div @key="row" style="display:flex;gap:8px;align-items:center;margin-top:6px">
+        <span class="input mono" style="flex:1"><input class="mono" @bind="row.Key" @bind:event="oninput" placeholder="@KeyPlaceholder" /></span>
+        <span class="input mono" style="flex:2"><input class="mono" @bind="row.Value" @bind:event="oninput" placeholder="@ValuePlaceholder" /></span>
+        <button class="btn icon-only outline" @onclick="@(() => Rows.Remove(row))"><i class="ti ti-trash"></i></button>
+    </div>
+}
+<div style="margin-top:6px">
+    <Button Variant="outline" Size="sm" Icon="plus" OnClick="@(() => Rows.Add(new PropertyRow()))">Add property</Button>
+</div>
+
+@code {
+    /// <summary>The rows to edit — mutated in place by this component (a reference type list, no two-way binding needed).</summary>
+    [Parameter, EditorRequired] public List<PropertyRow> Rows { get; set; } = new();
+
+    /// <summary>Placeholder shown in the empty key input.</summary>
+    [Parameter] public string KeyPlaceholder { get; set; } = "key";
+
+    /// <summary>Placeholder shown in the empty value input.</summary>
+    [Parameter] public string ValuePlaceholder { get; set; } = "value";
+}

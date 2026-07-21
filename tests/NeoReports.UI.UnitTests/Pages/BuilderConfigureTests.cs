@@ -106,6 +106,81 @@ public sealed class BuilderConfigureTests : NeoReportsTestContext
     }
 
     [Fact]
+    public void Non_ado_source_type_shows_the_generic_property_editor_not_sql_fields()
+    {
+        Wizard.SourceType = "http";
+
+        var cut = Render<BuilderConfigure>();
+
+        cut.Markup.ShouldNotContain("SQL query");
+        cut.Markup.ShouldNotContain("Key column");
+        cut.Markup.ShouldContain("Source properties");
+        cut.Markup.ShouldContain("url, strategy, recordsPath");
+    }
+
+    [Fact]
+    public void Non_ado_source_type_seeds_one_blank_property_row()
+    {
+        Wizard.SourceType = "elasticsearch";
+
+        var cut = Render<BuilderConfigure>();
+
+        cut.FindAll("input.mono[placeholder='url']").Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public void Typing_a_property_key_and_value_updates_the_wizard_state()
+    {
+        Wizard.SourceType = "http";
+
+        var cut = Render<BuilderConfigure>();
+
+        cut.Find("input.mono[placeholder='url']").Input("url");
+        cut.Find("input.mono[placeholder='https://api.example.com']").Input("https://sales.example.com");
+
+        Wizard.SourceProperties.ShouldHaveSingleItem();
+        Wizard.SourceProperties[0].Key.ShouldBe("url");
+        Wizard.SourceProperties[0].Value.ShouldBe("https://sales.example.com");
+    }
+
+    [Fact]
+    public void Add_property_appends_a_row_and_trash_removes_it()
+    {
+        Wizard.SourceType = "http";
+
+        var cut = Render<BuilderConfigure>();
+        cut.FindAll("button").First(b => b.TextContent.Contains("Add property")).Click();
+
+        Wizard.SourceProperties.Count.ShouldBe(2);
+
+        cut.FindAll(".btn.icon-only.outline")[0].Click();
+
+        Wizard.SourceProperties.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public void Unknown_source_type_falls_back_to_the_generic_hint_message()
+    {
+        Wizard.SourceType = "some-future-provider";
+
+        var cut = Render<BuilderConfigure>();
+
+        cut.Markup.ShouldContain("check the source package's docs for its required properties");
+    }
+
+    [Fact]
+    public void Ado_shape_type_still_shows_the_sql_fields()
+    {
+        Wizard.SourceType = "postgres";
+
+        var cut = Render<BuilderConfigure>();
+
+        cut.Markup.ShouldContain("SQL query");
+        cut.Markup.ShouldContain("Key column");
+        cut.Markup.ShouldNotContain("Add property");
+    }
+
+    [Fact]
     public void Continue_and_Back_navigate_without_any_validation()
     {
         var cut = Render<BuilderConfigure>();

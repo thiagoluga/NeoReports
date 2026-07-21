@@ -23,6 +23,7 @@ public class BuilderStateTests
             ConnectionStringVariable = "SALES_DB",
             SqlQuery = "SELECT * FROM Sales",
             KeyColumn = "SaleId",
+            SourceProperties = new List<PropertyRow> { new() { Key = "url", Value = "https://leftover.example.com" } },
             PageSize = 5000,
             TrackProgress = false,
             ColumnNames = "SaleId, Amount",
@@ -54,6 +55,7 @@ public class BuilderStateTests
         state.ConnectionStringVariable.ShouldBe("");
         state.SqlQuery.ShouldBe("");
         state.KeyColumn.ShouldBe("Id");
+        state.SourceProperties.ShouldBeEmpty();
         state.PageSize.ShouldBe(1000);
         state.TrackProgress.ShouldBeTrue();
         state.ColumnNames.ShouldBe("Id");

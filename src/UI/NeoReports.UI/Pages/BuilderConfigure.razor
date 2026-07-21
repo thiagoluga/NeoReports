@@ -10,7 +10,7 @@
     <div class="page-head">
         <div class="title">
             <h1>Configure the source</h1>
-            <div class="sub">Set the query and resilience policy · step 2 of 5</div>
+            <div class="sub">Set the source properties and resilience policy · step 2 of 5</div>
         </div>
     </div>
 
@@ -43,7 +43,7 @@
         @if (Wizard.IsEditing && string.IsNullOrEmpty(Wizard.SourceRef))
         {
             <Banner Variant="warn" Icon="alert-triangle">
-                <b>Re-enter the query and connection.</b>
+                <b>Re-enter the source properties and connection.</b>
                 <span style="font-size:12px">The engine never returns a report's raw source properties, even when editing — same security boundary as registered sources. Everything else below was prefilled from "@Wizard.EditingOriginalName".</span>
             </Banner>
         }
@@ -59,14 +59,26 @@
                     <div class="field"><span class="label-sm">Connection</span><span class="muted" style="font-size:12px;align-self:center">resolved from <span class="mono">@Wizard.SourceRef</span> on every run</span></div>
                 }
             </div>
-            <div class="field">
-                <span class="label-sm">SQL query</span>
-                <textarea class="stack mono" style="width:100%;min-height:120px;background:var(--bg2);color:var(--fg);border:0.5px solid var(--border);border-radius:var(--r-md);padding:10px 12px;resize:vertical" @bind="Wizard.SqlQuery" @bind:event="oninput" placeholder="SELECT Id, Customer, Amount FROM Sales ORDER BY Id"></textarea>
-            </div>
-            <div class="grid-2">
-                <div class="field"><span class="label-sm">Key column</span><span class="input mono"><input class="mono" @bind="Wizard.KeyColumn" @bind:event="oninput" style="width:100%" /></span></div>
+            @if (Wizard.UsesAdoSqlShape)
+            {
+                <div class="field">
+                    <span class="label-sm">SQL query</span>
+                    <textarea class="stack mono" style="width:100%;min-height:120px;background:var(--bg2);color:var(--fg);border:0.5px solid var(--border);border-radius:var(--r-md);padding:10px 12px;resize:vertical" @bind="Wizard.SqlQuery" @bind:event="oninput" placeholder="SELECT Id, Customer, Amount FROM Sales ORDER BY Id"></textarea>
+                </div>
+                <div class="grid-2">
+                    <div class="field"><span class="label-sm">Key column</span><span class="input mono"><input class="mono" @bind="Wizard.KeyColumn" @bind:event="oninput" style="width:100%" /></span></div>
+                    <div class="field"><span class="label-sm">Page size</span><span class="input num"><input class="mono" type="number" min="1" @bind="Wizard.PageSize" @bind:event="oninput" /></span></div>
+                </div>
+            }
+            else
+            {
+                <div class="field">
+                    <span class="label-sm">Source properties <span class="muted" style="font-weight:400">— use <span class="mono">${VAR}</span> for secrets</span></span>
+                    <span class="muted mono" style="font-size:11px;display:block;margin-bottom:6px">Common for "@Wizard.SourceType": @PropertyHintFor(Wizard.SourceType)</span>
+                    <PropertyListEditor Rows="Wizard.SourceProperties" KeyPlaceholder="url" ValuePlaceholder="https://api.example.com" />
+                </div>
                 <div class="field"><span class="label-sm">Page size</span><span class="input num"><input class="mono" type="number" min="1" @bind="Wizard.PageSize" @bind:event="oninput" /></span></div>
-            </div>
+            }
             <div class="field"><span class="label-sm">Output columns</span><span class="input mono"><input class="mono" @bind="Wizard.ColumnNames" @bind:event="oninput" placeholder="Id, Customer, Amount" style="width:100%" /></span></div>
             <div class="cgr"><span class="lbl">Track progress</span><div class="ctl"><Switch @bind-Value="Wizard.TrackProgress" /><span class="hint">counts the source rows once before each run · enables a real completion percentage</span></div></div>
             @if (!Wizard.TrackProgress)
@@ -157,9 +169,38 @@
     private readonly string[] Steps = { "Source", "Columns", "Format", "Destination", "Review" };
     private readonly (string, string)[] _backoffOpts = { ("Constant","constant"), ("Exponential","exponential") };
 
+    // Presentation-only discoverability hint (not sent to the engine, not validated) — the engine's
+    // capabilities endpoint reports only type-id strings, no property-shape metadata, so this is a
+    // manually-synced, best-effort pointer rather than a schema; falls back gracefully for any type
+    // not listed (a future/custom IConfigSourceProvider).
+    private static readonly Dictionary<string, string> PropertyHints = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["mongodb"] = "database, collection, key, pageSize (connectionString comes from the field above)",
+        ["csv"] = "path (or bucket + key for S3), hasHeader, delimiter",
+        ["xlsx"] = "path (or bucket + key for S3), hasHeader, sheetName",
+        ["parquet"] = "path (or bucket + key for S3)",
+        ["http"] = "url, strategy, recordsPath, bearerToken (or oauth2TokenEndpoint/oauth2ClientId/oauth2ClientSecret)",
+        ["odata"] = "url, strategy, recordsPath, filter, select, orderby, top",
+        ["graphql"] = "url, query, connectionPath, variables, nodePath",
+        ["elasticsearch"] = "url, index, sort, query",
+        ["hubspot"] = "objectType, baseUrl, properties",
+        ["airtable"] = "baseId, table, baseUrl",
+        ["googlesheets"] = "spreadsheetId, sheet, apiKey, headerRow",
+        ["salesforce"] = "instanceUrl, soql, bearerToken, apiVersion",
+    };
+
+    private static string PropertyHintFor(string type) =>
+        PropertyHints.TryGetValue(type, out string? hint) ? hint : "check the source package's docs for its required properties";
+
     private bool _validating;
     private bool _validationUnavailable;
     private ApiValidationResult? _validationResult;
+
+    protected override void OnInitialized()
+    {
+        if (!Wizard.UsesAdoSqlShape && Wizard.SourceProperties.Count == 0)
+            Wizard.SourceProperties.Add(new PropertyRow());
+    }
 
     private async Task ValidateAsync()
     {
