@@ -61,7 +61,7 @@
                 <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
                     @foreach (var type in _engineSources)
                     {
-                        <SelectableCard Selected="@(Wizard.SourceType == type)" OnClick="@(() => Wizard.SourceType = type)">
+                        <SelectableCard Selected="@(Wizard.SourceType == type)" OnClick="@(() => SelectSourceType(type))">
                             <CatTile Kind="teal" Icon="database" />
                             <div class="name mono">@type</div>
                             <div class="conn">Registered <span class="mono">IConfigSourceProvider</span></div>
@@ -76,7 +76,7 @@
     <div class="wizard-footer">
         <Button Variant="outline" Icon="arrow-left" OnClick="@(() => Nav.NavigateTo("reports"))">Cancel</Button>
         <div style="display:flex;align-items:center;gap:12px">
-            <Button Variant="primary" IconRight="arrow-right" OnClick="Continue">Continue</Button>
+            <Button Variant="primary" IconRight="arrow-right" Disabled="@NoSourceTypeChosenYet" OnClick="Continue">Continue</Button>
         </div>
     </div>
 </div>
@@ -164,8 +164,35 @@
         Wizard.ScheduleCron = detail.ScheduleCron ?? "";
     }
 
+    /// <summary>
+    /// True only in edit mode, before the user has (re-)confirmed a source type (see
+    /// <see cref="LoadForEditAsync"/> — the engine doesn't return a compiled report's source type,
+    /// so it's deliberately left blank rather than defaulted). Gates Continue so a missed "Confirm
+    /// the source type" banner can't silently carry an unconfigured Configure step forward; stays
+    /// false whenever the engine is unreachable (demo mode), which already browses with a blank type.
+    /// </summary>
+    private bool NoSourceTypeChosenYet =>
+        Wizard.EngineAvailable && string.IsNullOrEmpty(Wizard.SourceType) && string.IsNullOrEmpty(Wizard.SourceRef);
+
+    /// <summary>
+    /// Switching to a different engine source type clears any generic property rows from whatever
+    /// type was previously selected (ADR D42's editor) — they're almost certainly the wrong shape
+    /// for the new type (e.g. an HTTP source's "url"/"strategy" rows are meaningless for Salesforce).
+    /// The Configure step re-seeds a single blank row once this leaves the list empty.
+    /// </summary>
+    private void SelectSourceType(string type)
+    {
+        if (Wizard.SourceType != type)
+            Wizard.SourceProperties.Clear();
+
+        Wizard.SourceType = type;
+    }
+
     private void SelectSourceRef(ApiSourceView source)
     {
+        if (Wizard.SourceType != source.Type)
+            Wizard.SourceProperties.Clear();
+
         Wizard.SourceRef = source.Name;
         Wizard.SourceType = source.Type;
     }

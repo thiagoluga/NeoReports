@@ -30,11 +30,36 @@ public sealed class BuilderState
     /// </summary>
     public string ConnectionStringVariable { get; set; } = "";
 
-    /// <summary>SQL query text for the source.</summary>
+    /// <summary>
+    /// Source type ids that ride the ADO/keyset source family (<c>AdoKeysetSource</c>,
+    /// <c>NeoReports.Sources.Common</c>'s <c>AdoConfigProperties</c>) and therefore use the
+    /// dedicated <see cref="SqlQuery"/>/<see cref="KeyColumn"/> fields below, instead of the
+    /// generic <see cref="SourceProperties"/> editor every other engine source type uses. An
+    /// honest, manually-synced list — the engine's <c>GET /api/capabilities</c> reports only
+    /// type-id strings, no shape metadata — that needs updating if a new ADO-family provider ships.
+    /// </summary>
+    public static readonly IReadOnlySet<string> AdoSqlShapeTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "sql", "mysql", "postgres", "oracle", "sqlite", "redshift", "snowflake",
+    };
+
+    /// <summary>Whether <see cref="SourceType"/> is one of the <see cref="AdoSqlShapeTypes"/>.</summary>
+    public bool UsesAdoSqlShape => AdoSqlShapeTypes.Contains(SourceType);
+
+    /// <summary>SQL query text for the source (<see cref="UsesAdoSqlShape"/> types only).</summary>
     public string SqlQuery { get; set; } = "";
 
-    /// <summary>Keyset pagination key column.</summary>
+    /// <summary>Keyset pagination key column (<see cref="UsesAdoSqlShape"/> types only).</summary>
     public string KeyColumn { get; set; } = "Id";
+
+    /// <summary>
+    /// Generic key/value source properties (ADR D42's property-bag pattern), used for every engine
+    /// source type EXCEPT the <see cref="AdoSqlShapeTypes"/> family, which uses
+    /// <see cref="SqlQuery"/>/<see cref="KeyColumn"/> instead. Sent as an overlay alongside
+    /// <see cref="SourceRef"/> too, mirroring how the SQL family's query/key stay report-local even
+    /// for a registered source.
+    /// </summary>
+    public List<PropertyRow> SourceProperties { get; set; } = [];
 
     /// <summary>Rows read per page.</summary>
     public int PageSize { get; set; } = 1000;
@@ -125,6 +150,7 @@ public sealed class BuilderState
         ConnectionStringVariable = "";
         SqlQuery = "";
         KeyColumn = "Id";
+        SourceProperties = [];
         PageSize = 1000;
         TrackProgress = true;
         ColumnNames = "Id";

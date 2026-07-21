@@ -93,17 +93,7 @@
                         </div>
                         <div class="field" style="margin-top:8px">
                             <span class="label-sm">Properties <span class="muted" style="font-weight:400">— use <span class="mono">${VAR}</span> for secrets</span></span>
-                            @foreach (var row in _formProperties)
-                            {
-                                <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
-                                    <span class="input mono" style="flex:1"><input class="mono" @bind="row.Key" @bind:event="oninput" placeholder="connectionString" /></span>
-                                    <span class="input mono" style="flex:2"><input class="mono" @bind="row.Value" @bind:event="oninput" placeholder="${SALES_DB}" /></span>
-                                    <button class="btn icon-only outline" @onclick="@(() => _formProperties.Remove(row))"><i class="ti ti-trash"></i></button>
-                                </div>
-                            }
-                            <div style="margin-top:6px">
-                                <Button Variant="outline" Size="sm" Icon="plus" OnClick="@(() => _formProperties.Add(new PropertyRow()))">Add property</Button>
-                            </div>
+                            <PropertyListEditor Rows="_formProperties" KeyPlaceholder="connectionString" ValuePlaceholder="${SALES_DB}" />
                         </div>
                         @if (_formError is not null)
                         {
@@ -208,12 +198,6 @@
 </div>
 
 @code {
-    private sealed class PropertyRow
-    {
-        public string Key { get; set; } = "";
-        public string Value { get; set; } = "";
-    }
-
     private IReadOnlyList<string> _engineSourceTypes = Array.Empty<string>();
     private IReadOnlyList<ApiSourceView>? _sources;
 

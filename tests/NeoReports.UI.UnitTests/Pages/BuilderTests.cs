@@ -87,6 +87,82 @@ public sealed class BuilderTests : NeoReportsTestContext
     }
 
     [Fact]
+    public void Switching_the_inline_source_type_clears_stale_generic_property_rows()
+    {
+        SetupEngineAvailable(["http", "elasticsearch"]);
+        Wizard.SourceType = "http";
+        Wizard.SourceProperties = [new() { Key = "url", Value = "https://leftover.example.com" }];
+
+        var cut = Render<Builder>();
+        cut.FindAll(".sel-card").First(c => c.TextContent.Contains("elasticsearch")).Click();
+
+        Wizard.SourceType.ShouldBe("elasticsearch");
+        Wizard.SourceProperties.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Re_selecting_the_same_inline_source_type_keeps_its_property_rows()
+    {
+        // Wizard.SourceProperties is set AFTER Render, not before — Builder.OnInitializedAsync
+        // unconditionally calls Wizard.Reset() outside edit mode (a pre-existing, separately
+        // noteworthy behavior — see the spawned follow-up task), so anything set before Render on
+        // this route would just be wiped by that Reset() and never reach the assertion below.
+        SetupEngineAvailable(["http"]);
+        var cut = Render<Builder>();
+        Wizard.SourceType = "http";
+        Wizard.SourceProperties = [new() { Key = "url", Value = "https://keep.example.com" }];
+
+        cut.FindAll(".sel-card").First(c => c.TextContent.Contains("http")).Click();
+
+        Wizard.SourceProperties.ShouldHaveSingleItem();
+    }
+
+    [Fact]
+    public void Selecting_a_registered_source_of_a_different_type_clears_stale_property_rows()
+    {
+        SetupEngineAvailable(["http"], [new ApiSourceView("sf-demo", "salesforce", null, 0, null, null, null, null)]);
+        Wizard.SourceType = "http";
+        Wizard.SourceProperties = [new() { Key = "url", Value = "https://leftover.example.com" }];
+
+        var cut = Render<Builder>();
+        cut.FindAll(".sel-card").First(c => c.TextContent.Contains("sf-demo")).Click();
+
+        Wizard.SourceType.ShouldBe("salesforce");
+        Wizard.SourceProperties.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Editing_with_no_source_type_confirmed_yet_disables_Continue()
+    {
+        var detail = new ApiReportDetail(
+            Name: "clientsVip", Columns: [], PageSize: 500, Formats: ["csv"], Destinations: ["local"],
+            FailureStrategy: "abort", RetryMaxAttempts: 1, RetryBackoff: "Constant", RetryBaseDelaySeconds: 1,
+            RetryUseJitter: false, Origin: "config", Deletable: true);
+        Api.ReportDetail = (_, _) => Task.FromResult<ApiReportDetail?>(detail);
+        SetupEngineAvailable(["sql"]);
+        var nav = Services.GetRequiredService<NavigationManager>();
+        nav.NavigateTo(nav.GetUriWithQueryParameter("edit", "clientsVip"));
+
+        var cut = Render<Builder>();
+        var continueButton = cut.FindAll("button").First(b => b.TextContent.Contains("Continue"));
+        continueButton.HasAttribute("disabled").ShouldBeTrue();
+
+        cut.FindAll(".sel-card").First(c => c.TextContent.Contains("sql")).Click();
+        continueButton = cut.FindAll("button").First(b => b.TextContent.Contains("Continue"));
+        continueButton.HasAttribute("disabled").ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Demo_mode_leaves_Continue_enabled_despite_a_blank_source_type()
+    {
+        SetupEngineAvailable([]);
+
+        var cut = Render<Builder>();
+
+        cut.FindAll("button").First(b => b.TextContent.Contains("Continue")).HasAttribute("disabled").ShouldBeFalse();
+    }
+
+    [Fact]
     public void Continue_navigates_to_configure_step_without_any_validation()
     {
         SetupEngineAvailable([]);

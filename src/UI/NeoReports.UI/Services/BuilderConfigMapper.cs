@@ -30,14 +30,21 @@ public static class BuilderConfigMapper
             .Select(name => new ColumnDocument(name, "String"))
             .ToArray();
 
-        var sourceProperties = new Dictionary<string, object?>
-        {
-            ["sql"] = state.SqlQuery,
-            ["key"] = state.KeyColumn,
-        };
+        // The ADO/keyset SQL family (BuilderState.AdoSqlShapeTypes) keeps its own dedicated fields.
+        // Every other engine source type is configured through the generic property editor instead.
+        Dictionary<string, object?> sourceProperties = state.UsesAdoSqlShape
+            ? new Dictionary<string, object?>
+            {
+                ["sql"] = state.SqlQuery,
+                ["key"] = state.KeyColumn,
+            }
+            : BuildGenericSourceProperties(state.SourceProperties);
 
         bool usesRef = !string.IsNullOrWhiteSpace(state.SourceRef);
-        if (!usesRef && !string.IsNullOrWhiteSpace(state.ConnectionStringVariable))
+        // Never overwrites a property the user already typed by hand (e.g. a manually-entered
+        // "connectionString" row in the generic editor) — an explicit property always wins over
+        // this derived one.
+        if (!usesRef && !sourceProperties.ContainsKey("connectionString") && !string.IsNullOrWhiteSpace(state.ConnectionStringVariable))
             sourceProperties["connectionString"] = $"${{{state.ConnectionStringVariable}}}";
 
         var outputs = state.Formats
@@ -75,6 +82,20 @@ public static class BuilderConfigMapper
             TrackProgress: state.TrackProgress);
 
         return JsonSerializer.Serialize(document, Json);
+    }
+
+    // Last-write-wins on a duplicate (post-trim) key, rather than ToDictionary's throw — nothing in
+    // the generic property editor stops a user from typing two rows with the same key (unlike the
+    // ADO family's fixed sql/key literal, which structurally can't collide), and a crash on
+    // Validate/Save would tear down the wizard's in-progress state for what is, at worst, a
+    // last-one-counts config mistake the user can just as easily fix by deleting the extra row.
+    private static Dictionary<string, object?> BuildGenericSourceProperties(IEnumerable<PropertyRow> rows)
+    {
+        var properties = new Dictionary<string, object?>(StringComparer.Ordinal);
+        foreach (PropertyRow row in rows.Where(row => !string.IsNullOrWhiteSpace(row.Key)))
+            properties[row.Key.Trim()] = row.Value;
+
+        return properties;
     }
 
     private static Dictionary<string, object?>? BuildDestinationProperties(BuilderState state) =>

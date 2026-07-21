@@ -11,6 +11,7 @@ public class BuilderConfigMapperTests
     private static readonly string[] IdCustomerAmountColumns = { "Id", "Customer", "Amount" };
     private static readonly string[] CsvXlsxFormats = { "csv", "xlsx" };
     private static readonly string[] ZetaAlphaMiddleColumns = { "Zeta", "Alpha", "Middle" };
+    private static readonly string[] UrlPropertyOnly = { "url" };
 
     private static BuilderState FullState() => new()
     {
@@ -277,5 +278,69 @@ public class BuilderConfigMapperTests
         using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
 
         doc.RootElement.GetProperty("trackProgress").GetBoolean().ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Non_ado_source_type_serializes_the_generic_property_rows_not_sql_and_key()
+    {
+        var state = FullState();
+        state.SourceType = "http";
+        state.SourceProperties =
+        [
+            new() { Key = "url", Value = "https://api.example.com/items" },
+            new() { Key = "strategy", Value = "cursor" },
+        ];
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        JsonElement properties = doc.RootElement.GetProperty("source").GetProperty("properties");
+        properties.GetProperty("url").GetString().ShouldBe("https://api.example.com/items");
+        properties.GetProperty("strategy").GetString().ShouldBe("cursor");
+        properties.TryGetProperty("sql", out _).ShouldBeFalse();
+        properties.TryGetProperty("key", out _).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Non_ado_source_type_omits_rows_with_a_blank_key()
+    {
+        var state = FullState();
+        state.SourceType = "http";
+        state.ConnectionStringVariable = "";
+        state.SourceProperties =
+        [
+            new() { Key = "url", Value = "https://api.example.com/items" },
+            new() { Key = "  ", Value = "ignored" },
+        ];
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        JsonElement properties = doc.RootElement.GetProperty("source").GetProperty("properties");
+        properties.EnumerateObject().Select(p => p.Name).ShouldBe(UrlPropertyOnly);
+    }
+
+    [Fact]
+    public void Non_ado_source_type_still_sends_connectionString_when_a_variable_is_set()
+    {
+        var state = FullState();
+        state.SourceType = "http";
+        state.SourceProperties = [new() { Key = "url", Value = "https://api.example.com" }];
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        doc.RootElement.GetProperty("source").GetProperty("properties")
+            .GetProperty("connectionString").GetString().ShouldBe("${SALES_DB}");
+    }
+
+    [Fact]
+    public void Ado_shape_types_still_use_the_sql_and_key_fields()
+    {
+        var state = FullState();
+        state.SourceType = "postgres";
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        JsonElement properties = doc.RootElement.GetProperty("source").GetProperty("properties");
+        properties.GetProperty("sql").GetString().ShouldBe(state.SqlQuery);
+        properties.GetProperty("key").GetString().ShouldBe(state.KeyColumn);
     }
 }
