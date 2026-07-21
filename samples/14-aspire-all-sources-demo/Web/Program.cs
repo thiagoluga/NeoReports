@@ -18,8 +18,10 @@ using NeoReports.Jobs.DependencyInjection;
 using NeoReports.Samples.Shared;
 using NeoReports.Sources.MongoDb;
 using NeoReports.Sources.MySql;
+using NeoReports.Sources.Oracle;
 using NeoReports.Sources.Postgres;
 using NeoReports.Sources.Sql;
+using NeoReports.Sources.Sqlite;
 using NeoReports.UI;
 using Npgsql;
 using NpgsqlTypes;
@@ -142,11 +144,16 @@ builder.Services.AddReport<WideTransaction>("wide-transactions-mongodb", b => b
 
 // Registers a config-source provider for every source type this demo has — GET /api/capabilities
 // is never empty, so the UI's "Demo mode" fallback never shows and the Builder wizard's "Save"
-// step is never disabled.
+// step is never disabled. SQLite and Oracle are registered too (even though this AppHost doesn't
+// provision a seeded database for either — SQLite is file-based, no container needed, and Oracle
+// has no working typed report/named source here) purely so both show up as selectable engine
+// source types in the Builder wizard's step 1, same as any other registered capability.
 builder.Services.AddSqlConfigSource();
 builder.Services.AddPostgresConfigSource();
 builder.Services.AddMySqlConfigSource();
 builder.Services.AddMongoDbConfigSource();
+builder.Services.AddSqliteConfigSource();
+builder.Services.AddOracleConfigSource();
 
 // Same reasoning for output formats and destinations: GET /api/capabilities.Formats/Destinations
 // come from IWriterFactory/IDestinationFactory DI registrations, independent of the typed

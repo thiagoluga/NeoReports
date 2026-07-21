@@ -15,6 +15,8 @@
     <ProjectReference Include="..\..\..\src\Sources\NeoReports.Sources.MySql\NeoReports.Sources.MySql.csproj" />
     <ProjectReference Include="..\..\..\src\Sources\NeoReports.Sources.Sql\NeoReports.Sources.Sql.csproj" />
     <ProjectReference Include="..\..\..\src\Sources\NeoReports.Sources.MongoDb\NeoReports.Sources.MongoDb.csproj" />
+    <ProjectReference Include="..\..\..\src\Sources\NeoReports.Sources.Sqlite\NeoReports.Sources.Sqlite.csproj" />
+    <ProjectReference Include="..\..\..\src\Sources\NeoReports.Sources.Oracle\NeoReports.Sources.Oracle.csproj" />
     <ProjectReference Include="..\..\..\src\Formats\NeoReports.Formats.Csv\NeoReports.Formats.Csv.csproj" />
     <ProjectReference Include="..\..\..\src\Formats\NeoReports.Formats.Xlsx\NeoReports.Formats.Xlsx.csproj" />
     <ProjectReference Include="..\..\..\src\Destinations\NeoReports.Destinations.Local\NeoReports.Destinations.Local.csproj" />
