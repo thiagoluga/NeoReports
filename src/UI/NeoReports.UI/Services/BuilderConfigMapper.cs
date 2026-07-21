@@ -30,8 +30,8 @@ public static class BuilderConfigMapper
             .Select(name => new ColumnDocument(name, "String"))
             .ToArray();
 
-        // ADO/keyset SQL family (BuilderState.AdoSqlShapeTypes) keeps its own dedicated fields;
-        // every other engine source type is configured through the generic property editor instead.
+        // The ADO/keyset SQL family (BuilderState.AdoSqlShapeTypes) keeps its own dedicated fields.
+        // Every other engine source type is configured through the generic property editor instead.
         Dictionary<string, object?> sourceProperties = state.UsesAdoSqlShape
             ? new Dictionary<string, object?>
             {
@@ -92,11 +92,8 @@ public static class BuilderConfigMapper
     private static Dictionary<string, object?> BuildGenericSourceProperties(IEnumerable<PropertyRow> rows)
     {
         var properties = new Dictionary<string, object?>(StringComparer.Ordinal);
-        foreach (PropertyRow row in rows)
-        {
-            if (!string.IsNullOrWhiteSpace(row.Key))
-                properties[row.Key.Trim()] = row.Value;
-        }
+        foreach (PropertyRow row in rows.Where(row => !string.IsNullOrWhiteSpace(row.Key)))
+            properties[row.Key.Trim()] = row.Value;
 
         return properties;
     }

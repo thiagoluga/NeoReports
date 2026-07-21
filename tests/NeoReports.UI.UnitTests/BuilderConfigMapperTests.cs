@@ -11,6 +11,7 @@ public class BuilderConfigMapperTests
     private static readonly string[] IdCustomerAmountColumns = { "Id", "Customer", "Amount" };
     private static readonly string[] CsvXlsxFormats = { "csv", "xlsx" };
     private static readonly string[] ZetaAlphaMiddleColumns = { "Zeta", "Alpha", "Middle" };
+    private static readonly string[] UrlPropertyOnly = { "url" };
 
     private static BuilderState FullState() => new()
     {
@@ -284,11 +285,11 @@ public class BuilderConfigMapperTests
     {
         var state = FullState();
         state.SourceType = "http";
-        state.SourceProperties = new List<PropertyRow>
-        {
+        state.SourceProperties =
+        [
             new() { Key = "url", Value = "https://api.example.com/items" },
             new() { Key = "strategy", Value = "cursor" },
-        };
+        ];
 
         using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
 
@@ -305,16 +306,16 @@ public class BuilderConfigMapperTests
         var state = FullState();
         state.SourceType = "http";
         state.ConnectionStringVariable = "";
-        state.SourceProperties = new List<PropertyRow>
-        {
+        state.SourceProperties =
+        [
             new() { Key = "url", Value = "https://api.example.com/items" },
             new() { Key = "  ", Value = "ignored" },
-        };
+        ];
 
         using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
 
         JsonElement properties = doc.RootElement.GetProperty("source").GetProperty("properties");
-        properties.EnumerateObject().Select(p => p.Name).ShouldBe(new[] { "url" });
+        properties.EnumerateObject().Select(p => p.Name).ShouldBe(UrlPropertyOnly);
     }
 
     [Fact]
@@ -322,7 +323,7 @@ public class BuilderConfigMapperTests
     {
         var state = FullState();
         state.SourceType = "http";
-        state.SourceProperties = new List<PropertyRow> { new() { Key = "url", Value = "https://api.example.com" } };
+        state.SourceProperties = [new() { Key = "url", Value = "https://api.example.com" }];
 
         using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
 

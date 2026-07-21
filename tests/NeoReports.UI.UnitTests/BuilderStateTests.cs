@@ -23,7 +23,7 @@ public class BuilderStateTests
             ConnectionStringVariable = "SALES_DB",
             SqlQuery = "SELECT * FROM Sales",
             KeyColumn = "SaleId",
-            SourceProperties = new List<PropertyRow> { new() { Key = "url", Value = "https://leftover.example.com" } },
+            SourceProperties = [new() { Key = "url", Value = "https://leftover.example.com" }],
             PageSize = 5000,
             TrackProgress = false,
             ColumnNames = "SaleId, Amount",
@@ -48,7 +48,7 @@ public class BuilderStateTests
 
         state.Reset();
 
-        state.Formats.ShouldBe(new HashSet<string> { "csv", "xlsx" });
+        state.Formats.ShouldBe(["csv", "xlsx"]);
         state.ReportName.ShouldBe("");
         state.SourceType.ShouldBe("sql");
         state.SourceRef.ShouldBe("");

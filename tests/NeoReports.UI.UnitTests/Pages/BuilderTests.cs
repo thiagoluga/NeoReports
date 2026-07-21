@@ -91,7 +91,7 @@ public sealed class BuilderTests : NeoReportsTestContext
     {
         SetupEngineAvailable(["http", "elasticsearch"]);
         Wizard.SourceType = "http";
-        Wizard.SourceProperties = new List<PropertyRow> { new() { Key = "url", Value = "https://leftover.example.com" } };
+        Wizard.SourceProperties = [new() { Key = "url", Value = "https://leftover.example.com" }];
 
         var cut = Render<Builder>();
         cut.FindAll(".sel-card").First(c => c.TextContent.Contains("elasticsearch")).Click();
@@ -110,7 +110,7 @@ public sealed class BuilderTests : NeoReportsTestContext
         SetupEngineAvailable(["http"]);
         var cut = Render<Builder>();
         Wizard.SourceType = "http";
-        Wizard.SourceProperties = new List<PropertyRow> { new() { Key = "url", Value = "https://keep.example.com" } };
+        Wizard.SourceProperties = [new() { Key = "url", Value = "https://keep.example.com" }];
 
         cut.FindAll(".sel-card").First(c => c.TextContent.Contains("http")).Click();
 
@@ -122,7 +122,7 @@ public sealed class BuilderTests : NeoReportsTestContext
     {
         SetupEngineAvailable(["http"], [new ApiSourceView("sf-demo", "salesforce", null, 0, null, null, null, null)]);
         Wizard.SourceType = "http";
-        Wizard.SourceProperties = new List<PropertyRow> { new() { Key = "url", Value = "https://leftover.example.com" } };
+        Wizard.SourceProperties = [new() { Key = "url", Value = "https://leftover.example.com" }];
 
         var cut = Render<Builder>();
         cut.FindAll(".sel-card").First(c => c.TextContent.Contains("sf-demo")).Click();

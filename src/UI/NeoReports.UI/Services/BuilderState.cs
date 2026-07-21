@@ -59,7 +59,7 @@ public sealed class BuilderState
     /// <see cref="SourceRef"/> too, mirroring how the SQL family's query/key stay report-local even
     /// for a registered source.
     /// </summary>
-    public List<PropertyRow> SourceProperties { get; set; } = new();
+    public List<PropertyRow> SourceProperties { get; set; } = [];
 
     /// <summary>Rows read per page.</summary>
     public int PageSize { get; set; } = 1000;
@@ -150,7 +150,7 @@ public sealed class BuilderState
         ConnectionStringVariable = "";
         SqlQuery = "";
         KeyColumn = "Id";
-        SourceProperties = new();
+        SourceProperties = [];
         PageSize = 1000;
         TrackProgress = true;
         ColumnNames = "Id";
