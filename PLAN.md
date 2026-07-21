@@ -1098,7 +1098,7 @@ type doesn't support server-side filters" banner on a Postgres-sourced report.
   reproducing it again needs the report's actual persisted source config or the named source's
   registered type from the live session where it was seen.
 
-## Epic P — Broad source-type expansion (D55) — P1, P2, P3 (a/b/c), P4a, P5 (a/b), P6, P7a done
+## Epic P — Broad source-type expansion (D55) — P1, P2, P3 (a/b/c), P4a, P5 (a/b), P6, P7a, P7b done
 
 Requested directly by the maintainer (2026-07-16): "possibilitar todas as fontes possíveis, menos
 Kafka." Directional design in `## D55` (`DECISIONS.md`). Every source is a new package on the
@@ -1279,5 +1279,19 @@ small design pass before code (like D43/K1). Ordered cheapest-highest-value firs
     `PropertyBag.ApplyCommonFieldsAndAuth` + a new `ICommonHttpOptions<TSelf>` marker interface),
     purely additive, every already-shipped package's tests re-verified green. Design in `## D65`
     (`DECISIONS.md`). PR [#195](https://github.com/thiagoluga/NeoReports/pull/195).
-  - [ ] **P7b — Google Sheets** (its own design pass — no server-side pagination).
+  - [x] **P7b — Google Sheets.** `NeoReports.Sources.GoogleSheets` (`type: "googlesheets"`) — no
+    server-side pagination cursor at all (synthesized as a fixed-size row window, advanced by a
+    constant offset, stopping only on a fully-empty window); positional-cell-with-header-row shape,
+    materialized via `NeoReports.Core.Sources.ReflectedRowShape<T>` (the CSV/XLSX file family's
+    shared materializer) rather than the JSON-key-based one the rest of Epic P uses. Static API-key
+    auth only (query parameter); a private spreadsheet needs OAuth2/service-account auth, deferred
+    alongside P4b. Several implementation details (date-serial epoch, `batchGet`'s response shape)
+    are researched, not live-verified (no internet access in this environment) — flagged to and
+    accepted by the maintainer before implementation, mirroring the Redshift/Snowflake precedent. A
+    genuine infinite loop was found and fixed in this PR's own tests (a loop-until-empty helper
+    against an always-non-empty stub, confirmed via a runaway 22GB `testhost.exe`). Code review then
+    caught an ADR/code mismatch, a health check gambling on unverified `HEAD`-rejection behavior
+    (fixed to go straight to `GET`), triplicated cell-decode logic (extracted into a shared helper),
+    and an unnecessary per-page header re-fetch (fixed to cache after page 1). Design in `## D66`
+    (`DECISIONS.md`). PR [#197](https://github.com/thiagoluga/NeoReports/pull/197).
   - [ ] **P7c — Salesforce** (its own design pass — relative-URL pagination + real OAuth2, ties into P4b).
