@@ -79,17 +79,28 @@ public sealed class HttpSourceBuilder
         return this;
     }
 
-    /// <summary>Sends a static API key as a request header (P4a — static auth only; OAuth2 client-credentials is deferred, ADR D61).</summary>
+    /// <summary>Sends a static API key as a request header (ADR D61). OAuth2 client-credentials is available separately via <see cref="OAuth2ClientCredentials"/> (P4b, ADR D68).</summary>
     public HttpSourceBuilder ApiKey(string headerName, string value)
     {
         _options.ApiKey(headerName, value);
         return this;
     }
 
-    /// <summary>Sends a static bearer token (<c>Authorization: Bearer &lt;token&gt;</c>) (P4a — static auth only; ADR D61).</summary>
+    /// <summary>Sends a static bearer token (<c>Authorization: Bearer &lt;token&gt;</c>) (ADR D61). Mutually exclusive with <see cref="OAuth2ClientCredentials"/>.</summary>
     public HttpSourceBuilder Bearer(string token)
     {
         _options.Bearer(token);
+        return this;
+    }
+
+    /// <summary>
+    /// Authenticates via the OAuth2 client-credentials grant (P4b, ADR D68) instead of a static
+    /// bearer token — a fresh access token is fetched (and transparently refreshed before expiry) on
+    /// every request. Mutually exclusive with <see cref="Bearer"/>.
+    /// </summary>
+    public HttpSourceBuilder OAuth2ClientCredentials(string tokenEndpoint, string clientId, string clientSecret, string? scope = null)
+    {
+        _options.OAuth2ClientCredentials(tokenEndpoint, clientId, clientSecret, scope);
         return this;
     }
 

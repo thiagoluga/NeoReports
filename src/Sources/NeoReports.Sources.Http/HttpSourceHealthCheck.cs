@@ -30,7 +30,9 @@ public sealed class HttpSourceHealthCheck : ISourceHealthCheck
             HttpClient client = HttpClients.ResolveFrom(services);
             string targetUrl = HttpHealthProbe.CombineUrl(baseUrl, options.HealthCheckPath);
 
-            using HttpResponseMessage response = await HttpHealthProbe.ProbeAsync(client, targetUrl, options.ToAuth(), cancellationToken).ConfigureAwait(false);
+            OAuth2ClientCredentialsProvider? oauth2Provider = HttpOAuth2.CreateProvider(client, options);
+            HttpAuth auth = await HttpOAuth2.ResolveAuthAsync(options, oauth2Provider, cancellationToken).ConfigureAwait(false);
+            using HttpResponseMessage response = await HttpHealthProbe.ProbeAsync(client, targetUrl, auth, cancellationToken).ConfigureAwait(false);
 
             stopwatch.Stop();
             return response.IsSuccessStatusCode

@@ -69,6 +69,21 @@ internal static class HttpConfigProperties
         if (PropertyBag.TryGetString(properties, "bearerToken", out string? bearerToken))
             options.Bearer(bearerToken);
 
+        bool hasOAuth2TokenEndpoint = PropertyBag.TryGetString(properties, "oauth2TokenEndpoint", out string? oauth2TokenEndpoint);
+        bool hasOAuth2ClientId = PropertyBag.TryGetString(properties, "oauth2ClientId", out string? oauth2ClientId);
+        bool hasOAuth2ClientSecret = PropertyBag.TryGetString(properties, "oauth2ClientSecret", out string? oauth2ClientSecret);
+        if (hasOAuth2TokenEndpoint || hasOAuth2ClientId || hasOAuth2ClientSecret)
+        {
+            if (!(hasOAuth2TokenEndpoint && hasOAuth2ClientId && hasOAuth2ClientSecret))
+            {
+                throw new ConfigurationException(
+                    "The HTTP source's OAuth2 client-credentials properties ('oauth2TokenEndpoint', 'oauth2ClientId', 'oauth2ClientSecret') must all be configured together.");
+            }
+
+            string? oauth2Scope = PropertyBag.TryGetString(properties, "oauth2Scope", out string? scope) ? scope : null;
+            options.OAuth2ClientCredentials(oauth2TokenEndpoint!, oauth2ClientId!, oauth2ClientSecret!, oauth2Scope);
+        }
+
         if (PropertyBag.TryGetString(properties, "healthCheckPath", out string? healthCheckPath))
             options.HealthCheckAt(healthCheckPath);
 

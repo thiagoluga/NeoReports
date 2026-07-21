@@ -21,6 +21,7 @@ internal sealed class HttpStreamingSource<T> : IStreamingSource<T>
     private readonly string _baseUrl;
     private readonly HttpSourceOptions _options;
     private readonly Func<JsonElement, T> _materialize;
+    private readonly OAuth2ClientCredentialsProvider? _oauth2Provider;
 
     /// <summary>Creates the source.</summary>
     /// <param name="client">The HTTP client used for the request.</param>
@@ -35,6 +36,7 @@ internal sealed class HttpStreamingSource<T> : IStreamingSource<T>
         _options = options ?? throw new ArgumentNullException(nameof(options));
         Schema = schema ?? throw new ArgumentNullException(nameof(schema));
         _materialize = materialize ?? throw new ArgumentNullException(nameof(materialize));
+        _oauth2Provider = HttpOAuth2.CreateProvider(_client, _options);
     }
 
     /// <inheritdoc />
@@ -44,7 +46,8 @@ internal sealed class HttpStreamingSource<T> : IStreamingSource<T>
     public async IAsyncEnumerable<T> ReadAsync(ReportExecutionContext execution, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, _baseUrl);
-        HttpRequests.ApplyAuth(request, _options.ToAuth());
+        HttpAuth auth = await HttpOAuth2.ResolveAuthAsync(_options, _oauth2Provider, cancellationToken).ConfigureAwait(false);
+        HttpRequests.ApplyAuth(request, auth);
 
         using HttpResponseMessage response = await _client
             .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
