@@ -1098,7 +1098,7 @@ type doesn't support server-side filters" banner on a Postgres-sourced report.
   reproducing it again needs the report's actual persisted source config or the named source's
   registered type from the live session where it was seen.
 
-## Epic P — Broad source-type expansion (D55) — P1, P2, P3 (a/b/c), P4a, P5 (a/b), P6, P7a, P7b done
+## Epic P — Broad source-type expansion (D55) — P1, P2, P3 (a/b/c), P4a, P5 (a/b), P6, P7 (a/b/c) done — P4b remains
 
 Requested directly by the maintainer (2026-07-16): "possibilitar todas as fontes possíveis, menos
 Kafka." Directional design in `## D55` (`DECISIONS.md`). Every source is a new package on the
@@ -1294,4 +1294,19 @@ small design pass before code (like D43/K1). Ordered cheapest-highest-value firs
     (fixed to go straight to `GET`), triplicated cell-decode logic (extracted into a shared helper),
     and an unnecessary per-page header re-fetch (fixed to cache after page 1). Design in `## D66`
     (`DECISIONS.md`). PR [#197](https://github.com/thiagoluga/NeoReports/pull/197).
-  - [ ] **P7c — Salesforce** (its own design pass — relative-URL pagination + real OAuth2, ties into P4b).
+  - [x] **P7c — Salesforce.** `NeoReports.Sources.Salesforce` (`type: "salesforce"`) — paginates via
+    the REST Query resource's own `nextRecordsUrl` (a relative path resolved against `instanceUrl`
+    through real `Uri` relative-resolution, safe here since `nextRecordsUrl` always starts with `/`;
+    also makes the same-origin credential-replay check meaningful). Materialization is the simplest
+    in the whole HTTP-JSON family — flat JSON records, no envelope, reusing `JsonRecordMaterializer`
+    directly. A real `ISourceRowCounter` via a derived `SELECT COUNT()` query (the second non-SQL
+    Epic P source, after OData's `$count`, with a genuinely accurate count). Static Bearer-token auth
+    only; OAuth2/JWT-bearer flow deferred alongside P4b. Code review caught five issues, all fixed:
+    the row counter wasn't actually wired up (`SalesforceBatchSource<T>` didn't implement
+    `ISourceRowCounter`, leaving it unreachable dead code); the count-query rewrite's word-boundary
+    check broke on Salesforce's own underscore-heavy field-naming convention; the health check's
+    `healthCheckPath` had the same D64/D65 URL-combine risk (fixed the same way HubSpot/Airtable/
+    Elasticsearch were); a minor double-`Uri`-parse per page; and an ADR text mismatch. Design in
+    `## D67` (`DECISIONS.md`). PR [#199](https://github.com/thiagoluga/NeoReports/pull/199).
+
+  **P7 (a/b/c) fully done** — HubSpot, Airtable, Google Sheets, Salesforce all shipped.
