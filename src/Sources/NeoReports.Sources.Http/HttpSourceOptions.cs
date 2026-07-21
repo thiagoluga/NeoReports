@@ -69,6 +69,18 @@ public sealed class HttpSourceOptions
     /// </summary>
     internal string? HealthCheckPath { get; private set; }
 
+    /// <summary>OAuth2 client-credentials token endpoint (P4b, ADR D68), when configured instead of a static <see cref="Bearer"/> token.</summary>
+    internal string? OAuth2TokenEndpoint { get; private set; }
+
+    /// <summary>OAuth2 client id (P4b).</summary>
+    internal string? OAuth2ClientId { get; private set; }
+
+    /// <summary>OAuth2 client secret (P4b).</summary>
+    internal string? OAuth2ClientSecret { get; private set; }
+
+    /// <summary>OAuth2 scope, when configured (P4b).</summary>
+    internal string? OAuth2Scope { get; private set; }
+
     /// <summary>Sets the pagination strategy.</summary>
     public HttpSourceOptions Paginate(HttpPaginationStrategy strategy)
     {
@@ -122,17 +134,41 @@ public sealed class HttpSourceOptions
         return this;
     }
 
-    /// <summary>Sends a static API key as a request header (P4a — static auth only; OAuth2 is deferred, ADR D61).</summary>
+    /// <summary>Sends a static API key as a request header (ADR D61). OAuth2 client-credentials is available separately via <see cref="OAuth2ClientCredentials"/> (P4b, ADR D68).</summary>
     public HttpSourceOptions ApiKey(string headerName, string value)
     {
         _auth.ApiKey(headerName, value);
         return this;
     }
 
-    /// <summary>Sends a static bearer token (<c>Authorization: Bearer &lt;token&gt;</c>) (P4a — static auth only; ADR D61).</summary>
+    /// <summary>Sends a static bearer token (<c>Authorization: Bearer &lt;token&gt;</c>) (ADR D61). Mutually exclusive with <see cref="OAuth2ClientCredentials"/>.</summary>
     public HttpSourceOptions Bearer(string token)
     {
+        if (OAuth2TokenEndpoint is not null)
+            throw new ArgumentException("Bearer and OAuth2ClientCredentials are mutually exclusive; configure only one.", nameof(token));
+
         _auth.Bearer(token);
+        return this;
+    }
+
+    /// <summary>
+    /// Authenticates via the OAuth2 client-credentials grant (P4b, ADR D68) instead of a static
+    /// bearer token — a fresh access token is fetched (and transparently refreshed before expiry) on
+    /// every request. Mutually exclusive with <see cref="Bearer"/>.
+    /// </summary>
+    /// <param name="tokenEndpoint">The OAuth2 token endpoint URL.</param>
+    /// <param name="clientId">The OAuth2 client id.</param>
+    /// <param name="clientSecret">The OAuth2 client secret.</param>
+    /// <param name="scope">Optional space-delimited scope string.</param>
+    public HttpSourceOptions OAuth2ClientCredentials(string tokenEndpoint, string clientId, string clientSecret, string? scope = null)
+    {
+        if (_auth.BearerTokenValue is not null)
+            throw new ArgumentException("OAuth2ClientCredentials and Bearer are mutually exclusive; configure only one.", nameof(tokenEndpoint));
+
+        OAuth2TokenEndpoint = string.IsNullOrWhiteSpace(tokenEndpoint) ? throw new ArgumentException("Token endpoint must be provided.", nameof(tokenEndpoint)) : tokenEndpoint;
+        OAuth2ClientId = string.IsNullOrWhiteSpace(clientId) ? throw new ArgumentException("Client id must be provided.", nameof(clientId)) : clientId;
+        OAuth2ClientSecret = string.IsNullOrWhiteSpace(clientSecret) ? throw new ArgumentException("Client secret must be provided.", nameof(clientSecret)) : clientSecret;
+        OAuth2Scope = scope;
         return this;
     }
 
@@ -143,6 +179,6 @@ public sealed class HttpSourceOptions
         return this;
     }
 
-    /// <summary>Projects this instance's auth-related fields into the shared, source-agnostic <see cref="HttpAuth"/> shape.</summary>
+    /// <summary>Projects this instance's static auth-related fields into the shared, source-agnostic <see cref="HttpAuth"/> shape. Does not include an OAuth2 access token — see <see cref="HttpOAuth2.ResolveAuthAsync"/>.</summary>
     internal HttpAuth ToAuth() => _auth.ToAuth();
 }

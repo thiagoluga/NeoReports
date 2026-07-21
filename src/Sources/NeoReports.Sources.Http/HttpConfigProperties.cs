@@ -23,17 +23,7 @@ internal static class HttpConfigProperties
         if (properties is null)
             return options;
 
-        if (PropertyBag.TryGetString(properties, "strategy", out string? strategyText))
-        {
-            if (!Enum.TryParse(strategyText, ignoreCase: true, out HttpPaginationStrategy strategy))
-            {
-                throw new ConfigurationException(
-                    $"The HTTP source's 'strategy' property '{strategyText}' is not a recognized pagination strategy " +
-                    $"(expected one of: {string.Join(", ", Enum.GetNames<HttpPaginationStrategy>())}).");
-            }
-
-            options.Paginate(strategy);
-        }
+        ReadStrategy(properties, options);
 
         if (PropertyBag.TryGetString(properties, "recordsPath", out string? recordsPath))
             options.RecordsAt(recordsPath);
@@ -41,21 +31,9 @@ internal static class HttpConfigProperties
         if (PropertyBag.TryGetObject(properties, "fieldMap", out JsonElement fieldMapElement))
             options.FieldsFrom(PropertyBag.ToStringMap(fieldMapElement));
 
-        string? cursorResponsePath = PropertyBag.TryGetString(properties, "cursorResponsePath", out string? crp) ? crp : null;
-        string? cursorRequestParam = PropertyBag.TryGetString(properties, "cursorRequestParam", out string? crq) ? crq : null;
-        if (cursorResponsePath is not null || cursorRequestParam is not null)
-            options.CursorField(cursorResponsePath ?? "nextCursor", cursorRequestParam ?? "cursor");
-
-        string? pageParam = PropertyBag.TryGetString(properties, "pageParam", out string? pp) ? pp : null;
-        string? pageSizeParam = PropertyBag.TryGetString(properties, "pageSizeParam", out string? psp) ? psp : null;
-        int? startPage = PropertyBag.TryGetInt(properties, "startPage", out int sp) ? sp : null;
-        if (pageParam is not null || pageSizeParam is not null || startPage is not null)
-            options.PageParams(pageParam ?? "page", pageSizeParam ?? "pageSize", startPage ?? 1);
-
-        string? offsetParam = PropertyBag.TryGetString(properties, "offsetParam", out string? op) ? op : null;
-        string? limitParam = PropertyBag.TryGetString(properties, "limitParam", out string? lp) ? lp : null;
-        if (offsetParam is not null || limitParam is not null)
-            options.OffsetParams(offsetParam ?? "offset", limitParam ?? "pageSize");
+        ReadCursorField(properties, options);
+        ReadPageParams(properties, options);
+        ReadOffsetParams(properties, options);
 
         if (PropertyBag.TryGetObject(properties, "headers", out JsonElement headersElement))
         {
@@ -69,9 +47,74 @@ internal static class HttpConfigProperties
         if (PropertyBag.TryGetString(properties, "bearerToken", out string? bearerToken))
             options.Bearer(bearerToken);
 
+        ReadOAuth2ClientCredentials(properties, options);
+
         if (PropertyBag.TryGetString(properties, "healthCheckPath", out string? healthCheckPath))
             options.HealthCheckAt(healthCheckPath);
 
         return options;
+    }
+
+    /// <summary>Reads and validates the <c>strategy</c> property.</summary>
+    private static void ReadStrategy(IReadOnlyDictionary<string, object?> properties, HttpSourceOptions options)
+    {
+        if (!PropertyBag.TryGetString(properties, "strategy", out string? strategyText))
+            return;
+
+        if (!Enum.TryParse(strategyText, ignoreCase: true, out HttpPaginationStrategy strategy))
+        {
+            throw new ConfigurationException(
+                $"The HTTP source's 'strategy' property '{strategyText}' is not a recognized pagination strategy " +
+                $"(expected one of: {string.Join(", ", Enum.GetNames<HttpPaginationStrategy>())}).");
+        }
+
+        options.Paginate(strategy);
+    }
+
+    /// <summary>Reads the <see cref="HttpPaginationStrategy.Cursor"/> strategy's properties.</summary>
+    private static void ReadCursorField(IReadOnlyDictionary<string, object?> properties, HttpSourceOptions options)
+    {
+        string? responsePath = PropertyBag.TryGetString(properties, "cursorResponsePath", out string? crp) ? crp : null;
+        string? requestParam = PropertyBag.TryGetString(properties, "cursorRequestParam", out string? crq) ? crq : null;
+        if (responsePath is not null || requestParam is not null)
+            options.CursorField(responsePath ?? "nextCursor", requestParam ?? "cursor");
+    }
+
+    /// <summary>Reads the <see cref="HttpPaginationStrategy.Page"/> strategy's properties.</summary>
+    private static void ReadPageParams(IReadOnlyDictionary<string, object?> properties, HttpSourceOptions options)
+    {
+        string? pageParam = PropertyBag.TryGetString(properties, "pageParam", out string? pp) ? pp : null;
+        string? pageSizeParam = PropertyBag.TryGetString(properties, "pageSizeParam", out string? psp) ? psp : null;
+        int? startPage = PropertyBag.TryGetInt(properties, "startPage", out int sp) ? sp : null;
+        if (pageParam is not null || pageSizeParam is not null || startPage is not null)
+            options.PageParams(pageParam ?? "page", pageSizeParam ?? "pageSize", startPage ?? 1);
+    }
+
+    /// <summary>Reads the <see cref="HttpPaginationStrategy.Offset"/> strategy's properties.</summary>
+    private static void ReadOffsetParams(IReadOnlyDictionary<string, object?> properties, HttpSourceOptions options)
+    {
+        string? offsetParam = PropertyBag.TryGetString(properties, "offsetParam", out string? op) ? op : null;
+        string? limitParam = PropertyBag.TryGetString(properties, "limitParam", out string? lp) ? lp : null;
+        if (offsetParam is not null || limitParam is not null)
+            options.OffsetParams(offsetParam ?? "offset", limitParam ?? "pageSize");
+    }
+
+    /// <summary>Reads the OAuth2 client-credentials properties (P4b, ADR D68), when any are configured; the token endpoint, client id, and client secret are required together.</summary>
+    private static void ReadOAuth2ClientCredentials(IReadOnlyDictionary<string, object?> properties, HttpSourceOptions options)
+    {
+        bool hasTokenEndpoint = PropertyBag.TryGetString(properties, "oauth2TokenEndpoint", out string? tokenEndpoint);
+        bool hasClientId = PropertyBag.TryGetString(properties, "oauth2ClientId", out string? clientId);
+        bool hasClientSecret = PropertyBag.TryGetString(properties, "oauth2ClientSecret", out string? clientSecret);
+        if (!hasTokenEndpoint && !hasClientId && !hasClientSecret)
+            return;
+
+        if (!hasTokenEndpoint || !hasClientId || !hasClientSecret)
+        {
+            throw new ConfigurationException(
+                "The HTTP source's OAuth2 client-credentials properties ('oauth2TokenEndpoint', 'oauth2ClientId', 'oauth2ClientSecret') must all be configured together.");
+        }
+
+        string? scope = PropertyBag.TryGetString(properties, "oauth2Scope", out string? scopeValue) ? scopeValue : null;
+        options.OAuth2ClientCredentials(tokenEndpoint!, clientId!, clientSecret!, scope);
     }
 }

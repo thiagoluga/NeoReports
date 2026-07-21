@@ -21,6 +21,7 @@ internal sealed class HttpBatchSource<T> : IBatchSource<T>
     private readonly string _baseUrl;
     private readonly HttpSourceOptions _options;
     private readonly Func<JsonElement, T> _materialize;
+    private readonly OAuth2ClientCredentialsProvider? _oauth2Provider;
 
     /// <summary>Creates the source.</summary>
     /// <param name="client">The HTTP client used for every request.</param>
@@ -35,6 +36,7 @@ internal sealed class HttpBatchSource<T> : IBatchSource<T>
         _options = options ?? throw new ArgumentNullException(nameof(options));
         Schema = schema ?? throw new ArgumentNullException(nameof(schema));
         _materialize = materialize ?? throw new ArgumentNullException(nameof(materialize));
+        _oauth2Provider = HttpOAuth2.CreateProvider(_client, _options);
 
         if (options.PaginationStrategy == HttpPaginationStrategy.None)
         {
@@ -71,7 +73,8 @@ internal sealed class HttpBatchSource<T> : IBatchSource<T>
         }
 
         using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
-        HttpRequests.ApplyAuth(request, _options.ToAuth());
+        HttpAuth auth = await HttpOAuth2.ResolveAuthAsync(_options, _oauth2Provider, cancellationToken).ConfigureAwait(false);
+        HttpRequests.ApplyAuth(request, auth);
 
         using HttpResponseMessage response = await _client
             .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)

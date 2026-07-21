@@ -1,10 +1,13 @@
 namespace NeoReports.Sources.Http.Common;
 
 /// <summary>
-/// The static, per-request auth material an HTTP-family source applies to every request (ADR D61)
-/// — a static API key header, a static bearer token, and/or arbitrary static headers. Deliberately
-/// data-only (no OAuth2/token-refresh flow — P4a scope, deferred per ADR D61); callers project their
-/// own options type into this shape and pass it to <see cref="HttpRequests.ApplyAuth"/>.
+/// The (possibly per-request-resolved) auth material an HTTP-family source applies to one request
+/// (ADR D61) — a static API key header, a bearer token, and/or arbitrary static headers. Deliberately
+/// stays a plain data snapshot regardless of where the bearer token came from: a caller with a
+/// dynamically-refreshed token (e.g. <c>NeoReports.Sources.Http</c>'s OAuth2 client-credentials
+/// support, P4b/ADR D68) resolves it first and passes the current value in here, rather than this
+/// type growing any async/refresh logic of its own. Callers project their own options type into this
+/// shape and pass it to <see cref="HttpRequests.ApplyAuth"/>.
 /// </summary>
 /// <param name="StaticHeaders">Static request headers applied to every request.</param>
 /// <param name="ApiKeyHeaderName">Header name an API key is sent under, when configured.</param>
