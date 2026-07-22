@@ -1009,3 +1009,33 @@ Fixes a real bug found while generalizing the Builder wizard's Configure step (P
 **Shipped instead: default-reset, opt-in-resume.** `Builder.razor` now resets `Wizard` by default whenever `EditName` is blank; only `?resume=true` (set on the wizard's own 3 internal "Back"/"Change"/"edit" links — `BuilderConfigure.razor`'s "Change →" and "Back", `BuilderReview.razor`'s Source "edit") skips it. Every external entry point (`Dashboard`/`Reports`/`JobFailed`'s buttons, and `Topbar.razor`'s persistent link, which needed no change at all) now gets correct behavior automatically, with nothing to remember. `QueryBuilder.razor`'s "Create report from this query" handoff (K6c) is unaffected either way — it calls `Wizard.Reset()` itself directly before navigating straight to `builder/configure`, bypassing `Builder.razor`'s `OnInitializedAsync` entirely.
 
 Docs: `docs/ui-handoff.md`'s Builder · step 1 row updated to describe the new `?resume=true`-gated behavior instead of the stale "without `?edit`, resets" description.
+
+## D70 — Pro package licensing: offline signed-key runtime validation (design, 2026-07-22)
+
+**Reverses D30's "no runtime enforcement" posture.** D29/D30 shipped the Pro packages (`NeoReports.Xlsx.Pro`, `NeoReports.Sources.Join.Pro`, `NeoReports.QueryBuilder.Pro`) gated only by distribution (never published to a feed) and by the PolyForm Small Business license *terms*, with no code-level check. The maintainer now wants Pro **publicly published** (so anyone can pull it from NuGet), which removes the distribution gate — a runtime license check becomes the only remaining enforcement mechanism. Requested shape: the website issues a 30-day trial license on request; the key is validated **offline** (no network call at runtime) — chosen specifically because a runtime dependency on a license server conflicts with this codebase's own resilience/unattended-execution philosophy (D6: a job restarts from zero and runs unattended; Polly resilience exists for external *data* sources, not for gating whether the product runs at all). Design discussed and agreed with the maintainer in chat before any code.
+
+### Token format and crypto
+
+A compact two-part token: `base64url(payload JSON)` + `.` + `base64url(signature)` — no JWT library dependency. Payload: product/edition id, licensee (name/email/company — free text, not a technical enforcement key), issued-at, expires-at. No revocation list (a denylist needs an online check, which would break the offline requirement — an accepted, honest gap for v1; a compromised/leaked key is a legal matter under the license terms, same posture as D29's non-runtime-enforced predecessor). Signed with **ECDsa (P-256)** via `System.Security.Cryptography` — built into the BCL on every target framework this repo multi-targets (net8/net9), so this ships with **no new CPM dependency**, matching the "hand-roll the small thing" precedent set by every Epic P source's own auth/crypto code. The private signing key lives only on the maintainer's license-issuing side (a website/service outside this repo); the public verification key is embedded as a constant in the validation package below.
+
+### Where the check lives — new shared `NeoReports.Licensing` package, MIT
+
+A new package (not `Abstractions`, not `Core` — those are consumed by every OSS-only user who never touches Pro) holds the token parser + ECDsa verification + expiry check. All three Pro packages take a project/package reference to it, avoiding tripling the validation logic — the same "promote shared plumbing once 2+ consumers need it" pattern this repo already applies (`Http.Common`, `Files.Common`), applied proactively here since all three known Pro packages need identical logic from day one. Licensed **MIT**, not Pro: the verification code being publicly auditable (no hidden phone-home, no obfuscated check) is a trust signal worth more than the marginal secrecy it would otherwise buy — enforcement comes from the Pro packages refusing to operate without a valid key, not from hiding how the key is checked.
+
+### Supplying the key at runtime
+
+Follows the existing `${VAR}`-style convention this codebase already uses for every other secret (connection strings, API keys, OAuth2 client secrets): an environment variable (e.g. `NEOREPORTS_LICENSE_KEY`) or an explicit value passed to a DI registration call (`AddNeoReportsProLicense(key)`), checked once at startup/registration time — not lazily on first Pro-feature use, so a misconfigured license fails immediately and loudly rather than surfacing mid-run.
+
+### Failure behavior: hard-fail, no degraded mode
+
+Missing, malformed, unverifiable, or expired license → throws at startup with a clear, actionable message (what's wrong + where to renew). No silent degrade to a reduced-functionality mode — consistent with D36's "never ship mock/fake/degraded behavior presented as if it were real." A grace period past expiry was considered and explicitly rejected for v1: it adds leniency logic disproportionate to a 30-day trial's stakes; revisit only if real customer feedback asks for it.
+
+### Accepted honest gaps (D36 posture)
+
+1. **Clock trust.** Offline validation has no way to confirm real wall-clock time — a customer can roll back their system clock to extend a trial. Not mitigated: for a 30-day trial the abuse ceiling is low, and any mitigation (persisted last-seen-timestamp, monotonic clock cross-checks) adds real complexity for marginal deterrence. Documented here rather than silently ignored.
+2. **No machine/hardware binding.** The license is not tied to a machine id or hardware fingerprint — deliberately, since that breaks in containers/autoscaling/cloud redeploys where "the machine" is ephemeral, and this product's audience (small business / self-hosted) doesn't warrant enterprise-grade DRM friction. Enforcement of "one license per organization" stays a licensing-terms matter, same posture as D29.
+3. **No revocation.** See "Token format" above.
+
+### Out of scope for this decision
+
+The website/service that *issues* trial licenses (signs tokens with the private key) is not part of this repo and is not designed here — only the verification side (`NeoReports.Licensing`) and its consumption by the three Pro packages are in scope. Implementation (the `NeoReports.Licensing` package, wiring into each Pro package, tests) follows in a subsequent PR.
