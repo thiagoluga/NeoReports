@@ -46,7 +46,7 @@ public static class ProLicense
     {
         try
         {
-            ECDsa publicKey = ECDsa.Create();
+            var publicKey = ECDsa.Create();
             publicKey.ImportSubjectPublicKeyInfo(Convert.FromBase64String(PublicKeyBase64), out _);
             return publicKey;
         }
