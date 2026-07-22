@@ -1326,3 +1326,23 @@ small design pass before code (like D43/K1). Ordered cheapest-highest-value firs
     `## D67` (`DECISIONS.md`). PR [#199](https://github.com/thiagoluga/NeoReports/pull/199).
 
   **P7 (a/b/c) fully done** — HubSpot, Airtable, Google Sheets, Salesforce all shipped.
+
+## Epic Q — Pro package licensing: offline signed-key validation (D70) — design done, not implemented
+
+Maintainer request (2026-07-22): publish the Pro packages (`NeoReports.Xlsx.Pro`,
+`NeoReports.Sources.Join.Pro`, `NeoReports.QueryBuilder.Pro`) publicly, gated by a runtime-validated
+license key instead of D30's distribution-only model. The website will issue 30-day trial licenses
+on request; validation happens **offline** (no network call at runtime), discussed and agreed with
+the maintainer before any code — see `## D70` (`DECISIONS.md`) for the full design (token format,
+ECDsa/P-256 signing with no new dependency, the new MIT `NeoReports.Licensing` package, hard-fail
+startup behavior, and the accepted honest gaps: no clock-tamper mitigation, no machine binding, no
+revocation list).
+
+- [ ] **Q1 — `NeoReports.Licensing` package.** Token parser + ECDsa signature verification + expiry
+  check; embeds the public verification key as a constant. MIT.
+- [ ] **Q2 — Wire into the three Pro packages.** Each takes a reference to `NeoReports.Licensing` and
+  calls it once at DI-registration time (`AddNeoReportsProLicense(key)` or equivalent), throwing with
+  a clear, actionable message on a missing/invalid/expired key.
+- [ ] **Q3 — Publish Pro packages.** Once Q1/Q2 ship, lift the "not published" posture from D30 —
+  needs its own follow-up decision on which feed/registry and whether `pack-pro.yml` becomes the
+  real release pipeline for Pro or a new workflow is added.
