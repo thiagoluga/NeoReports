@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
+    <Description>Offline signed-license validation for NeoReports Pro packages (ADR D70). MIT — the verification logic is publicly auditable; enforcement comes from the Pro packages refusing to run without a valid key, not from hiding this code.</Description>
+    <PackageTags>reports;reporting;licensing</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Lets tests exercise AddNeoReportsProLicenseCore's full registration behavior with a
+         throwaway key pair — the real NeoReports Pro private key deliberately never lives in this
+         repo, so the public embedded-key path can't be round-trip tested directly. -->
+    <InternalsVisibleTo Include="NeoReports.Licensing.UnitTests" />
+  </ItemGroup>
+
+</Project>
