@@ -1327,7 +1327,7 @@ small design pass before code (like D43/K1). Ordered cheapest-highest-value firs
 
   **P7 (a/b/c) fully done** — HubSpot, Airtable, Google Sheets, Salesforce all shipped.
 
-## Epic Q — Pro package licensing: offline signed-key validation (D70) — design done, not implemented
+## Epic Q — Pro package licensing: offline signed-key validation (D70) — Q1 done, Q2/Q3 not started
 
 Maintainer request (2026-07-22): publish the Pro packages (`NeoReports.Xlsx.Pro`,
 `NeoReports.Sources.Join.Pro`, `NeoReports.QueryBuilder.Pro`) publicly, gated by a runtime-validated
@@ -1336,13 +1336,22 @@ on request; validation happens **offline** (no network call at runtime), discuss
 the maintainer before any code — see `## D70` (`DECISIONS.md`) for the full design (token format,
 ECDsa/P-256 signing with no new dependency, the new MIT `NeoReports.Licensing` package, hard-fail
 startup behavior, and the accepted honest gaps: no clock-tamper mitigation, no machine binding, no
-revocation list).
+revocation list). **One bundle license unlocks all three Pro packages together** (confirmed with the
+maintainer during Q1) — `LicenseToken` deliberately has no per-product field.
 
-- [ ] **Q1 — `NeoReports.Licensing` package.** Token parser + ECDsa signature verification + expiry
-  check; embeds the public verification key as a constant. MIT.
+- [x] **Q1 — `NeoReports.Licensing` package.** Token parser (`LicenseValidator`) + signer
+  (`LicenseSigner`, maintainer-tooling-only) + ECDsa P-256 signature verification + expiry check;
+  `ProLicense` wraps it with the embedded public verification key constant (a placeholder pending
+  rotation before real licenses are issued — see the constant's own doc comment); a DI extension
+  (`AddNeoReportsProLicense`) validates once and registers a `LicenseToken` singleton, short-circuiting
+  once one is already present. MIT, zero dependencies beyond `Microsoft.Extensions.DependencyInjection.Abstractions`.
+  Code review (4 parallel angles) caught 3 real issues (duplicated key-import logic, culture-dependent
+  date formatting, whitespace-in-key handling) plus a null-safety gap and a doc/behavior mismatch, all
+  fixed — full detail in `DECISIONS.md`'s D70 "Q1 implementation" note. 24 tests.
 - [ ] **Q2 — Wire into the three Pro packages.** Each takes a reference to `NeoReports.Licensing` and
   calls it once at DI-registration time (`AddNeoReportsProLicense(key)` or equivalent), throwing with
   a clear, actionable message on a missing/invalid/expired key.
-- [ ] **Q3 — Publish Pro packages.** Once Q1/Q2 ship, lift the "not published" posture from D30 —
-  needs its own follow-up decision on which feed/registry and whether `pack-pro.yml` becomes the
-  real release pipeline for Pro or a new workflow is added.
+- [ ] **Q3 — Publish Pro packages.** Once Q2 ships, lift the "not published" posture from D30 — needs
+  its own follow-up decision on which feed/registry and whether `pack-pro.yml` becomes the real
+  release pipeline for Pro or a new workflow is added. Also needs a real, securely-generated
+  production key pair to replace Q1's placeholder embedded public key before any customer relies on it.
