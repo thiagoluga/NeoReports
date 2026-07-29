@@ -104,7 +104,10 @@ namespace NeoReports.LicenseTool
             for (DirectoryInfo? dir = new FileInfo(path).Directory; dir is not null; dir = dir.Parent)
             {
                 // A worktree/submodule has .git as a file rather than a directory — both count.
-                if (Directory.Exists(Path.Combine(dir.FullName, ".git")) || File.Exists(Path.Combine(dir.FullName, ".git")))
+                // Path.Join, not Path.Combine: Combine silently discards earlier segments if a later
+                // one looks rooted, which is never what a "walk up the tree" check wants.
+                string dotGit = Path.Join(dir.FullName, ".git");
+                if (Directory.Exists(dotGit) || File.Exists(dotGit))
                     return dir.FullName;
             }
 

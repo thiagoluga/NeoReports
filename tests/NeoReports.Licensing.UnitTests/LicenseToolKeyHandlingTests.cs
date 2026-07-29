@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using NeoReports.LicenseTool;
 using Shouldly;
 using Xunit;
@@ -24,22 +25,37 @@ public sealed class LicenseToolKeyHandlingTests : IDisposable
         Directory.Delete(_directory, recursive: true);
     }
 
-    private string PathIn(string name) => Path.Combine(_directory, name);
+    // Path.Join, not Path.Combine: Combine would silently discard _directory if the name ever looked
+    // rooted, quietly writing a key somewhere other than the temp directory this test cleans up.
+    private string PathIn(params string[] parts) => Path.Join([_directory, .. parts]);
+
+    /// <summary>Runs the CLI with stdout captured, restoring and disposing the capture afterwards.</summary>
+    private (int ExitCode, string Stdout) RunCapturingStdout(params string[] args)
+    {
+        using var capture = new StringWriter();
+        Console.SetOut(capture);
+        try
+        {
+            return (Cli.Run(args), capture.ToString());
+        }
+        finally
+        {
+            Console.SetOut(_originalOut);
+        }
+    }
 
     [Fact]
     public void Keygen_writes_a_private_key_and_prints_the_public_half()
     {
         string keyPath = PathIn("signing-key.pem");
-        var stdout = new StringWriter();
-        Console.SetOut(stdout);
 
-        int exitCode = Cli.Run(["keygen", "--out", keyPath]);
+        (int exitCode, string stdout) = RunCapturingStdout("keygen", "--out", keyPath);
 
         exitCode.ShouldBe(0);
         File.ReadAllText(keyPath).ShouldContain("BEGIN PRIVATE KEY");
         // The printed half must be the public one — never any part of the PEM written to disk.
-        stdout.ToString().ShouldNotContain("PRIVATE KEY");
-        stdout.ToString().ShouldContain("MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQc");
+        stdout.ShouldNotContain("PRIVATE KEY");
+        stdout.ShouldContain("MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQc");
     }
 
     [Fact]
@@ -48,7 +64,7 @@ public sealed class LicenseToolKeyHandlingTests : IDisposable
         string keyPath = PathIn("signing-key.pem");
         File.WriteAllText(keyPath, "the original signing key");
 
-        int exitCode = Cli.Run(["keygen", "--out", keyPath]);
+        (int exitCode, _) = RunCapturingStdout("keygen", "--out", keyPath);
 
         exitCode.ShouldBe(1);
         File.ReadAllText(keyPath).ShouldBe("the original signing key");
@@ -58,11 +74,11 @@ public sealed class LicenseToolKeyHandlingTests : IDisposable
     public void Keygen_refuses_to_write_inside_a_git_working_tree()
     {
         // Where a signing key is one `git add -A` away from being published.
-        Directory.CreateDirectory(Path.Combine(_directory, "repo", ".git"));
-        Directory.CreateDirectory(Path.Combine(_directory, "repo", "nested"));
-        string keyPath = Path.Combine(_directory, "repo", "nested", "signing-key.pem");
+        Directory.CreateDirectory(PathIn("repo", ".git"));
+        Directory.CreateDirectory(PathIn("repo", "nested"));
+        string keyPath = PathIn("repo", "nested", "signing-key.pem");
 
-        int exitCode = Cli.Run(["keygen", "--out", keyPath]);
+        (int exitCode, _) = RunCapturingStdout("keygen", "--out", keyPath);
 
         exitCode.ShouldBe(1);
         File.Exists(keyPath).ShouldBeFalse();
@@ -71,11 +87,13 @@ public sealed class LicenseToolKeyHandlingTests : IDisposable
     [Fact]
     public void Keygen_detects_a_git_worktree_whose_dot_git_is_a_file()
     {
-        Directory.CreateDirectory(Path.Combine(_directory, "worktree"));
-        File.WriteAllText(Path.Combine(_directory, "worktree", ".git"), "gitdir: /elsewhere/.git/worktrees/x");
-        string keyPath = Path.Combine(_directory, "worktree", "signing-key.pem");
+        Directory.CreateDirectory(PathIn("worktree"));
+        File.WriteAllText(PathIn("worktree", ".git"), "gitdir: /elsewhere/.git/worktrees/x");
+        string keyPath = PathIn("worktree", "signing-key.pem");
 
-        Cli.Run(["keygen", "--out", keyPath]).ShouldBe(1);
+        (int exitCode, _) = RunCapturingStdout("keygen", "--out", keyPath);
+
+        exitCode.ShouldBe(1);
         File.Exists(keyPath).ShouldBeFalse();
     }
 
@@ -86,7 +104,7 @@ public sealed class LicenseToolKeyHandlingTests : IDisposable
             return; // Windows has no file mode; protection there comes from the directory's ACL.
 
         string keyPath = PathIn("signing-key.pem");
-        Cli.Run(["keygen", "--out", keyPath]).ShouldBe(0);
+        RunCapturingStdout("keygen", "--out", keyPath).ExitCode.ShouldBe(0);
 
         File.GetUnixFileMode(keyPath).ShouldBe(UnixFileMode.UserRead | UnixFileMode.UserWrite);
     }
@@ -95,30 +113,26 @@ public sealed class LicenseToolKeyHandlingTests : IDisposable
     public void Sign_issues_a_key_that_validates_against_the_generated_public_key()
     {
         string keyPath = PathIn("signing-key.pem");
-        var keygenOut = new StringWriter();
-        Console.SetOut(keygenOut);
-        Cli.Run(["keygen", "--out", keyPath]).ShouldBe(0);
-        string publicKeyBase64 = keygenOut.ToString()
+        (int keygenExit, string keygenOut) = RunCapturingStdout("keygen", "--out", keyPath);
+        keygenExit.ShouldBe(0);
+        string publicKeyBase64 = keygenOut
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Last();
 
-        var signOut = new StringWriter();
-        Console.SetOut(signOut);
-        Cli.Run(["sign", "--key", keyPath, "--licensee", "Acme Corp", "--days", "30"]).ShouldBe(0);
-        string licenseKey = signOut.ToString().Trim();
+        (int signExit, string signOut) = RunCapturingStdout("sign", "--key", keyPath, "--licensee", "Acme Corp", "--days", "30");
+        signExit.ShouldBe(0);
 
-        using var publicKey = System.Security.Cryptography.ECDsa.Create();
+        using var publicKey = ECDsa.Create();
         publicKey.ImportSubjectPublicKeyInfo(Convert.FromBase64String(publicKeyBase64), out _);
-        LicenseValidator.Validate(licenseKey, publicKey).Licensee.ShouldBe("Acme Corp");
+        LicenseValidator.Validate(signOut.Trim(), publicKey).Licensee.ShouldBe("Acme Corp");
     }
 
     [Fact]
     public void Sign_rejects_a_non_positive_day_count()
     {
         string keyPath = PathIn("signing-key.pem");
-        Console.SetOut(new StringWriter());
-        Cli.Run(["keygen", "--out", keyPath]).ShouldBe(0);
+        RunCapturingStdout("keygen", "--out", keyPath).ExitCode.ShouldBe(0);
 
-        Cli.Run(["sign", "--key", keyPath, "--licensee", "Acme Corp", "--days", "0"]).ShouldBe(1);
+        RunCapturingStdout("sign", "--key", keyPath, "--licensee", "Acme Corp", "--days", "0").ExitCode.ShouldBe(1);
     }
 }
