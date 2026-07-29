@@ -118,7 +118,7 @@ public sealed class AdoKeysetSource<T> : IBatchSource<T>, ISourceRowCounter
         {
             records.Add(_materialize(reader, ordinals));
             if (keyOrdinal >= 0 && !reader.IsDBNull(keyOrdinal))
-                lastKey = Convert.ToString(reader.GetValue(keyOrdinal), CultureInfo.InvariantCulture);
+                lastKey = KeysetCursorCodec.FormatKey(reader.GetValue(keyOrdinal), _keyColumn);
             read++;
         }
 
