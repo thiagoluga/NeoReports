@@ -128,7 +128,7 @@ public sealed class CsvConfigSourceProviderTests : IDisposable
         result.Records[0]["Id"].ShouldBe(1L);
         result.Records[0]["Customer"].ShouldBe("C1");
         await client.Received(1).GetObjectAsync(
-            Arg.Is<GetObjectRequest>(r => r.BucketName == "my-bucket" && r.Key == "sales.csv"),
+            Arg.Is<GetObjectRequest>(r => r!.BucketName == "my-bucket" && r!.Key == "sales.csv"),
             Arg.Any<CancellationToken>());
     }
 

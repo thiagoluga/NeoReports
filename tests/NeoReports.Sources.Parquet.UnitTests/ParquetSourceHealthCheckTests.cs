@@ -79,7 +79,7 @@ public sealed class ParquetSourceHealthCheckTests : IDisposable
 
         result.Healthy.ShouldBeTrue();
         await client.Received(1).GetObjectMetadataAsync(
-            Arg.Is<GetObjectMetadataRequest>(r => r.BucketName == "my-bucket" && r.Key == "sales.parquet"),
+            Arg.Is<GetObjectMetadataRequest>(r => r!.BucketName == "my-bucket" && r!.Key == "sales.parquet"),
             Arg.Any<CancellationToken>());
     }
 
