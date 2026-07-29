@@ -16,6 +16,8 @@
     <ProjectReference Include="..\..\src\Formats\NeoReports.Xlsx.Pro\NeoReports.Xlsx.Pro.csproj" />
     <ProjectReference Include="..\..\src\Sources\NeoReports.Sources.Join.Pro\NeoReports.Sources.Join.Pro.csproj" />
     <ProjectReference Include="..\..\src\Sources\NeoReports.QueryBuilder.Pro\NeoReports.QueryBuilder.Pro.csproj" />
+    <!-- The license-issuing tool, so its key-handling security controls are covered (ADR D70, Q3a). -->
+    <ProjectReference Include="..\..\tools\NeoReports.LicenseTool\NeoReports.LicenseTool.csproj" />
   </ItemGroup>
 
   <ItemGroup>

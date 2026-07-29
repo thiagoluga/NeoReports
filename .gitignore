@@ -64,6 +64,15 @@ desktop.ini
 appsettings.*.local.json
 secrets.json
 
+# Private key material. The Pro license signing key (ADR D70) must never be committed — anyone
+# holding it can mint licenses, and rotating it invalidates every license already issued.
+# NeoReports.LicenseTool also refuses to write one inside a git working tree, but this is the
+# backstop for keys produced any other way.
+*.pem
+*.key
+*.pfx
+*.p12
+
 # Scratch files used by the local build/test loop (never committed)
 _*.log
 _*.txt

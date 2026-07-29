@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Maintainer tooling, run locally — no need to multi-target like the shipped libraries. -->
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>NeoReports.LicenseTool</RootNamespace>
+
+    <!-- Never published: this is the *issuing* side of licensing (ADR D70), which by design lives
+         with the maintainer and not with customers. In the solution so CI keeps it compiling. -->
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Reuses LicenseToken/LicenseSigner rather than restating the token shape, so an issued key
+         can never drift from what the validator accepts. -->
+    <ProjectReference Include="..\..\src\NeoReports.Licensing\NeoReports.Licensing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- So the two security controls here (refusing to overwrite a key, and the file mode it is
+         written with) are actually covered — both could otherwise be deleted with the suite green. -->
+    <InternalsVisibleTo Include="NeoReports.Licensing.UnitTests" />
+  </ItemGroup>
+
+</Project>
