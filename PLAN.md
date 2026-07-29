@@ -1361,7 +1361,19 @@ maintainer during Q1) — `LicenseToken` deliberately has no per-product field.
   parallelization-disabled collection since they mutate process-global state). Samples 06/07 now need
   a license to *run* (still build without one) — noted in their READMEs. Design + honest gaps in
   `## D70`'s "Q2 implementation" section.
-- [ ] **Q3 — Publish Pro packages.** Once Q2 ships, lift the "not published" posture from D30 — needs
-  its own follow-up decision on which feed/registry and whether `pack-pro.yml` becomes the real
-  release pipeline for Pro or a new workflow is added. Also needs a real, securely-generated
-  production key pair to replace Q1's placeholder embedded public key before any customer relies on it.
+- [x] **Q3a — License-issuing tool.** `tools/NeoReports.LicenseTool` (`IsPackable=false`, maintainer
+  only): `keygen` produces the ECDsa P-256 signing pair — public key to stdout for embedding,
+  private key to a `0600` PEM file, refusing to overwrite an existing one — and `sign --licensee
+  --days` issues a license key. Built because Q1/Q2 shipped validation with **no way to actually
+  issue a license**: `LicenseSigner` existed as a library API that nothing called, so the maintainer
+  could not produce a key at all. Reuses `LicenseToken`/`LicenseSigner` rather than restating the
+  token shape, so an issued key can't drift from what the validator accepts.
+- [ ] **Q3b — Rotate to a production signing key.** Q1's embedded `ProLicense.PublicKeyBase64` is a
+  **placeholder whose private half was generated in a chat session** — plaintext, unrotatable,
+  unaudited. Run `keygen` locally, move the private key straight into a vault, embed the new public
+  key, and ship it **before** any customer license is issued. Blocks Q3c.
+- [ ] **Q3c — Publish the Pro packages.** Lift D30's "not published" posture: the three Pro projects
+  are `IsPackable=false` with `PackageLicenseExpression` cleared, so `release.yml` (which packs the
+  whole solution) skips them today. Needs a decision on the mechanism — extend `release.yml`, or make
+  `pack-pro.yml` push instead of only uploading artifacts — plus the feed/registry choice.
+  `NeoReports.Licensing` itself is already packable and MIT, so it rides the normal OSS release.
