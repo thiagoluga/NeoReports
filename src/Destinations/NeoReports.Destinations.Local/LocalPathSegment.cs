@@ -22,12 +22,12 @@ internal static class LocalPathSegment
         if (value.Length == 0)
             return value;
 
-        // Reject a standalone "."/".." component and any directory separator. With separators
-        // rejected the value is a single segment, so the standalone dot check fully covers
-        // traversal; a bare "a..b" (no separator) is an ordinary, safe file-name fragment and stays
-        // allowed. ':' is rejected only on Windows, where it introduces a drive prefix ("C:..") or an
-        // NTFS alternate-data-stream ("name:stream") that redirects the write off the intended path;
-        // on other platforms ':' is an ordinary, safe file-name character (e.g. a "HH:mm:ss" value).
+        // Reject a standalone dot or double-dot component and any directory separator. With
+        // separators rejected the value is a single segment, so the standalone-dot check fully
+        // covers traversal; a bare a..b with no separator is an ordinary, safe file-name fragment
+        // and stays allowed. A colon is rejected only on Windows, where it introduces a drive prefix
+        // such as C-colon or an NTFS alternate-data-stream suffix that redirects the write off the
+        // intended path; on other platforms a colon is an ordinary, safe file-name character.
         var rejected = value is "." or ".."
             || value.IndexOfAny(UniversalSeparators) >= 0
             || (OperatingSystem.IsWindows() && value.Contains(':', StringComparison.Ordinal));
