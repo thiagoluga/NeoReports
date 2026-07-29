@@ -41,7 +41,7 @@ public sealed class ProLicenseGateTests : IDisposable
             Task.FromResult(new BatchResult<int>(Array.Empty<int>(), null, false));
     }
 
-    private static IBatchSource<int> EmptySource() => new EmptyBatchSource();
+    private static EmptyBatchSource EmptySource() => new();
 
     private static string SignedKey(ECDsa keyPair, string licensee = "Acme Corp") =>
         LicenseSigner.Sign(
