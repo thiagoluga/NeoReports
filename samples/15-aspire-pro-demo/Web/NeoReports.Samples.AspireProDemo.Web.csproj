@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!-- Identical to sample 14's Web project: everything the demo needs beyond hosting comes from
+       AllSourcesShared (ADR D71). -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\UI\NeoReports.UI\NeoReports.UI.csproj" />
+    <ProjectReference Include="..\..\..\src\Integrations\NeoReports.AspNetCore\NeoReports.AspNetCore.csproj" />
+    <ProjectReference Include="..\..\NeoReports.Samples.AllSourcesShared\NeoReports.Samples.AllSourcesShared.csproj" />
+  </ItemGroup>
+
+  <!-- What makes this sample 15 rather than sample 14: the three commercial Pro packages
+       (PolyForm Small Business, ADR D29/D50) and the MIT licensing package that gates them. They
+       require a NeoReports Pro license at run time (ADR D70) — the app still builds without one,
+       but refuses to start. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\NeoReports.Licensing\NeoReports.Licensing.csproj" />
+    <ProjectReference Include="..\..\..\src\Formats\NeoReports.Xlsx.Pro\NeoReports.Xlsx.Pro.csproj" />
+    <ProjectReference Include="..\..\..\src\Sources\NeoReports.Sources.Join.Pro\NeoReports.Sources.Join.Pro.csproj" />
+    <ProjectReference Include="..\..\..\src\Sources\NeoReports.QueryBuilder.Pro\NeoReports.QueryBuilder.Pro.csproj" />
+  </ItemGroup>
+
+</Project>

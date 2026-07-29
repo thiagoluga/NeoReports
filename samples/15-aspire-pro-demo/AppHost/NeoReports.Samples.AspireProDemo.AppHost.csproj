@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Sdk Name="Aspire.AppHost.Sdk" Version="9.5.2" />
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsAspireHost>true</IsAspireHost>
+    <UserSecretsId>8d41f7b2-51c9-4e0a-b3d6-9f2e7a4c1b58</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.AppHost" />
+    <PackageReference Include="Aspire.Hosting.PostgreSQL" />
+    <PackageReference Include="Aspire.Hosting.MySql" />
+    <PackageReference Include="Aspire.Hosting.SqlServer" />
+    <PackageReference Include="Aspire.Hosting.MongoDB" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Web\NeoReports.Samples.AspireProDemo.Web.csproj" />
+  </ItemGroup>
+
+</Project>
