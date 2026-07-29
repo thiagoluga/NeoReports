@@ -1,7 +1,7 @@
 // Sample 15 — sample 14's all-sources demo plus the commercial Pro packages. Provisions the same
 // four databases (PostgreSQL, MySQL, SQL Server, MongoDB) and reuses sample 14's seeding, column
-// definitions and named-source registration verbatim through NeoReports.Samples.AllSourcesShared;
-// the Web host on top adds the three Pro packages (ADR D50/L1).
+// definitions and named-source registration verbatim through the shared AllSourcesDemo class. The
+// Web host on top adds the three Pro packages (ADR D50/L1).
 //
 // The Pro packages require a license at run time (ADR D70), supplied through the
 // NEOREPORTS_LICENSE_KEY environment variable — without a valid one the web host throws
