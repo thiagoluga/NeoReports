@@ -8,7 +8,38 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 
 ## [Unreleased]
 
+### Changed (breaking, commercial packages only)
+- **The Pro packages now require a license key at run time (D70/Epic Q).** `NeoReports.Xlsx.Pro`,
+  `NeoReports.Sources.Join.Pro` and `NeoReports.QueryBuilder.Pro` previously had **no runtime
+  enforcement** — they were gated only by not being published and by the PolyForm terms themselves
+  (D29/D30). With the Pro packages moving to public distribution, that gate disappears, so a valid
+  license is now checked in code. Supply one by setting the `NEOREPORTS_LICENSE_KEY` environment
+  variable, or explicitly at startup with `services.AddNeoReportsProLicense(key)` (dependency
+  injection) or `NeoReports.Licensing.ProLicenseGate.Register(key)` (code-first, no container).
+  Without a valid key the Pro packages throw `NeoReportsLicenseException` — deliberately loud and
+  immediate rather than a silent degrade (D36 posture).
+  - Enforced on **both** entry paths: the DI registrations (`AddXlsxWorkbook()`,
+    `AddMergeJoinConfigSource()`, `AddQueryBuilder()`) **and** the static fluent APIs typed
+    code-first reports use (`Format.XlsxWorkbook(...)`, `Join.MergeJoin(...)`, `.Enrich(...)`,
+    `KeysetSqlGenerator.Generate(...)`), which never touch a DI container.
+  - The signature is verified once per process; the license's **validity window is re-checked on
+    every call**, so a long-running host cannot outlive its own trial without restarting.
+  - Samples `06-multi-sheet-xlsx` and `07-multi-source` still **build** without a license but now
+    need one to **run**; both READMEs say so.
+  - The **OSS packages are unaffected** — nothing outside the three Pro packages requires a license.
+
 ### Added
+- **`NeoReports.Licensing` — offline Pro license validation (D70/Epic Q).** New **MIT** package (so
+  the verification logic is publicly auditable — there is no hidden phone-home) that validates an
+  ECDsa P-256-signed license key **fully offline**: no network call at run time, which keeps Pro
+  usable in the unattended, restart-from-zero execution model the engine is built around (D6). One
+  "bundle" license unlocks all three Pro packages together. Ships with no new dependency beyond
+  `Microsoft.Extensions.DependencyInjection.Abstractions` — the crypto comes from the BCL. Public
+  surface: `LicenseToken`, `LicenseValidator`, `ProLicense`, `ProLicenseGate`, `LicenseSigner`
+  (license-issuing tooling only), `NeoReportsLicenseException` (+ a `LicenseFailureReason` enum, so a
+  caller can tell "no license" from "expired" without matching on message text).
+  Honest gaps, documented rather than hidden: offline validation cannot detect a rolled-back system
+  clock, there is no revocation list, and the license is not bound to a machine.
 - **Query builder: run the built query and see its rows (D49/Epic K, K6b).** The visual query-builder
   screen now has a **Run preview** button beside **Generate SQL**; it calls the new
   `POST /sources/{name}/query-preview` and renders a **Query result** grid of the built query's own
