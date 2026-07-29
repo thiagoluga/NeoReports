@@ -1,0 +1,40 @@
+// Sample 15 — sample 14's all-sources demo plus the commercial Pro packages. Provisions the same
+// four databases (PostgreSQL, MySQL, SQL Server, MongoDB) and reuses sample 14's seeding, column
+// definitions and named-source registration verbatim through the shared AllSourcesDemo class. The
+// Web host on top adds the three Pro packages (ADR D50/L1).
+//
+// The Pro packages require a license at run time (ADR D70), supplied through the
+// NEOREPORTS_LICENSE_KEY environment variable — without a valid one the web host throws
+// NeoReportsLicenseException at startup rather than degrading silently. See this sample's README
+// for the exact commands. Sample 14 is the same demo without any Pro package, and needs no license.
+
+var builder = DistributedApplication.CreateBuilder(args);
+
+var postgres = builder.AddPostgres("postgres")
+    .WithDataVolume()
+    .AddDatabase("postgres-db");
+
+var mysql = builder.AddMySql("mysql")
+    .WithDataVolume()
+    .AddDatabase("mysql-db");
+
+var sqlServer = builder.AddSqlServer("sqlserver")
+    .WithDataVolume()
+    .AddDatabase("sqlserver-db");
+
+var mongo = builder.AddMongoDB("mongodb")
+    .WithDataVolume()
+    .AddDatabase("mongodb-db");
+
+builder.AddProject<Projects.NeoReports_Samples_AspireProDemo_Web>("web")
+    .WithReference(postgres)
+    .WaitFor(postgres)
+    .WithReference(mysql)
+    .WaitFor(mysql)
+    .WithReference(sqlServer)
+    .WaitFor(sqlServer)
+    .WithReference(mongo)
+    .WaitFor(mongo)
+    .WithExternalHttpEndpoints();
+
+await builder.Build().RunAsync();

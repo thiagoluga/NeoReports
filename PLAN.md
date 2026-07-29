@@ -1017,9 +1017,17 @@ exists (D29/D30), so a `ProjectReference` to either Pro project would compile an
 unresolved is whether the maintainer *wants* Pro-licensed source bundled into a sample that ships in
 the OSS repo (a distribution/business call, not an engineering one).
 
-- [ ] **L1 — Get the maintainer's decision** on whether a sample may reference a `.Pro` project, then
-  record it as a proper DECISIONS.md entry (superseding D50's "open question" status) before any
-  sample actually does so.
+- [x] **L1 — Decision taken and implemented (2026-07-29).** Answer: **yes**, in a dedicated demo —
+  `samples/15-aspire-pro-demo`, sample 14's twin plus all three Pro packages. To make "reuses
+  everything sample 14 has" literal rather than a copy, sample 14's ~600 lines of seeding, column
+  definitions and named-source registration were extracted verbatim into a shared
+  `samples/NeoReports.Samples.AllSourcesShared` (kept separate from `NeoReports.Samples.Shared`,
+  which every lightweight sample references and which shouldn't drag in four database drivers).
+  Sample 14's `Program.cs` shrank from 811 lines to 43; sample 15's is 147, of which the extra 104
+  are the Pro block and two reports that actually exercise the Pro packages (a sectioned XLSX
+  workbook, and a merge-join spanning PostgreSQL and MongoDB) rather than only registering them.
+  Consequence, stated in its README: it builds without a license but **won't start** without one,
+  per D70's hard-fail. Recorded as `## D71`, superseding D50's open question.
 
 ## Epic M — Builder wizard: token/value helpers (D51) — M1/M2 (insert-token helper) done; live preview deferred
 
