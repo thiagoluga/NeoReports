@@ -6,8 +6,20 @@ using Xunit;
 namespace NeoReports.Licensing.UnitTests;
 
 /// <summary>ADR D70: <see cref="ServiceCollectionExtensions"/> — the DI registration used at Pro-package startup.</summary>
-public class ServiceCollectionExtensionsTests
+[Collection(LicenseEnvironmentCollection.Name)]
+public sealed class ServiceCollectionExtensionsTests : IDisposable
 {
+    // A successful registration also opens the process-wide ProLicenseGate (Q2), so each test starts
+    // and leaves it shut — otherwise one test's valid license would satisfy the next one's
+    // deliberately-invalid setup.
+    public ServiceCollectionExtensionsTests() => ProLicenseGate.Reset();
+
+    public void Dispose()
+    {
+        ProLicenseGate.Reset();
+        GC.SuppressFinalize(this);
+    }
+
     private static ECDsa NewKeyPair() => ECDsa.Create(ECCurve.NamedCurves.nistP256);
 
     [Fact]
@@ -46,16 +58,27 @@ public class ServiceCollectionExtensionsTests
     [Fact]
     public void AddNeoReportsProLicense_skips_revalidating_once_a_token_is_already_registered()
     {
-        // Proves the public entry point's short-circuit without needing the real embedded private
-        // key: a garbage key would normally throw, but with a LicenseToken already registered it's
-        // never even looked at.
+        // The no-key form short-circuits: with a LicenseToken already registered there is nothing to
+        // validate, which is what makes it safe for several Pro packages to each call it at startup.
         var services = new ServiceCollection();
         services.AddSingleton(new LicenseToken("Pre-registered Corp", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(30)));
 
-        Should.NotThrow(() => services.AddNeoReportsProLicense("this is not a valid key"));
+        Should.NotThrow(() => services.AddNeoReportsProLicense());
 
         using ServiceProvider provider = services.BuildServiceProvider();
         provider.GetRequiredService<LicenseToken>().Licensee.ShouldBe("Pre-registered Corp");
+    }
+
+    [Fact]
+    public void An_explicit_key_is_always_validated_even_when_a_license_is_already_established()
+    {
+        // Regression guard: the short-circuit must never silently discard a key the host passed on
+        // purpose — otherwise an environment variable would quietly outrank an explicitly pinned key.
+        var services = new ServiceCollection();
+        services.AddSingleton(new LicenseToken("Pre-registered Corp", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(30)));
+
+        Should.Throw<NeoReportsLicenseException>(() => services.AddNeoReportsProLicense("this is not a valid key"))
+            .Reason.ShouldBe(LicenseFailureReason.Malformed);
     }
 
     [Fact]

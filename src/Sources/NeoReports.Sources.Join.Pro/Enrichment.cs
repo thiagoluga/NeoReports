@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using NeoReports.Abstractions;
+using NeoReports.Licensing;
 
 namespace NeoReports.Sources.Join.Pro;
 
@@ -20,6 +21,7 @@ public static class Enrichment
     /// <param name="lookup">Batched lookup: given a page's distinct keys, returns their values.</param>
     /// <param name="map">Maps a primary row plus its looked-up value (or <c>null</c>) to the result.</param>
     /// <returns>A source that yields enriched rows through the standard pipeline.</returns>
+    /// <exception cref="NeoReportsLicenseException">No valid NeoReports Pro license is configured (ADR D70).</exception>
     [SuppressMessage(
         "Major Code Smell", "S2436:Types and methods should not have too many generic parameters",
         Justification = "A batched join/enrichment API needs the primary, key, lookup-value and result types — " +
@@ -31,6 +33,7 @@ public static class Enrichment
         Func<TPrimary, TLookup?, TResult> map)
         where TKey : notnull
     {
+        ProLicenseGate.EnsureValidated();
         ArgumentNullException.ThrowIfNull(primary);
         ArgumentNullException.ThrowIfNull(key);
         ArgumentNullException.ThrowIfNull(lookup);

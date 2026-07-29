@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using NeoReports.Abstractions;
 using NeoReports.Core.Sources;
+using NeoReports.Licensing;
 
 namespace NeoReports.Sources.Join.Pro;
 
@@ -26,6 +27,15 @@ namespace NeoReports.Sources.Join.Pro;
 /// </summary>
 public sealed class JoinConfigSourceProvider : IConfigSourceProvider
 {
+    /// <summary>
+    /// Creates the provider. Gated (ADR D70, Q2) because this type is public: registering it
+    /// directly — <c>services.AddSingleton&lt;IConfigSourceProvider, JoinConfigSourceProvider&gt;()</c>
+    /// instead of the gated <c>AddMergeJoinConfigSource()</c> — would otherwise defer the licence
+    /// check to <see cref="Create"/>, i.e. to the middle of a running job rather than startup.
+    /// </summary>
+    /// <exception cref="NeoReportsLicenseException">No valid NeoReports Pro license is configured.</exception>
+    public JoinConfigSourceProvider() => ProLicenseGate.EnsureValidated();
+
     /// <inheritdoc />
     public string Type => "merge-join";
 

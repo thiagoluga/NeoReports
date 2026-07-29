@@ -23,6 +23,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\NeoReports.Abstractions\NeoReports.Abstractions.csproj" />
     <ProjectReference Include="..\..\NeoReports.Core\NeoReports.Core.csproj" />
+    <ProjectReference Include="..\..\NeoReports.Licensing\NeoReports.Licensing.csproj" />
     <ProjectReference Include="..\NeoReports.Formats.Xlsx\NeoReports.Formats.Xlsx.csproj" />
   </ItemGroup>
 

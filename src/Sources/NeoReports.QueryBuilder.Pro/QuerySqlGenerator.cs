@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using NeoReports.Core.QueryBuilder;
+using NeoReports.Licensing;
 
 namespace NeoReports.QueryBuilder.Pro;
 
@@ -19,6 +20,14 @@ public sealed class QuerySqlGenerator : IQuerySqlGenerator
     {
         Converters = { new JsonStringEnumConverter() },
     };
+
+    /// <summary>
+    /// Creates the generator. Requires a valid NeoReports Pro license (ADR D70) — checked here, at
+    /// construction, so a host with a bad license fails when it wires the query builder up rather
+    /// than when a user first submits a query.
+    /// </summary>
+    /// <exception cref="NeoReportsLicenseException">No valid NeoReports Pro license is configured.</exception>
+    public QuerySqlGenerator() => ProLicenseGate.EnsureValidated();
 
     /// <inheritdoc />
     public GeneratedReportSql Generate(string modelJson, string sourceType)

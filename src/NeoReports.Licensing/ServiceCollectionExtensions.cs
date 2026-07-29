@@ -30,8 +30,29 @@ public static class ServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        if (services.Any(descriptor => descriptor.ServiceType == typeof(LicenseToken)))
-            return services;
+        // An explicitly-supplied key is always validated and always wins — never silently discarded
+        // in favour of an already-established one. Only the no-key form (which every Pro package's
+        // own Add* extension calls, possibly several times per host) short-circuits.
+        if (licenseKey is null)
+        {
+            // One process-wide license state (ADR D70, Q2), in both directions: a license already
+            // established through the static route satisfies this call, and a token the host put in
+            // the container itself opens the static gate — otherwise a host that registered its own
+            // validated LicenseToken would still be refused by the Pro packages' static entry points.
+            if (ProLicenseGate.Current is { } established)
+            {
+                services.TryAddSingleton(established);
+                return services;
+            }
+
+            if (services.FirstOrDefault(descriptor => descriptor.ServiceType == typeof(LicenseToken)) is { } registered)
+            {
+                if (registered.ImplementationInstance is LicenseToken token)
+                    ProLicenseGate.Accept(token);
+
+                return services;
+            }
+        }
 
         using ECDsa publicKey = ProLicense.ImportEmbeddedPublicKey();
         return AddNeoReportsProLicenseCore(services, licenseKey, publicKey);
@@ -47,6 +68,10 @@ public static class ServiceCollectionExtensions
         string? key = licenseKey ?? Environment.GetEnvironmentVariable(LicenseKeyEnvironmentVariable);
         LicenseToken token = LicenseValidator.Validate(key, publicKey);
         services.TryAddSingleton(token);
+        // Also opens the process-wide gate (ADR D70, Q2), so a host that supplies its key here — not
+        // via the environment variable — can still use the static fluent Pro APIs, which have no DI
+        // container to read from.
+        ProLicenseGate.Accept(token);
         return services;
     }
 }

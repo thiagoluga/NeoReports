@@ -1032,7 +1032,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         {
             return (null, null, Results.Problem(
                 title: "The visual query builder is not available on this host.",
-                detail: "No IQuerySqlGenerator is registered. It ships with the NeoReports.QueryBuilder.Pro package (AddQueryBuilder()).",
+                detail: "No IQuerySqlGenerator is registered. It ships with the NeoReports.QueryBuilder.Pro package (AddQueryBuilder()), which also requires a valid NeoReports Pro license.",
                 statusCode: StatusCodes.Status422UnprocessableEntity));
         }
 

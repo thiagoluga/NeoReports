@@ -4,9 +4,14 @@ One `.xlsx` with an **Approved** and a **Rejected** worksheet — each with its 
 built from a single source read, using the commercial `NeoReports.Xlsx.Pro` package.
 
 ```bash
+# Pro packages require a license at run time (ADR D70) — set it first:
+export NEOREPORTS_LICENSE_KEY="<your key>"      # PowerShell: $env:NEOREPORTS_LICENSE_KEY = "<your key>"
 dotnet run --project samples/06-multi-sheet-xlsx
 # writes ./out/monthly-sales-<date>.xlsx
 ```
+
+Without a valid key the sample throws `NeoReportsLicenseException` at startup, naming every way to
+supply one — it still **builds** without a license, so the code below is readable either way.
 
 - The **Approved** sheet keeps rows with `Amount > 0` and inherits the report's four columns.
 - The **Rejected** sheet keeps rows with `Amount <= 0` and declares its own two columns (Id, Customer).

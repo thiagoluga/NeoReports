@@ -8,8 +8,13 @@ count and total. `JoinKind.LeftOuter` keeps customers that have no orders.
 In-memory sources, so it runs with **no database**:
 
 ```bash
+# Pro packages require a license at run time (ADR D70) — set it first:
+export NEOREPORTS_LICENSE_KEY="<your key>"      # PowerShell: $env:NEOREPORTS_LICENSE_KEY = "<your key>"
 dotnet run --project samples/07-multi-source
 ```
+
+Without a valid key the sample throws `NeoReportsLicenseException` at startup, naming every way to
+supply one — it still **builds** without a license, so the code below is readable either way.
 
 Writes `./out/customer-orders.csv`:
 

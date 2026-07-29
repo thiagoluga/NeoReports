@@ -15,6 +15,12 @@
          throwaway key pair — the real NeoReports Pro private key deliberately never lives in this
          repo, so the public embedded-key path can't be round-trip tested directly. -->
     <InternalsVisibleTo Include="NeoReports.Licensing.UnitTests" />
+    <!-- The Pro packages' own suites seed ProLicenseGate directly (a [ModuleInitializer] per
+         assembly): they cannot sign a token the embedded production key accepts, since the matching
+         private key deliberately never lives in this repo. -->
+    <InternalsVisibleTo Include="NeoReports.Xlsx.Pro.UnitTests" />
+    <InternalsVisibleTo Include="NeoReports.Sources.Join.UnitTests" />
+    <InternalsVisibleTo Include="NeoReports.QueryBuilder.Pro.UnitTests" />
   </ItemGroup>
 
 </Project>
