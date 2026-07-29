@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using NeoReports.Abstractions;
+using NeoReports.Licensing;
 
 namespace NeoReports.Sources.Join.Pro;
 
@@ -24,6 +25,7 @@ public static class Join
     /// <param name="map">Maps a left row plus its matched right rows (possibly empty) to a result.</param>
     /// <param name="kind">Inner (default) drops unmatched left rows; LeftOuter keeps them with an empty group.</param>
     /// <param name="keyComparer">Key comparer; defaults to <see cref="Comparer{T}.Default"/> (must match the sources' ordering).</param>
+    /// <exception cref="NeoReportsLicenseException">No valid NeoReports Pro license is configured (ADR D70).</exception>
     [SuppressMessage(
         "Major Code Smell", "S2436:Types and methods should not have too many generic parameters",
         Justification = "A join needs the left, right, key and result types — the same four-type shape as " +
@@ -37,6 +39,9 @@ public static class Join
         JoinKind kind = JoinKind.Inner,
         IComparer<TKey>? keyComparer = null)
     {
+        // Eager (outside the iterator below), so a missing license fails when the report is being
+        // defined — startup for a code-first app — not on the first row read (ADR D70).
+        ProLicenseGate.EnsureValidated();
         ArgumentNullException.ThrowIfNull(left);
         ArgumentNullException.ThrowIfNull(keyLeft);
         ArgumentNullException.ThrowIfNull(right);

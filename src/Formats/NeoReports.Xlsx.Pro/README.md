@@ -1,5 +1,11 @@
 # NeoReports.Xlsx.Pro (commercial)
 
+> **Requires a NeoReports Pro license at run time** (ADR D70). Supply it by setting the
+> `NEOREPORTS_LICENSE_KEY` environment variable, or explicitly at startup:
+> `services.AddNeoReportsProLicense(key)` (dependency injection) or
+> `NeoReports.Licensing.ProLicenseGate.Register(key)` (code-first, no container). Without a valid key
+> the package throws `NeoReportsLicenseException` the first time it is used.
+
 Multi-sheet XLSX **workbook** writer for NeoReports: one worksheet per view, in a single `.xlsx`
 file, from a single source read.
 

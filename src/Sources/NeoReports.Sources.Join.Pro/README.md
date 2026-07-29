@@ -1,5 +1,11 @@
 # NeoReports.Sources.Join.Pro (commercial)
 
+> **Requires a NeoReports Pro license at run time** (ADR D70). Supply it by setting the
+> `NEOREPORTS_LICENSE_KEY` environment variable, or explicitly at startup:
+> `services.AddNeoReportsProLicense(key)` (dependency injection) or
+> `NeoReports.Licensing.ProLicenseGate.Register(key)` (code-first, no container). Without a valid key
+> the package throws `NeoReportsLicenseException` the first time it is used.
+
 Multi-source composition for NeoReports: **enrichment** (B2.1) and keyset **merge-join** (B2.2).
 
 **License:** PolyForm Small Business 1.0.0 (see [`LICENSE.txt`](LICENSE.txt)) — free for organizations

@@ -4,14 +4,24 @@ Offline signed-license validation for NeoReports Pro packages ([D70](https://git
 
 ## Registering a license (application code)
 
+With dependency injection:
+
 ```csharp
 services.AddNeoReportsProLicense(); // reads the NEOREPORTS_LICENSE_KEY environment variable
 // or:
 services.AddNeoReportsProLicense("your-license-key-here");
 ```
 
-Throws `NeoReportsLicenseException` immediately if the key is missing, malformed, has an invalid
-signature, or is expired — a Pro package won't start with a bad license.
+Code-first, with no DI container (this library's typed reports never build one):
+
+```csharp
+ProLicenseGate.Register("your-license-key-here");
+```
+
+Either throws `NeoReportsLicenseException` immediately if the key is missing, malformed, has an
+invalid signature, or is expired — a Pro package won't start with a bad license. Both routes share
+one process-wide license state, so configuring it either way (or via the environment variable alone)
+unlocks both the DI-registered and the static fluent Pro APIs.
 
 ## Validating directly
 

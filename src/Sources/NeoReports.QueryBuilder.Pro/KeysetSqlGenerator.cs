@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using NeoReports.Abstractions;
+using NeoReports.Licensing;
 
 namespace NeoReports.QueryBuilder.Pro;
 
@@ -44,8 +45,12 @@ public static partial class KeysetSqlGenerator
     /// <summary>Generates the report SQL, bind parameters, and output schema for <paramref name="model"/>.</summary>
     /// <param name="model">The visually-composed query.</param>
     /// <param name="dialect">The target provider's SQL knobs (see <see cref="SqlDialect"/>).</param>
+    /// <exception cref="NeoReportsLicenseException">No valid NeoReports Pro license is configured (ADR D70).</exception>
     public static GeneratedQuery Generate(QueryModel model, SqlDialect dialect)
     {
+        // Gated separately from QuerySqlGenerator: this type is public and static, so it is reachable
+        // without ever constructing the IQuerySqlGenerator implementation.
+        ProLicenseGate.EnsureValidated();
         ArgumentNullException.ThrowIfNull(model);
         ArgumentNullException.ThrowIfNull(dialect);
         Validate(model);

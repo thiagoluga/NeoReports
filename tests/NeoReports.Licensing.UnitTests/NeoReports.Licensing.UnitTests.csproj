@@ -10,6 +10,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\NeoReports.Licensing\NeoReports.Licensing.csproj" />
+    <!-- The Pro packages are referenced only so ProLicenseGateTests can prove each gated entry point
+         actually throws without a license. This assembly deliberately has NO [ModuleInitializer]
+         seeding the gate (unlike the three Pro suites), which is what lets it close the gate. -->
+    <ProjectReference Include="..\..\src\Formats\NeoReports.Xlsx.Pro\NeoReports.Xlsx.Pro.csproj" />
+    <ProjectReference Include="..\..\src\Sources\NeoReports.Sources.Join.Pro\NeoReports.Sources.Join.Pro.csproj" />
+    <ProjectReference Include="..\..\src\Sources\NeoReports.QueryBuilder.Pro\NeoReports.QueryBuilder.Pro.csproj" />
   </ItemGroup>
 
   <ItemGroup>

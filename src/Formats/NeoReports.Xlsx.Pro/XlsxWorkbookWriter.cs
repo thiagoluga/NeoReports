@@ -2,6 +2,7 @@ using ClosedXML.Excel;
 using NeoReports.Abstractions;
 using NeoReports.Core.Sections;
 using NeoReports.Formats.Xlsx;
+using NeoReports.Licensing;
 
 namespace NeoReports.Xlsx.Pro;
 
@@ -20,10 +21,20 @@ public sealed class XlsxWorkbookWriter : IReportSectionedWriter
     private IXLWorksheet[] _sheets = [];
     private int[] _nextRow = [];
 
-    /// <summary>Creates the workbook writer with the given options.</summary>
+    /// <summary>
+    /// Creates the workbook writer with the given options. Gated independently of
+    /// <see cref="XlsxWorkbookWriterFactory"/> (ADR D70, Q2): this type is public, sealed, and needs
+    /// nothing from the factory beyond a publicly-constructible <see cref="XlsxWorkbookOptions"/>, so
+    /// a caller could otherwise reach the whole multi-sheet implementation through a hand-rolled
+    /// <see cref="ISectionedWriterFactory"/> without the factory's check ever running.
+    /// </summary>
     /// <param name="options">Workbook formatting options.</param>
-    public XlsxWorkbookWriter(XlsxWorkbookOptions options) =>
+    /// <exception cref="NeoReportsLicenseException">No valid NeoReports Pro license is configured.</exception>
+    public XlsxWorkbookWriter(XlsxWorkbookOptions options)
+    {
+        ProLicenseGate.EnsureValidated();
         _options = options ?? throw new ArgumentNullException(nameof(options));
+    }
 
     /// <inheritdoc />
     public string Format => "xlsx-workbook";
