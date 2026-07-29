@@ -73,7 +73,7 @@ public sealed class CsvSourceHealthCheckTests : IDisposable
 
         result.Healthy.ShouldBeTrue();
         await client.Received(1).GetObjectMetadataAsync(
-            Arg.Is<GetObjectMetadataRequest>(r => r.BucketName == "my-bucket" && r.Key == "sales.csv"),
+            Arg.Is<GetObjectMetadataRequest>(r => r!.BucketName == "my-bucket" && r!.Key == "sales.csv"),
             Arg.Any<CancellationToken>());
     }
 

@@ -209,7 +209,7 @@ public sealed class ParquetConfigSourceProviderTests : IDisposable
         records[0]["Id"].ShouldBe(1L);
         records[0]["Customer"].ShouldBe("C1");
         await client.Received(1).GetObjectAsync(
-            Arg.Is<GetObjectRequest>(r => r.BucketName == "my-bucket" && r.Key == "sales.parquet"),
+            Arg.Is<GetObjectRequest>(r => r!.BucketName == "my-bucket" && r!.Key == "sales.parquet"),
             Arg.Any<CancellationToken>());
     }
 

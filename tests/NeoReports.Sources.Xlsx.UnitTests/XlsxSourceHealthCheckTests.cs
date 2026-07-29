@@ -92,7 +92,7 @@ public sealed class XlsxSourceHealthCheckTests : IDisposable
 
         result.Healthy.ShouldBeTrue();
         await client.Received(1).GetObjectMetadataAsync(
-            Arg.Is<GetObjectMetadataRequest>(r => r.BucketName == "my-bucket" && r.Key == "sales.xlsx"),
+            Arg.Is<GetObjectMetadataRequest>(r => r!.BucketName == "my-bucket" && r!.Key == "sales.xlsx"),
             Arg.Any<CancellationToken>());
     }
 
