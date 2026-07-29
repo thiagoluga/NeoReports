@@ -3,12 +3,10 @@
 // definitions and named-source registration verbatim through NeoReports.Samples.AllSourcesShared;
 // the Web host on top adds the three Pro packages (ADR D50/L1).
 //
-//   # Pro packages require a license at run time (ADR D70) — set it first:
-//   $env:NEOREPORTS_LICENSE_KEY = "<your key>"      # bash: export NEOREPORTS_LICENSE_KEY="<your key>"
-//   dotnet run --project samples/15-aspire-pro-demo/AppHost
-//
-// Without a valid key the web host throws NeoReportsLicenseException at startup, naming every way
-// to supply one. Sample 14 is the same demo without any Pro package, and needs no license.
+// The Pro packages require a license at run time (ADR D70), supplied through the
+// NEOREPORTS_LICENSE_KEY environment variable — without a valid one the web host throws
+// NeoReportsLicenseException at startup rather than degrading silently. See this sample's README
+// for the exact commands. Sample 14 is the same demo without any Pro package, and needs no license.
 
 var builder = DistributedApplication.CreateBuilder(args);
 

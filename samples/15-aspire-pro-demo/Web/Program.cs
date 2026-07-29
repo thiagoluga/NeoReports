@@ -5,6 +5,7 @@ using NeoReports.Destinations.Local;
 using NeoReports.Licensing;
 using NeoReports.QueryBuilder.Pro;
 using NeoReports.Samples.AllSourcesShared;
+using NeoReports.Samples.AspireProDemo.Web;
 using NeoReports.Samples.Shared;
 using NeoReports.Sources.Join.Pro;
 using NeoReports.UI;
@@ -136,12 +137,3 @@ static ColumnDefinition<WideTransaction>[] WorkbookColumns() =>
     Col<WideTransaction, string>(t => t.Currency, "Currency"),
     Col<WideTransaction, DateTime>(t => t.OrderDate, "Order date", format: "yyyy-MM-dd"),
 ];
-
-/// <summary>One PostgreSQL transaction merged with its MongoDB counterpart (Pro merge-join demo).</summary>
-internal sealed record JoinedTransaction(
-    Guid TransactionId,
-    string CustomerName,
-    decimal TotalAmount,
-    string Currency,
-    string? MongoProductName,
-    long? MongoWarehouseId);
