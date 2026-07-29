@@ -8,7 +8,7 @@ namespace NeoReports.Destinations.Local.UnitTests;
 
 public class LocalDestinationTests : IDisposable
 {
-    private readonly string _root = Path.Combine(Path.GetTempPath(), "nr-local-tests", Guid.NewGuid().ToString("N"));
+    private readonly string _root = Path.Join(Path.GetTempPath(), "nr-local-tests", Guid.NewGuid().ToString("N"));
 
     private DestinationContext Context(IReadOnlyDictionary<string, object?>? parameters = null) =>
         new(new ReportExecutionContext("job", "sales", parameters,
@@ -23,7 +23,7 @@ public class LocalDestinationTests : IDisposable
     [Fact]
     public async Task Writes_file_to_resolved_path()
     {
-        var template = Path.Combine(_root, "{name}-{date:yyyy-MM-dd}.{ext}");
+        var template = Path.Join(_root, "{name}-{date:yyyy-MM-dd}.{ext}");
         var destination = new LocalDestination(template);
 
         var result = await destination.UploadAsync(FileOf("sales.csv", "a,b\n1,2\n"), Context(), CancellationToken.None);
@@ -38,7 +38,7 @@ public class LocalDestinationTests : IDisposable
     [Fact]
     public async Task Overwrites_existing_file_atomically()
     {
-        var template = Path.Combine(_root, "{name}.{ext}");
+        var template = Path.Join(_root, "{name}.{ext}");
         var destination = new LocalDestination(template);
 
         await destination.UploadAsync(FileOf("r.csv", "old"), Context(), CancellationToken.None);
@@ -52,7 +52,7 @@ public class LocalDestinationTests : IDisposable
     [Fact]
     public async Task Substitutes_parameter_value_into_a_single_segment()
     {
-        var template = Path.Combine(_root, "{customer}", "{name}.{ext}");
+        var template = Path.Join(_root, "{customer}", "{name}.{ext}");
         var destination = new LocalDestination(template);
         var parameters = new Dictionary<string, object?> { ["customer"] = "acme" };
 
@@ -60,7 +60,7 @@ public class LocalDestinationTests : IDisposable
             FileOf("sales.csv", "x"), Context(parameters), CancellationToken.None);
 
         result.Success.ShouldBeTrue();
-        result.RemotePath!.ShouldBe(Path.Combine(_root, "acme", "sales.csv"));
+        result.RemotePath!.ShouldBe(Path.Join(_root, "acme", "sales.csv"));
         File.Exists(result.RemotePath).ShouldBeTrue();
     }
 
@@ -74,7 +74,7 @@ public class LocalDestinationTests : IDisposable
     {
         // The vector: a run-time parameter is caller-controlled (report-run request body), so a
         // traversal value must not be able to escape the template's target directory.
-        var template = Path.Combine(_root, "out", "{customer}.{ext}");
+        var template = Path.Join(_root, "out", "{customer}.{ext}");
         var destination = new LocalDestination(template);
         var parameters = new Dictionary<string, object?> { ["customer"] = malicious };
 
@@ -96,7 +96,7 @@ public class LocalDestinationTests : IDisposable
         // Windows-specific.
         Skip.IfNot(OperatingSystem.IsWindows(), "':' is only a path-redirection risk on Windows.");
 
-        var template = Path.Combine(_root, "out", "{customer}.{ext}");
+        var template = Path.Join(_root, "out", "{customer}.{ext}");
         var destination = new LocalDestination(template);
         var parameters = new Dictionary<string, object?> { ["customer"] = "C:evil" };
 
@@ -112,7 +112,7 @@ public class LocalDestinationTests : IDisposable
     {
         // {date:...} is author-controlled and its output may legitimately contain separators — it is
         // NOT subject to the single-segment guard that runtime parameters are.
-        var template = Path.Combine(_root, "{date:yyyy/MM/dd}", "{name}.{ext}");
+        var template = Path.Join(_root, "{date:yyyy/MM/dd}", "{name}.{ext}");
         var destination = new LocalDestination(template);
 
         var result = await destination.UploadAsync(FileOf("sales.csv", "x"), Context(), CancellationToken.None);
