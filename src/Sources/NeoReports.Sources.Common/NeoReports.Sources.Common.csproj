@@ -11,4 +11,11 @@
     <ProjectReference Include="..\..\NeoReports.Core\NeoReports.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Lets the unit tests exercise the keyset cursor codec directly, without a Docker-gated
+         integration test, since the ADO engine's shared correctness otherwise rides entirely on
+         the provider integration suites. -->
+    <InternalsVisibleTo Include="NeoReports.Sources.Common.UnitTests" />
+  </ItemGroup>
+
 </Project>

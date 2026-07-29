@@ -215,6 +215,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "AppHost", "AppHost", "{2A62
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NeoReports.Samples.AspireProDemo.AppHost", "samples\15-aspire-pro-demo\AppHost\NeoReports.Samples.AspireProDemo.AppHost.csproj", "{25A31B4B-6319-433E-8831-9BAA6AB9237F}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NeoReports.Sources.Common.UnitTests", "tests\NeoReports.Sources.Common.UnitTests\NeoReports.Sources.Common.UnitTests.csproj", "{03BE5D53-EBB5-4627-8495-25094F2FD2C0}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -1329,6 +1331,18 @@ Global
 		{25A31B4B-6319-433E-8831-9BAA6AB9237F}.Release|x64.Build.0 = Release|Any CPU
 		{25A31B4B-6319-433E-8831-9BAA6AB9237F}.Release|x86.ActiveCfg = Release|Any CPU
 		{25A31B4B-6319-433E-8831-9BAA6AB9237F}.Release|x86.Build.0 = Release|Any CPU
+		{03BE5D53-EBB5-4627-8495-25094F2FD2C0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{03BE5D53-EBB5-4627-8495-25094F2FD2C0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{03BE5D53-EBB5-4627-8495-25094F2FD2C0}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{03BE5D53-EBB5-4627-8495-25094F2FD2C0}.Debug|x64.Build.0 = Debug|Any CPU
+		{03BE5D53-EBB5-4627-8495-25094F2FD2C0}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{03BE5D53-EBB5-4627-8495-25094F2FD2C0}.Debug|x86.Build.0 = Debug|Any CPU
+		{03BE5D53-EBB5-4627-8495-25094F2FD2C0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{03BE5D53-EBB5-4627-8495-25094F2FD2C0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{03BE5D53-EBB5-4627-8495-25094F2FD2C0}.Release|x64.ActiveCfg = Release|Any CPU
+		{03BE5D53-EBB5-4627-8495-25094F2FD2C0}.Release|x64.Build.0 = Release|Any CPU
+		{03BE5D53-EBB5-4627-8495-25094F2FD2C0}.Release|x86.ActiveCfg = Release|Any CPU
+		{03BE5D53-EBB5-4627-8495-25094F2FD2C0}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -1435,5 +1449,6 @@ Global
 		{842AFEBF-9027-4A06-84E8-DB91A6AAA1C4} = {2778AD88-025A-D4E9-7F8F-5C7538DD1EA3}
 		{2A62EE63-E45A-486B-6E1B-49623D61E558} = {352D64FC-8B89-594D-28EF-2A361B65B687}
 		{25A31B4B-6319-433E-8831-9BAA6AB9237F} = {2A62EE63-E45A-486B-6E1B-49623D61E558}
+		{03BE5D53-EBB5-4627-8495-25094F2FD2C0} = {22222222-2222-2222-2222-222222222222}
 	EndGlobalSection
 EndGlobal
