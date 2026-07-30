@@ -90,10 +90,13 @@ public sealed class AdoKeysetSource<T> : IBatchSource<T>, ISourceRowCounter
         command.CommandText = _sql;
         _configureCommand?.Invoke(command);
 
-        // Merge run-time parameters from the execution with the source's static parameters.
-        foreach (KeyValuePair<string, object?> kvp in _parameters)
-            AddParameter(command, kvp.Key, kvp.Value, _parameterPrefix);
+        // Merge run-time (execution) parameters with the source's static parameters. Run-time values
+        // are added FIRST so that when a report supplies a per-run override of a name the author also
+        // set statically (a tenant id, a date range), the run-time value wins — AddParameter skips a
+        // name that is already bound, so whichever is added first takes precedence.
         foreach (KeyValuePair<string, object?> kvp in context.Execution.Parameters)
+            AddParameter(command, kvp.Key, kvp.Value, _parameterPrefix);
+        foreach (KeyValuePair<string, object?> kvp in _parameters)
             AddParameter(command, kvp.Key, kvp.Value, _parameterPrefix);
 
         AddParameter(command, "cursor", DecodeCursor(context.Cursor), _parameterPrefix);
@@ -149,9 +152,11 @@ public sealed class AdoKeysetSource<T> : IBatchSource<T>, ISourceRowCounter
         command.CommandText = $"SELECT COUNT(*) FROM (\n{innerSql}{_countInnerSuffix}\n) q";
         _configureCommand?.Invoke(command);
 
-        foreach (KeyValuePair<string, object?> kvp in _parameters)
-            AddParameter(command, kvp.Key, kvp.Value, _parameterPrefix);
+        // Same run-time-wins precedence as ReadBatchAsync (execution parameters added first), so the
+        // progress count reads with the exact values the real read will use.
         foreach (KeyValuePair<string, object?> kvp in execution.Parameters)
+            AddParameter(command, kvp.Key, kvp.Value, _parameterPrefix);
+        foreach (KeyValuePair<string, object?> kvp in _parameters)
             AddParameter(command, kvp.Key, kvp.Value, _parameterPrefix);
 
         AddParameter(command, "cursor", null, _parameterPrefix);
@@ -172,8 +177,10 @@ public sealed class AdoKeysetSource<T> : IBatchSource<T>, ISourceRowCounter
     private static void AddParameter(DbCommand command, string name, object? value, string parameterPrefix)
     {
         // Skip if the query doesn't reference this parameter, to avoid "too many parameters".
+        // Matched on an identifier boundary so @page is not found inside @pageSize (a substring
+        // match there would bind an unreferenced parameter and trip that very provider error).
         var token = parameterPrefix + name;
-        if (command.CommandText.IndexOf(token, StringComparison.OrdinalIgnoreCase) < 0)
+        if (!AdoParameterReference.IsReferenced(command.CommandText, token))
             return;
 
         // Avoid duplicates (run-time params may repeat static ones).
