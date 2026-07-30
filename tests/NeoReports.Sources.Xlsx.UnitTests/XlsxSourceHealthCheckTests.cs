@@ -12,7 +12,7 @@ namespace NeoReports.Sources.Xlsx.UnitTests;
 
 public sealed class XlsxSourceHealthCheckTests : IDisposable
 {
-    private readonly string _dir = Path.Combine(Path.GetTempPath(), "nr-xlsx-health-tests", Guid.NewGuid().ToString("N"));
+    private readonly string _dir = Path.Join(Path.GetTempPath(), "nr-xlsx-health-tests", Guid.NewGuid().ToString("N"));
 
     public XlsxSourceHealthCheckTests() => Directory.CreateDirectory(_dir);
 
@@ -22,7 +22,7 @@ public sealed class XlsxSourceHealthCheckTests : IDisposable
     private async Task<string> WriteXlsxAsync()
     {
         var schema = new ReportSchema(new[] { new ReportColumn("Id", ColumnType.Integer) });
-        var path = Path.Combine(_dir, "sales.xlsx");
+        var path = Path.Join(_dir, "sales.xlsx");
         await using (var output = new FileStream(path, FileMode.Create, FileAccess.Write))
         {
             var writer = new XlsxWriter(new XlsxOptions());
@@ -53,7 +53,7 @@ public sealed class XlsxSourceHealthCheckTests : IDisposable
     {
         var check = new XlsxSourceHealthCheck();
         var definition = new SourceDefinition("sales-file", "xlsx",
-            new Dictionary<string, object?> { ["path"] = Path.Combine(_dir, "does-not-exist.xlsx") });
+            new Dictionary<string, object?> { ["path"] = Path.Join(_dir, "does-not-exist.xlsx") });
 
         var result = await check.CheckAsync(definition, services: null!, CancellationToken.None);
 

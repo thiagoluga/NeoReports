@@ -21,7 +21,7 @@ public sealed record AmountRow(long Id, decimal Amount);
 /// </summary>
 public sealed class XlsxSourceReadingTests : IDisposable
 {
-    private readonly string _dir = Path.Combine(Path.GetTempPath(), "nr-xlsx-tests", Guid.NewGuid().ToString("N"));
+    private readonly string _dir = Path.Join(Path.GetTempPath(), "nr-xlsx-tests", Guid.NewGuid().ToString("N"));
 
     public XlsxSourceReadingTests() => Directory.CreateDirectory(_dir);
 
@@ -38,7 +38,7 @@ public sealed class XlsxSourceReadingTests : IDisposable
 
     private async Task<string> WriteXlsxAsync(ReportSchema schema, object?[][] rows, XlsxOptions? options = null)
     {
-        var path = Path.Combine(_dir, $"{Guid.NewGuid():N}.xlsx");
+        var path = Path.Join(_dir, $"{Guid.NewGuid():N}.xlsx");
         await using (var output = new FileStream(path, FileMode.Create, FileAccess.Write))
         {
             var writer = new XlsxWriter(options ?? new XlsxOptions());
@@ -84,7 +84,7 @@ public sealed class XlsxSourceReadingTests : IDisposable
         // their real decimal value. ClosedXML is used directly here (not this project's own XlsxWriter,
         // which never emits this format) since the bug is specific to Excel's own bracketed-format
         // syntax, producible by any real spreadsheet tool.
-        var path = Path.Combine(_dir, $"{Guid.NewGuid():N}.xlsx");
+        var path = Path.Join(_dir, $"{Guid.NewGuid():N}.xlsx");
         using (var workbook = new XLWorkbook())
         {
             var ws = workbook.Worksheets.Add("Sheet1");
@@ -108,7 +108,7 @@ public sealed class XlsxSourceReadingTests : IDisposable
         // Unlike this project's own writer (which always uses a custom "yyyy-mm-dd" FormatCode), a
         // cell can be styled with a spec-reserved built-in NumberFormatId and no <numFmts> entry at
         // all — the built-in-id branch of NumberFormatCache, not the FormatCode-string heuristic.
-        var path = Path.Combine(_dir, $"{Guid.NewGuid():N}.xlsx");
+        var path = Path.Join(_dir, $"{Guid.NewGuid():N}.xlsx");
         var when = new DateTime(2026, 3, 15);
         using (var workbook = new XLWorkbook())
         {
@@ -131,7 +131,7 @@ public sealed class XlsxSourceReadingTests : IDisposable
         // "[h]" alone (no trailing mm:ss) exercises the branch where StripLiteralsAndNonElapsedBrackets
         // must keep the bracket's inner content, not just discard every bracket outright — an elapsed
         // format with nothing else surviving the strip would otherwise be missed.
-        var path = Path.Combine(_dir, $"{Guid.NewGuid():N}.xlsx");
+        var path = Path.Join(_dir, $"{Guid.NewGuid():N}.xlsx");
         using (var workbook = new XLWorkbook())
         {
             var ws = workbook.Worksheets.Add("Sheet1");
@@ -153,7 +153,7 @@ public sealed class XlsxSourceReadingTests : IDisposable
         // The literal text "Days" contains 'D' and 's', both date/time tokens — but only when NOT
         // inside quotes. This is the mirror case of the bracket regression test, proving the
         // quote-stripping half of the heuristic independently of the bracket-stripping half.
-        var path = Path.Combine(_dir, $"{Guid.NewGuid():N}.xlsx");
+        var path = Path.Join(_dir, $"{Guid.NewGuid():N}.xlsx");
         using (var workbook = new XLWorkbook())
         {
             var ws = workbook.Worksheets.Add("Sheet1");
@@ -172,7 +172,7 @@ public sealed class XlsxSourceReadingTests : IDisposable
     [Fact]
     public async Task Reading_an_unknown_sheet_name_throws()
     {
-        var path = Path.Combine(_dir, $"{Guid.NewGuid():N}.xlsx");
+        var path = Path.Join(_dir, $"{Guid.NewGuid():N}.xlsx");
         using (var workbook = new XLWorkbook())
         {
             workbook.Worksheets.Add("Sheet1");

@@ -193,12 +193,6 @@ internal sealed class NumberFormatCache
         if (bracketContent.Length == 0)
             return false;
 
-        foreach (var c in bracketContent)
-        {
-            if (char.ToLowerInvariant(c) is not ('h' or 'm' or 's'))
-                return false;
-        }
-
-        return true;
+        return bracketContent.All(c => char.ToLowerInvariant(c) is 'h' or 'm' or 's');
     }
 }

@@ -208,16 +208,10 @@ internal static class XlsxRowReader
         if (sheets is null || sheets.Length == 0)
             throw new InvalidOperationException("The XLSX workbook contains no worksheets.");
 
-        Sheet? sheet;
-        if (string.IsNullOrEmpty(sheetName))
-        {
-            sheet = sheets[0];
-        }
-        else
-        {
-            sheet = Array.Find(sheets, s => string.Equals(s.Name?.Value, sheetName, StringComparison.OrdinalIgnoreCase))
+        Sheet sheet = string.IsNullOrEmpty(sheetName)
+            ? sheets[0]
+            : Array.Find(sheets, s => string.Equals(s.Name?.Value, sheetName, StringComparison.OrdinalIgnoreCase))
                 ?? throw new InvalidOperationException($"The XLSX workbook has no worksheet named '{sheetName}'.");
-        }
 
         var relationshipId = sheet.Id?.Value
             ?? throw new InvalidOperationException("The target worksheet has no relationship id.");

@@ -20,7 +20,7 @@ namespace NeoReports.Sources.Xlsx.UnitTests;
 /// </summary>
 public class DynamicConfigXlsxTests : IDisposable
 {
-    private readonly string _dir = Path.Combine(Path.GetTempPath(), "nr-dyn-xlsx", Guid.NewGuid().ToString("N"));
+    private readonly string _dir = Path.Join(Path.GetTempPath(), "nr-dyn-xlsx", Guid.NewGuid().ToString("N"));
 
     public DynamicConfigXlsxTests() => Directory.CreateDirectory(_dir);
 
@@ -36,7 +36,7 @@ public class DynamicConfigXlsxTests : IDisposable
             new ReportColumn("Customer", ColumnType.String),
             new ReportColumn("Amount", ColumnType.Decimal),
         });
-        var inputPath = Path.Combine(_dir, "sales-in.xlsx");
+        var inputPath = Path.Join(_dir, "sales-in.xlsx");
         await using (var output = new FileStream(inputPath, FileMode.Create, FileAccess.Write))
         {
             var writer = new XlsxWriter(new XlsxOptions());
@@ -48,7 +48,7 @@ public class DynamicConfigXlsxTests : IDisposable
             }, CancellationToken.None);
             await writer.FinalizeAsync(CancellationToken.None);
         }
-        var outDir = Path.Combine(_dir, "out");
+        var outDir = Path.Join(_dir, "out");
 
         var json = $$"""
         {
@@ -75,7 +75,7 @@ public class DynamicConfigXlsxTests : IDisposable
         var services = new ServiceCollection();
         services.AddXlsxConfigSource();
         services.AddSingleton<IWriterFactory>(new CsvWriterFactory(new CsvOptions()));
-        services.AddSingleton<IDestinationFactory>(new LocalDestinationFactory(Path.Combine(outDir, "{name}.{ext}")));
+        services.AddSingleton<IDestinationFactory>(new LocalDestinationFactory(Path.Join(outDir, "{name}.{ext}")));
         await using var provider = services.BuildServiceProvider();
 
         var report = ReportConfigCompiler.Compile(config, provider);
@@ -87,7 +87,7 @@ public class DynamicConfigXlsxTests : IDisposable
         result.Stats.RecordsRead.ShouldBe(2);
         result.Stats.RecordsWritten.ShouldBe(2);
 
-        var outputPath = Path.Combine(outDir, "sales-dyn.csv");
+        var outputPath = Path.Join(outDir, "sales-dyn.csv");
         File.Exists(outputPath).ShouldBeTrue();
         var lines = await File.ReadAllLinesAsync(outputPath);
         lines[0].ShouldBe("Sale ID,Customer,Amount");

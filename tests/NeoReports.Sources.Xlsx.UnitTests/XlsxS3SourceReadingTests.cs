@@ -15,7 +15,7 @@ namespace NeoReports.Sources.Xlsx.UnitTests;
 /// </summary>
 public sealed class XlsxS3SourceReadingTests : IDisposable
 {
-    private readonly string _dir = Path.Combine(Path.GetTempPath(), "nr-xlsx-s3-tests", Guid.NewGuid().ToString("N"));
+    private readonly string _dir = Path.Join(Path.GetTempPath(), "nr-xlsx-s3-tests", Guid.NewGuid().ToString("N"));
 
     public XlsxS3SourceReadingTests() => Directory.CreateDirectory(_dir);
 
@@ -32,7 +32,7 @@ public sealed class XlsxS3SourceReadingTests : IDisposable
 
     private async Task<byte[]> WriteXlsxBytesAsync(ReportSchema schema, object?[][] rows)
     {
-        var path = Path.Combine(_dir, $"{Guid.NewGuid():N}.xlsx");
+        var path = Path.Join(_dir, $"{Guid.NewGuid():N}.xlsx");
         await using (var output = new FileStream(path, FileMode.Create, FileAccess.Write))
         {
             var writer = new XlsxWriter(new XlsxOptions());
