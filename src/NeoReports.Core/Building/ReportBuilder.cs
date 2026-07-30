@@ -221,7 +221,21 @@ public sealed class ReportBuilder<TRow>
         return this;
     }
 
-    /// <summary>Configures retry behavior for batch reads.</summary>
+    /// <summary>
+    /// Enables retries with a sensible production default — <b>3 attempts, exponential backoff from
+    /// 1s, with jitter</b>. Retries are <b>off by default</b> (a report with no <c>Retry(...)</c> call
+    /// makes a single attempt per batch), so a transient source blip aborts the report under the
+    /// default failure strategy; this one-call overload turns on resilience without spelling out the
+    /// knobs. Use <see cref="Retry(Action{RetryOptions})"/> to tune them.
+    /// </summary>
+    public ReportBuilder<TRow> Retry() =>
+        Retry(r => r.MaxAttempts(3).Exponential(TimeSpan.FromSeconds(1)).WithJitter());
+
+    /// <summary>
+    /// Configures retry behavior for batch reads. Retries are <b>off by default</b> (one attempt per
+    /// batch) — call this (or the parameterless <see cref="Retry()"/>) to enable them; for a
+    /// production deployment against a network source, enabling retries is strongly recommended.
+    /// </summary>
     /// <param name="configure">Action that mutates the retry options.</param>
     public ReportBuilder<TRow> Retry(Action<RetryOptions> configure)
     {

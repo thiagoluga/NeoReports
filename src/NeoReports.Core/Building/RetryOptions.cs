@@ -16,7 +16,12 @@ public enum RetryBackoff
 /// </summary>
 public sealed class RetryOptions
 {
-    /// <summary>Total number of attempts, including the first. <c>1</c> means no retries.</summary>
+    /// <summary>
+    /// Total number of attempts, including the first. <c>1</c> (the default) means <b>no retries</b> —
+    /// a transient source blip fails the batch immediately and, under the default abort strategy,
+    /// aborts the report. Enabling retries is strongly recommended for a production deployment against
+    /// a network source; the one-call <c>ReportBuilder&lt;T&gt;.Retry()</c> applies a sensible default.
+    /// </summary>
     public int Attempts { get; private set; } = 1;
 
     /// <summary>Backoff shape between attempts.</summary>

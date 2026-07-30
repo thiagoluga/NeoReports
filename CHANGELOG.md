@@ -27,6 +27,9 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   dropped column auto-fit. (`AdjustToContents` can't stream.)
 - **Opt-in `AddNeoReportsStartupValidation()`** compiles config-driven reports at host startup so a
   malformed document fails fast at boot rather than on the first request.
+- **Parameterless `ReportBuilder<T>.Retry()`** enabling a sensible production default (3 attempts,
+  exponential backoff from 1s, jitter). Retries remain **off by default** — this lowers the barrier
+  to turning them on and the docs now flag the recommendation for production network sources.
 
 ### Changed
 - **Startup warning when the API is mapped without authentication.** `MapNeoReports()` logs a warning
