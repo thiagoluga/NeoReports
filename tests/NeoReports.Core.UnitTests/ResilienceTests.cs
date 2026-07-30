@@ -119,4 +119,82 @@ public class ResilienceTests
         var report = Build(new FakeBatchSource<Sale>(new[] { Page(1) }), new FakeWriterFactory());
         report.AbortThresholds.ShouldBeNull();
     }
+
+    [Fact]
+    public async Task Attempt_timeout_bounds_a_hung_read_and_fails_the_run()
+    {
+        // Without the per-attempt timeout this run would hang forever on the first read, wedging the
+        // worker. The test passing quickly (rather than the xUnit timeout killing it) is the proof.
+        var source = new HangingBatchSource();
+        var report = new ReportBuilder<Sale>("r")
+            .From(source)
+            .WithPageSize(10)
+            .Column(v => v.Id, "Id")
+            .To(new OutputSpec(new FakeWriterFactory()))
+            .Retry(r => r.Timeout(TimeSpan.FromMilliseconds(100)))
+            .OnFailure(f => f.AbortReport())
+            .Build();
+
+        var result = await Run(report);
+
+        result.Status.ShouldBe(ReportRunStatus.Failed);
+        source.WasCancelled.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Attempt_timeout_does_not_fire_for_a_read_that_completes_in_time()
+    {
+        var source = new FakeBatchSource<Sale>(new[] { Page(1, 2) });
+        var report = Build(source, new FakeWriterFactory(), b => b.Retry(r => r.Timeout(TimeSpan.FromSeconds(30))));
+
+        var result = await Run(report);
+
+        result.Status.ShouldBe(ReportRunStatus.Completed);
+    }
+
+    [Fact]
+    public async Task Timed_out_attempt_is_retried_up_to_the_attempt_limit()
+    {
+        // Every read times out; with 3 attempts the source is read 3 times before the run fails —
+        // proving the timeout surfaces as a transient failure the retry strategy handles.
+        var source = new HangingBatchSource();
+        var report = new ReportBuilder<Sale>("r")
+            .From(source)
+            .WithPageSize(10)
+            .Column(v => v.Id, "Id")
+            .To(new OutputSpec(new FakeWriterFactory()))
+            .Retry(r => r.MaxAttempts(3).Constant(TimeSpan.Zero).Timeout(TimeSpan.FromMilliseconds(80)))
+            .OnFailure(f => f.AbortReport())
+            .Build();
+
+        var result = await Run(report);
+
+        result.Status.ShouldBe(ReportRunStatus.Failed);
+        source.Calls.ShouldBe(3);
+    }
+
+    private sealed class HangingBatchSource : IBatchSource<Sale>
+    {
+        public ReportSchema Schema { get; } = new(new[] { new ReportColumn("Id", ColumnType.Integer) });
+
+        public bool WasCancelled { get; private set; }
+        public int Calls { get; private set; }
+
+        public async Task<BatchResult<Sale>> ReadBatchAsync(BatchContext context, CancellationToken cancellationToken)
+        {
+            Calls++;
+            try
+            {
+                // Far longer than the configured attempt timeout; the timeout cancels this token.
+                await Task.Delay(TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                WasCancelled = true;
+                throw;
+            }
+
+            return new BatchResult<Sale>(Array.Empty<Sale>(), null, false);
+        }
+    }
 }
