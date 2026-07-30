@@ -71,6 +71,16 @@ public sealed class ReportRunner : IReportRunner
         ArgumentNullException.ThrowIfNull(report);
         ArgumentNullException.ThrowIfNull(execution);
 
+        // Correlate every log line this run produces — the runner's own, and any the source/writer/
+        // destination/failure-strategy emit through execution.Logger — with the job id and report
+        // name, so a host's ILogger sink can group a concurrent run's lines even though the logger
+        // category is only the report name.
+        using IDisposable? scope = execution.Logger.BeginScope(new Dictionary<string, object>
+        {
+            ["JobId"] = execution.JobId,
+            ["ReportName"] = report.Name,
+        });
+
         var tempDir = Path.Combine(Path.GetTempPath(), "neoreports", execution.JobId);
         Directory.CreateDirectory(tempDir);
 
@@ -94,9 +104,14 @@ public sealed class ReportRunner : IReportRunner
             .ConfigureAwait(false);
 
         // The retry hook only ever emits an event (ADR D38, ground rule 3: telemetry must never
-        // change a run's outcome) — ShouldHandle/backoff/jitter above are untouched.
+        // change a run's outcome) — ShouldHandle/backoff/jitter above are untouched. It also logs at
+        // Debug so a host that hasn't opted into an IJobEventStore still sees retries in its ILogger
+        // sink; the event stream carries the full structured detail regardless.
         var resilience = ResiliencePipelineFactory.Build(report.Retry, async (attempt, delay, ex) =>
         {
+            execution.Logger.LogDebug(
+                "Retrying batch {Page} (attempt {Attempt}) after {DelayMs}ms: {ExceptionType}",
+                pageNumber, attempt, delay.TotalMilliseconds, ex?.GetType().Name ?? "Unknown");
             await events.EmitAsync(JobEventTypes.Retry, ex?.Message, new Dictionary<string, string>
             {
                 ["page"] = pageNumber.ToString(CultureInfo.InvariantCulture),
@@ -270,6 +285,9 @@ public sealed class ReportRunner : IReportRunner
                     error = decision.Action == FailureAction.AbortReport
                         ? decision.Reason
                         : $"Batch {pageNumber} could not be read and cannot be skipped (no cursor to advance): {ex.Message}";
+                    execution.Logger.LogError(
+                        ex, "Report {ReportName} failed at batch {Page} (read failure, run aborted): {Reason}",
+                        report.Name, pageNumber, error);
                     break;
                 }
 
@@ -319,6 +337,9 @@ public sealed class ReportRunner : IReportRunner
                     {
                         status = ReportRunStatus.Failed;
                         error = decision.Reason;
+                        execution.Logger.LogError(
+                            ex, "Report {ReportName} aborted at batch {Page} (write failure): {Reason}",
+                            report.Name, pageNumber, error);
                         break;
                     }
 
