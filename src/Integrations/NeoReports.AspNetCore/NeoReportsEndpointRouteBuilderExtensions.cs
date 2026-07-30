@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.IO.Compression;
 using System.Text.Json;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -80,6 +81,23 @@ public static class NeoReportsEndpointRouteBuilderExtensions
                 group.RequireAuthorization();
             else
                 group.RequireAuthorization(options.AuthorizationPolicy);
+        }
+        else if (endpoints.ServiceProvider.GetService<IAuthenticationSchemeProvider>() is null)
+        {
+            // Auth inherits from the host (ADR D20) — the engine does not impose a default. But when
+            // no authentication is configured on the host at all AND RequireAuthorization was not set,
+            // this management surface (trigger runs, register reports, store source connection
+            // strings, mutate schedules, download artifacts) is reachable unauthenticated. That is a
+            // valid deployment only behind a trusted boundary; warn once at startup so it is a
+            // deliberate choice, not a silent default.
+            endpoints.ServiceProvider.GetService<ILoggerFactory>()?
+                .CreateLogger("NeoReports.AspNetCore")
+                .LogWarning(
+                    "NeoReports endpoints mapped at '{Prefix}' with no authentication configured on the host and " +
+                    "NeoReportsEndpointOptions.RequireAuthorization not set — the report management API is reachable " +
+                    "unauthenticated. Configure the host's authentication/authorization (or set RequireAuthorization) " +
+                    "before exposing it beyond a trusted network.",
+                    prefix);
         }
 
         // Compiling a report — Create and Validate below — must resolve IConfigSourceProvider
