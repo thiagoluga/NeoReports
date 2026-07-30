@@ -18,6 +18,15 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   that referenced those three types (nothing ever threw them, so no `catch` for them could have
   fired) and is therefore slated for the next **major** release.
 
+### Changed (breaking, public API — next major)
+- **`CancellationToken` moved to the last parameter** in the three public health-check helpers that
+  had it mid-list (CA1068): `AdoSourceHealth.PingAsync(connectionFactory, timeout, pingSql,
+  cancellationToken)`, `AdoSourceHealth.CheckConnectionStringAsync(definition, connectionFactory,
+  timeout, pingSql, cancellationToken)` and `HttpHealthProbe.SendAsync(client, method, targetUrl,
+  auth, content, cancellationToken)`. The token now has a `default`, so most callers are unaffected,
+  but positional callers that passed the token before the trailing `pingSql`/`content` argument are
+  source-breaking; bundled with the removal above for the next **major** release.
+
 ### Added
 - **Streaming XLSX output at constant memory (resolves D14).** Both the MIT single-sheet XLSX writer
   and the Pro multi-sheet workbook writer are rebuilt on `DocumentFormat.OpenXml`'s SAX writer and a

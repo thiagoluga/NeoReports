@@ -52,11 +52,11 @@ enterprise-readiness and test coverage, and shipped everything actionable.
 
 ### 1. Next-major breaking cleanup (needs a 2.0 line)
 - **Remove the never-thrown ABI exceptions** — already done in #228, tagged for the next major.
-- **CA1068: `CancellationToken` not last** in three **public** health signatures —
-  `AdoSourceHealth.PingAsync(..., CancellationToken, string pingSql = "SELECT 1")`,
-  `AdoSourceHealth.CheckConnectionStringAsync(...)`, `HttpHealthProbe.SendAsync(..., CancellationToken, HttpContent? content = null)`.
-  Reordering the token to last is source-breaking, so it is a **next-major** change; bundle with the
-  #228 removal when a 2.0 is cut. LOW severity.
+- **CA1068: `CancellationToken` not last** in three **public** health signatures — **done**: the
+  token was moved to last (after `pingSql`/`content`, both defaulted) in `AdoSourceHealth.PingAsync`,
+  `AdoSourceHealth.CheckConnectionStringAsync` and `HttpHealthProbe.SendAsync`, and all callers
+  updated. Source-breaking for positional callers, so tagged **next-major** in `CHANGELOG.md`
+  (Changed → breaking, public API) alongside the #228 removal.
 
 ### 2. CI hardening
 - **Fail (not skip) the Testcontainers integration tests when Docker is absent in CI.** They are

@@ -14,10 +14,10 @@ public static class AdoSourceHealth
     /// <summary>Opens a connection and runs <paramref name="pingSql"/> (default <c>SELECT 1</c>).</summary>
     /// <param name="connectionFactory">Creates a new, unopened connection.</param>
     /// <param name="timeout">Maximum time allowed for the whole check.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     /// <param name="pingSql">The query to run; must not require a result to be meaningful.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public static async Task<SourceHealthResult> PingAsync(
-        Func<DbConnection> connectionFactory, TimeSpan timeout, CancellationToken cancellationToken, string pingSql = "SELECT 1")
+        Func<DbConnection> connectionFactory, TimeSpan timeout, string pingSql = "SELECT 1", CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(connectionFactory);
 
@@ -56,11 +56,11 @@ public static class AdoSourceHealth
     /// <param name="definition">The source definition being checked.</param>
     /// <param name="connectionFactory">Given the connection string, creates a new, unopened connection.</param>
     /// <param name="timeout">Maximum time allowed for the whole check.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     /// <param name="pingSql">The query to run; must not require a result to be meaningful.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public static Task<SourceHealthResult> CheckConnectionStringAsync(
         SourceDefinition definition, Func<string, DbConnection> connectionFactory, TimeSpan timeout,
-        CancellationToken cancellationToken, string pingSql = "SELECT 1")
+        string pingSql = "SELECT 1", CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(definition);
 
@@ -72,6 +72,6 @@ public static class AdoSourceHealth
             return Task.FromResult(new SourceHealthResult(Healthy: false, Error: "Source has no 'connectionString' property.", Latency: TimeSpan.Zero));
         }
 
-        return PingAsync(() => connectionFactory(connectionString), timeout, cancellationToken, pingSql);
+        return PingAsync(() => connectionFactory(connectionString), timeout, pingSql, cancellationToken);
     }
 }

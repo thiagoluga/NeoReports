@@ -19,5 +19,5 @@ public sealed class OracleSourceHealthCheck : ISourceHealthCheck
 
     /// <inheritdoc />
     public Task<SourceHealthResult> CheckAsync(SourceDefinition definition, IServiceProvider services, CancellationToken cancellationToken) =>
-        AdoSourceHealth.CheckConnectionStringAsync(definition, cs => new OracleConnection(cs), Timeout, cancellationToken, pingSql: "SELECT 1 FROM DUAL");
+        AdoSourceHealth.CheckConnectionStringAsync(definition, cs => new OracleConnection(cs), Timeout, pingSql: "SELECT 1 FROM DUAL", cancellationToken: cancellationToken);
 }

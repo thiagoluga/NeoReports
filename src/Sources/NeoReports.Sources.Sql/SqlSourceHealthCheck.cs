@@ -18,5 +18,5 @@ public sealed class SqlSourceHealthCheck : ISourceHealthCheck
 
     /// <inheritdoc />
     public Task<SourceHealthResult> CheckAsync(SourceDefinition definition, IServiceProvider services, CancellationToken cancellationToken) =>
-        AdoSourceHealth.CheckConnectionStringAsync(definition, cs => new SqlConnection(cs), Timeout, cancellationToken);
+        AdoSourceHealth.CheckConnectionStringAsync(definition, cs => new SqlConnection(cs), Timeout, cancellationToken: cancellationToken);
 }
