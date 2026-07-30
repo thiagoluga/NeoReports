@@ -28,6 +28,16 @@ public sealed class RetryOptions
     /// <summary>Whether to add randomized jitter to the delays.</summary>
     public bool UseJitter { get; private set; }
 
+    /// <summary>
+    /// Optional per-attempt timeout for a batch read. <c>null</c> (the default) means no timeout —
+    /// a read can block indefinitely. When set, each read attempt is bounded by cancelling its
+    /// <see cref="System.Threading.CancellationToken"/>; a timed-out attempt is retried like any
+    /// other transient failure (up to <see cref="Attempts"/>). The bound is <b>cooperative</b>: it
+    /// only interrupts a read that honors cancellation (the async ADO/HTTP/Mongo reads do). A read
+    /// stuck in genuinely non-cancellable I/O is not forcibly abandoned.
+    /// </summary>
+    public TimeSpan? AttemptTimeout { get; private set; }
+
     /// <summary>Sets the total number of attempts (including the first).</summary>
     /// <param name="attempts">A value of at least 1.</param>
     public RetryOptions MaxAttempts(int attempts)
@@ -59,6 +69,20 @@ public sealed class RetryOptions
     public RetryOptions WithJitter()
     {
         UseJitter = true;
+        return this;
+    }
+
+    /// <summary>
+    /// Bounds each batch-read attempt: if a read does not complete within <paramref name="timeout"/>
+    /// its cancellation token is cancelled and the attempt is treated as a transient failure (retried
+    /// up to <see cref="Attempts"/>). Protects the single worker (rule 6) from a slow or half-open
+    /// source read blocking a job — for any read that honors cancellation. Off by default.
+    /// </summary>
+    /// <param name="timeout">A positive per-attempt timeout.</param>
+    public RetryOptions Timeout(TimeSpan timeout)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero);
+        AttemptTimeout = timeout;
         return this;
     }
 }

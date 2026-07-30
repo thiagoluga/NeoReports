@@ -52,6 +52,17 @@ internal static class ResiliencePipelineFactory
             builder.AddRetry(retry);
         }
 
+        // Added after the retry so it is the INNER strategy: the timeout bounds each individual read
+        // attempt, and a timed-out attempt surfaces as TimeoutRejectedException — which the retry's
+        // ShouldHandle treats as a transient failure (it is not an OperationCanceledException), so a
+        // slow read is retried and a persistently slow one fails the run in bounded time rather than
+        // wedging the worker. With Attempts == 1 the timeout still applies to the single attempt.
+        // Polly v8's timeout is cooperative: it cancels the attempt's token, so it bounds any read
+        // that honors cancellation (the async ADO/HTTP/Mongo reads do), but does not forcibly abandon
+        // a read stuck in genuinely non-cancellable I/O.
+        if (options.AttemptTimeout is { } timeout)
+            builder.AddTimeout(timeout);
+
         return builder.Build();
     }
 }
