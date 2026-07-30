@@ -7,7 +7,8 @@ namespace NeoReports.Sources.Sql.IntegrationTests;
 
 public sealed record Sale(long Id, string Customer, decimal Amount, DateTime Date);
 
-public class SqlKeysetSourceTests : IClassFixture<SqlServerFixture>
+[Collection(nameof(SqlServerCollection))]
+public class SqlKeysetSourceTests
 {
     private readonly SqlServerFixture _fixture;
 

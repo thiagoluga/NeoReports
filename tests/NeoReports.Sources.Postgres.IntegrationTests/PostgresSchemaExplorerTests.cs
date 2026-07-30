@@ -14,7 +14,8 @@ namespace NeoReports.Sources.Postgres.IntegrationTests;
 /// exercised, not a hand-built instance. Postgres folds unquoted identifiers to lower case, so the
 /// catalog reports lower-case names.
 /// </summary>
-public class PostgresSchemaExplorerTests : IClassFixture<PostgresServerFixture>
+[Collection(nameof(PostgresServerCollection))]
+public class PostgresSchemaExplorerTests
 {
     private readonly PostgresServerFixture _fixture;
 

@@ -12,7 +12,8 @@ namespace NeoReports.Sources.Postgres.IntegrationTests;
 /// fresh at the start of every run — proven here against a real PostgreSQL server (Testcontainers)
 /// by pointing the same registered source name at two different databases between two runs.
 /// </summary>
-public class NamedPostgresSourceTests : IClassFixture<PostgresServerFixture>
+[Collection(nameof(PostgresServerCollection))]
+public class NamedPostgresSourceTests
 {
     private readonly PostgresServerFixture _fixture;
 

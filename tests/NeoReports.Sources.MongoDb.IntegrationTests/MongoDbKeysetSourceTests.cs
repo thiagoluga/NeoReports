@@ -7,7 +7,8 @@ namespace NeoReports.Sources.MongoDb.IntegrationTests;
 
 public sealed record Sale(long Id, string Customer, decimal Amount, DateTime Date);
 
-public class MongoDbKeysetSourceTests : IClassFixture<MongoDbServerFixture>
+[Collection(nameof(MongoDbServerCollection))]
+public class MongoDbKeysetSourceTests
 {
     private readonly MongoDbServerFixture _fixture;
 

@@ -12,7 +12,8 @@ namespace NeoReports.Sources.Sql.IntegrationTests;
 /// successful count proves the <c>OFFSET 0 ROWS</c> wrap (the same derived-table fix G7 established
 /// for the filter translator).
 /// </summary>
-public class SqlRowCounterTests : IClassFixture<SqlServerFixture>
+[Collection(nameof(SqlServerCollection))]
+public class SqlRowCounterTests
 {
     private readonly SqlServerFixture _fixture;
 

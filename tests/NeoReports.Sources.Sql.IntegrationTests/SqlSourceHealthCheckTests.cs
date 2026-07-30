@@ -4,7 +4,8 @@ using Xunit;
 
 namespace NeoReports.Sources.Sql.IntegrationTests;
 
-public class SqlSourceHealthCheckTests : IClassFixture<SqlServerFixture>
+[Collection(nameof(SqlServerCollection))]
+public class SqlSourceHealthCheckTests
 {
     private readonly SqlServerFixture _fixture;
 

@@ -17,7 +17,8 @@ namespace NeoReports.Sources.Sql.IntegrationTests;
 /// registration (<c>new AdoFilterTranslator("sql")</c>, no cast configured) is expected to just
 /// work — this test proves that empirically rather than assuming it.
 /// </summary>
-public sealed class SqlFilterTranslatorIntegrationTests : IClassFixture<SqlServerFixture>
+[Collection(nameof(SqlServerCollection))]
+public sealed class SqlFilterTranslatorIntegrationTests
 {
     private readonly SqlServerFixture _fixture;
 

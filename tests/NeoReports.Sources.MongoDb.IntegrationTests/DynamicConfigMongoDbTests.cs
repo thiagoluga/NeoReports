@@ -16,7 +16,8 @@ namespace NeoReports.Sources.MongoDb.IntegrationTests;
 /// The dynamic <c>"mongodb"</c> source materializes positional <see cref="ReportRecord"/> rows by
 /// schema-column name, reusing the existing pipeline.
 /// </summary>
-public class DynamicConfigMongoDbTests : IClassFixture<MongoDbServerFixture>, IDisposable
+[Collection(nameof(MongoDbServerCollection))]
+public class DynamicConfigMongoDbTests : IDisposable
 {
     private readonly MongoDbServerFixture _fixture;
     private readonly string _outDir = Path.Combine(Path.GetTempPath(), "nr-dyn-mongodb", Guid.NewGuid().ToString("N"));

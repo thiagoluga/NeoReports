@@ -14,7 +14,8 @@ namespace NeoReports.Sources.Sql.IntegrationTests;
 /// <c>POSITION_IN_UNIQUE_CONSTRAINT</c>), and a bounded preview (<c>SELECT TOP n</c>). New tables
 /// land in the <c>dbo</c> schema.
 /// </summary>
-public class SqlSchemaExplorerTests : IClassFixture<SqlServerFixture>
+[Collection(nameof(SqlServerCollection))]
+public class SqlSchemaExplorerTests
 {
     private readonly SqlServerFixture _fixture;
 

@@ -10,7 +10,8 @@ namespace NeoReports.Sources.MongoDb.IntegrationTests;
 /// ADR D47: <see cref="ISourceRowCounter"/> against a real MongoDB container — an exact
 /// <c>CountDocumentsAsync</c>, not the estimated/approximate count (see the ADR for why).
 /// </summary>
-public class MongoDbRowCounterTests : IClassFixture<MongoDbServerFixture>
+[Collection(nameof(MongoDbServerCollection))]
+public class MongoDbRowCounterTests
 {
     private readonly MongoDbServerFixture _fixture;
 

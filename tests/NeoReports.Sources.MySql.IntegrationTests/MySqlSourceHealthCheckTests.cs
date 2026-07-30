@@ -4,7 +4,8 @@ using Xunit;
 
 namespace NeoReports.Sources.MySql.IntegrationTests;
 
-public class MySqlSourceHealthCheckTests : IClassFixture<MySqlServerFixture>
+[Collection(nameof(MySqlServerCollection))]
+public class MySqlSourceHealthCheckTests
 {
     private readonly MySqlServerFixture _fixture;
 

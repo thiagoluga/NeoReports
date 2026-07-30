@@ -12,7 +12,8 @@ using static NeoReports.Formats.Xlsx.Format;
 
 namespace NeoReports.Sources.Sql.IntegrationTests;
 
-public class MultiOutputE2ETests : IClassFixture<SqlServerFixture>, IDisposable
+[Collection(nameof(SqlServerCollection))]
+public class MultiOutputE2ETests : IDisposable
 {
     private readonly SqlServerFixture _fixture;
     private readonly string _outDir = Path.Combine(Path.GetTempPath(), "nr-multi", Guid.NewGuid().ToString("N"));

@@ -12,7 +12,8 @@ using static NeoReports.Formats.Csv.Format;
 
 namespace NeoReports.Sources.Sql.IntegrationTests;
 
-public class EndToEndTests : IClassFixture<SqlServerFixture>, IDisposable
+[Collection(nameof(SqlServerCollection))]
+public class EndToEndTests : IDisposable
 {
     private readonly SqlServerFixture _fixture;
     private readonly string _outDir = Path.Combine(Path.GetTempPath(), "nr-e2e", Guid.NewGuid().ToString("N"));

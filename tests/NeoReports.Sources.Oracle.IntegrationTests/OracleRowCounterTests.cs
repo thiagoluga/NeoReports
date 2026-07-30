@@ -7,7 +7,8 @@ using Xunit;
 namespace NeoReports.Sources.Oracle.IntegrationTests;
 
 /// <summary>ADR D47: <see cref="ISourceRowCounter"/> against a real Oracle container.</summary>
-public class OracleRowCounterTests : IClassFixture<OracleServerFixture>
+[Collection(nameof(OracleCollection))]
+public class OracleRowCounterTests
 {
     private readonly OracleServerFixture _fixture;
 

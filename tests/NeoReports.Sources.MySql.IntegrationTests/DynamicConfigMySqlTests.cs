@@ -16,7 +16,8 @@ namespace NeoReports.Sources.MySql.IntegrationTests;
 /// The dynamic <c>"mysql"</c> source materializes positional <see cref="ReportRecord"/> rows by
 /// schema-column name, reusing the shared ADO.NET keyset engine and the existing pipeline.
 /// </summary>
-public class DynamicConfigMySqlTests : IClassFixture<MySqlServerFixture>, IDisposable
+[Collection(nameof(MySqlServerCollection))]
+public class DynamicConfigMySqlTests : IDisposable
 {
     private readonly MySqlServerFixture _fixture;
     private readonly string _outDir = Path.Combine(Path.GetTempPath(), "nr-dyn-mysql", Guid.NewGuid().ToString("N"));

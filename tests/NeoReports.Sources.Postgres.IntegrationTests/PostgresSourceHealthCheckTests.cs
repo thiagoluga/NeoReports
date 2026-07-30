@@ -4,7 +4,8 @@ using Xunit;
 
 namespace NeoReports.Sources.Postgres.IntegrationTests;
 
-public class PostgresSourceHealthCheckTests : IClassFixture<PostgresServerFixture>
+[Collection(nameof(PostgresServerCollection))]
+public class PostgresSourceHealthCheckTests
 {
     private readonly PostgresServerFixture _fixture;
 

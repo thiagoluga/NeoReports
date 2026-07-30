@@ -7,7 +7,8 @@ namespace NeoReports.Sources.MySql.IntegrationTests;
 
 public sealed record Sale(long Id, string Customer, decimal Amount, DateTime Date);
 
-public class MySqlKeysetSourceTests : IClassFixture<MySqlServerFixture>
+[Collection(nameof(MySqlServerCollection))]
+public class MySqlKeysetSourceTests
 {
     private readonly MySqlServerFixture _fixture;
 

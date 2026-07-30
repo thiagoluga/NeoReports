@@ -17,7 +17,8 @@ namespace NeoReports.Sources.MySql.IntegrationTests;
 /// (<c>new AdoFilterTranslator("mysql")</c>, no cast configured) is expected to just work — this test
 /// proves that empirically rather than assuming it from the D43 keyset-cursor precedent.
 /// </summary>
-public sealed class MySqlFilterTranslatorIntegrationTests : IClassFixture<MySqlServerFixture>
+[Collection(nameof(MySqlServerCollection))]
+public sealed class MySqlFilterTranslatorIntegrationTests
 {
     private readonly MySqlServerFixture _fixture;
 
