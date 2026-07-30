@@ -130,6 +130,23 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>
+    /// Compiles every config-driven report (<see cref="AddReportFromConfig"/>/<c>File</c>/<c>Directory</c>)
+    /// at host startup instead of on the first request, so a malformed document — an unknown source
+    /// type, a missing column, an invalid filter — fails the host at boot with an actionable
+    /// <see cref="ConfigurationException"/> rather than surfacing mid-run. This matches the fail-fast
+    /// the typed <c>AddReport&lt;T&gt;</c> path already gives (it builds and validates immediately).
+    /// Opt-in and safe to call multiple times; requires a host that runs hosted services.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    public static IServiceCollection AddNeoReportsStartupValidation(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        services.AddNeoReports();
+        services.AddHostedService<StartupValidationHostedService>();
+        return services;
+    }
+
+    /// <summary>
     /// Registers dynamic (runtime-created) report support: a file-backed <see cref="IReportConfigStore"/>
     /// and startup rehydration of every document it holds, through the same lazy mechanism
     /// code-first config reports (<see cref="AddReportFromConfig"/>) already use. Combine with the
