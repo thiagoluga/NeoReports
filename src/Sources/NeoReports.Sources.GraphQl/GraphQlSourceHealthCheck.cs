@@ -38,7 +38,7 @@ public sealed class GraphQlSourceHealthCheck : ISourceHealthCheck
             using var content = new StringContent(ProbeQueryBody, Encoding.UTF8, "application/json");
 
             using HttpResponseMessage response = await HttpHealthProbe
-                .SendAsync(client, HttpMethod.Post, endpointUrl, options.ToAuth(), cancellationToken, content)
+                .SendAsync(client, HttpMethod.Post, endpointUrl, options.ToAuth(), content, cancellationToken)
                 .ConfigureAwait(false);
             stopwatch.Stop();
 

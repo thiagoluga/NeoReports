@@ -34,7 +34,7 @@ public sealed class GoogleSheetsSourceHealthCheck : ISourceHealthCheck
             HttpClient client = HttpClients.ResolveFrom(services);
             Uri targetUrl = GoogleSheetsUrls.Metadata(spreadsheetId, options.ApiKeyValue!);
 
-            return await HttpHealthProbe.SendAsync(client, HttpMethod.Get, targetUrl.ToString(), new HttpAuth(), cancellationToken).ConfigureAwait(false);
+            return await HttpHealthProbe.SendAsync(client, HttpMethod.Get, targetUrl.ToString(), new HttpAuth(), cancellationToken: cancellationToken).ConfigureAwait(false);
         }, cancellationToken);
     }
 }

@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "03-async-job-hangfire": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:52777;http://localhost:52778"
+    }
+  }
+}
