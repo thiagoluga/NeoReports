@@ -662,6 +662,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         string id,
         IReportJobScheduler scheduler,
         IReportArtifactStore artifactStore,
+        HttpContext http,
         CancellationToken cancellationToken)
     {
         var job = await scheduler.GetAsync(id, cancellationToken).ConfigureAwait(false);
@@ -682,9 +683,9 @@ public static class NeoReportsEndpointRouteBuilderExtensions
             return Results.File(single.Path, single.MimeType, single.FileName);
         }
 
-        // Multiple outputs: bundle into a zip so a single download carries them all, streamed
-        // straight onto the response body (constant memory, regardless of total report size).
-        return await StreamArtifactsZipAsync(artifacts, $"{job.ReportName}-{id}.zip", cancellationToken);
+        // Multiple outputs: bundle into a zip so a single download carries them all, built to a temp
+        // file and streamed from there (constant memory, regardless of total report size).
+        return await StreamArtifactsZipAsync(http, artifacts, $"{job.ReportName}-{id}.zip", cancellationToken);
     }
 
     private static async Task<IResult> GetJobArtifactsAsync(
@@ -806,24 +807,24 @@ public static class NeoReportsEndpointRouteBuilderExtensions
             return Results.File(single.Path, single.MimeType, single.FileName);
         }
 
-        // Same streamed-zip path as the completed-artifacts download; the partial files this route
+        // Same temp-file zip path as the completed-artifacts download; the partial files this route
         // serves are still never reachable from GET /jobs/{id}/artifacts or /download.
-        return await StreamArtifactsZipAsync(partials, $"{job.ReportName}-{id}-partial.zip", cancellationToken);
+        return await StreamArtifactsZipAsync(http, partials, $"{job.ReportName}-{id}-partial.zip", cancellationToken);
     }
 
-    // Builds a ZIP of the given artifacts into a temporary file, then streams that file to the
-    // client. Memory stays constant no matter how large the bundled files are — the previous version
-    // buffered the whole archive in a MemoryStream (RAM that grew with total report size and
-    // multiplied under concurrent downloads). The archive is written with synchronous compression to
-    // a FileStream (allowed on a file; the HTTP response body forbids synchronous IO, which is why
-    // the archive cannot be composed directly onto the response). The temp file is opened for the
-    // response with DeleteOnClose, so Results.File removes it when the download finishes.
+    // Builds a ZIP of the given artifacts into a temporary file, then serves that file. Memory stays
+    // constant no matter how large the bundled files are — the previous version buffered the whole
+    // archive in a MemoryStream (RAM that grew with total report size and multiplied under concurrent
+    // downloads). The archive is written with synchronous compression to a FileStream (allowed on a
+    // file; the HTTP response body forbids synchronous IO, which is why it can't be composed straight
+    // onto the response). The finished temp file is served by path and deleted once the response has
+    // completed; a build-time failure deletes the partial file before rethrowing.
     private static async Task<IResult> StreamArtifactsZipAsync(
-        IReadOnlyList<ReportArtifact> artifacts, string downloadName, CancellationToken cancellationToken)
+        HttpContext http, IReadOnlyList<ReportArtifact> artifacts, string downloadName, CancellationToken cancellationToken)
     {
-        var zipDir = Path.Combine(Path.GetTempPath(), "neoreports-zip");
+        var zipDir = Path.Join(Path.GetTempPath(), "neoreports-zip");
         Directory.CreateDirectory(zipDir);
-        var tempPath = Path.Combine(zipDir, Guid.NewGuid().ToString("N") + ".zip");
+        var tempPath = Path.Join(zipDir, Guid.NewGuid().ToString("N") + ".zip");
 
         // Create the temp zip owner-only (0600) on Unix, where Path.GetTempPath() is a shared,
         // world-readable location (/tmp): the report bundle would otherwise be readable by any other
@@ -838,6 +839,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         if (!OperatingSystem.IsWindows())
             writeOptions.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
 
+        var built = false;
         try
         {
             await using (var zipFile = new FileStream(tempPath, writeOptions))
@@ -852,19 +854,24 @@ public static class NeoReportsEndpointRouteBuilderExtensions
                 }
             }
 
-            // Opening the response stream stays inside the guard: if the write handle is closed above
-            // but this open throws (an AV scanner momentarily locking the file, an IO/quota error),
-            // DeleteOnClose was never registered, so the catch is the only thing that removes the file.
-            var readStream = new FileStream(
-                tempPath, FileMode.Open, FileAccess.Read, FileShare.Read,
-                bufferSize: 81920, FileOptions.DeleteOnClose | FileOptions.Asynchronous);
-            return Results.File(readStream, "application/zip", downloadName);
+            built = true;
         }
-        catch
+        finally
+        {
+            // A failed build (a missing source file, an IO/quota error, cancellation) leaves a
+            // partial temp file — remove it before the exception propagates.
+            if (!built)
+                TryDeleteFile(tempPath);
+        }
+
+        // Results.File opens and disposes its own read handle; delete the temp file once the response
+        // has been fully written and that handle released.
+        http.Response.OnCompleted(() =>
         {
             TryDeleteFile(tempPath);
-            throw;
-        }
+            return Task.CompletedTask;
+        });
+        return Results.File(tempPath, "application/zip", downloadName);
     }
 
     private static void TryDeleteFile(string path)
@@ -874,10 +881,10 @@ public static class NeoReportsEndpointRouteBuilderExtensions
             if (File.Exists(path))
                 File.Delete(path);
         }
-        catch (Exception)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // Best-effort cleanup of the temp zip — an IOException or UnauthorizedAccessException here
-            // must never replace the real exception being propagated on the failure path.
+            // Best-effort cleanup of the temp zip — a locked/again-in-use file must never replace the
+            // real exception on the failure path, nor fault a response that already succeeded.
         }
     }
 
