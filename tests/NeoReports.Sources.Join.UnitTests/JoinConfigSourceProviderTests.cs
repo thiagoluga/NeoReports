@@ -211,6 +211,8 @@ public class JoinConfigSourceProviderTests
             BatchResult<ReportRecord> result = await source
                 .ReadBatchAsync(new BatchContext(exec, pageSize: 2, cursor, pageNumber), CancellationToken.None);
             rows.AddRange(result.Records);
+            if (pageNumber > 1000)
+                throw new Xunit.Sdk.XunitException("drain did not terminate within 1000 pages - likely a non-advancing cursor.");
             if (!result.HasMore)
                 break;
             cursor = result.NextCursor;

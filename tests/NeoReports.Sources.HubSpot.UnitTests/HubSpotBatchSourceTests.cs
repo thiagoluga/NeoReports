@@ -31,6 +31,8 @@ public sealed class HubSpotBatchSourceTests
             var context = new BatchContext(Exec(), pageSize, cursor, pageNumber);
             BatchResult<T> result = await source.ReadBatchAsync(context, CancellationToken.None);
             results.AddRange(result.Records);
+            if (pageNumber > 1000)
+                throw new Xunit.Sdk.XunitException("drain did not terminate within 1000 pages - likely a non-advancing cursor.");
             if (!result.HasMore)
                 break;
             cursor = result.NextCursor;
