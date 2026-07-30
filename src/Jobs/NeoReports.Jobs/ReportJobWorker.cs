@@ -93,7 +93,7 @@ public sealed class ReportJobWorker
             // tripped and we still need to record the terminal state.
             await _store.UpdateStatusAsync(jobId, ReportJobStatus.Cancelled, reason, CancellationToken.None)
                 .ConfigureAwait(false);
-            _logger.LogInformation("Job {JobId} for report {Report} was cancelled ({Reason}).", jobId, reportName, reason);
+            _logger.LogInformation(ex, "Job {JobId} for report {Report} was cancelled ({Reason}).", jobId, reportName, reason);
         }
         catch (Exception ex)
         {

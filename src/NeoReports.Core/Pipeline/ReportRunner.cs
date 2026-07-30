@@ -70,6 +70,7 @@ public sealed class ReportRunner : IReportRunner
         catch (OperationCanceledException ex) when (deadlineCts is { IsCancellationRequested: true } && !cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning(
+                ex,
                 "Report {Report} (job {JobId}) exceeded its {Deadline} deadline and was cancelled.",
                 report.Name, jobId, report.Deadline);
             // Rethrown as a deadline-specific OperationCanceledException: the caller's own token is

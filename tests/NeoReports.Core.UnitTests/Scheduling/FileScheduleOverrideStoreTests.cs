@@ -109,7 +109,7 @@ public class FileScheduleOverrideStoreTests : IDisposable
         // The write is staged through a unique temp file and moved into place; nothing may linger
         // (a stray temp would also have to stay out of ListAsync's "*.json" enumeration).
         Directory.EnumerateFiles(_directory, "*.tmp").ShouldBeEmpty();
-        (await store.ListAsync(CancellationToken.None)).Select(x => x.ReportName).ShouldBe(new[] { "alpha" });
+        (await store.ListAsync(CancellationToken.None)).ShouldHaveSingleItem().ReportName.ShouldBe("alpha");
     }
 
     [Fact]
