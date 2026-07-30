@@ -261,6 +261,56 @@ public class SourceEndpointTests
         detail.GetProperty("lastHealthStatus").GetString().ShouldBe("healthy");
         detail.GetProperty("lastCheckedAt").ValueKind.ShouldNotBe(JsonValueKind.Null);
     }
+
+    [Fact]
+    public async Task Health_scrubs_the_raw_error_and_never_returns_connection_detail()
+    {
+        using var host = await TestApp.StartAsync(services =>
+        {
+            services.AddNeoReports();
+            services.AddInMemorySourceRegistry();
+            services.AddSingleton<IConfigSourceProvider>(new FakeConfigSourceProvider(Array.Empty<object?[]>(), type: "leaky"));
+            services.AddSingleton<ISourceHealthCheck, FakeUnhealthySourceHealthCheck>();
+        });
+        var client = host.GetTestClient();
+
+        await client.PostAsJsonAsync("/api/sources", new { name = "db", type = "leaky" }, Json);
+
+        var health = await client.PostAsync("/api/sources/db/health", content: null);
+        health.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var result = await health.Content.ReadFromJsonAsync<JsonElement>(Json);
+
+        result.GetProperty("healthy").GetBoolean().ShouldBeFalse();
+        var error = result.GetProperty("error").GetString();
+        error.ShouldNotBeNull();
+        error!.ShouldNotContain(FakeUnhealthySourceHealthCheck.SecretHost);
+        error.ShouldNotContain(FakeUnhealthySourceHealthCheck.SecretUser);
+        error.ShouldContain("server logs");
+
+        // The cached reading GET /sources surfaces must be scrubbed too — identical generic string,
+        // with neither the host nor the user leaking.
+        var detail = await client.GetFromJsonAsync<JsonElement>("/api/sources/db", Json);
+        detail.GetProperty("lastHealthStatus").GetString().ShouldBe("unhealthy");
+        var cachedError = detail.GetProperty("lastHealthError").GetString();
+        cachedError.ShouldBe(error);
+        cachedError!.ShouldNotContain(FakeUnhealthySourceHealthCheck.SecretHost);
+        cachedError!.ShouldNotContain(FakeUnhealthySourceHealthCheck.SecretUser);
+    }
+}
+
+/// <summary>Unhealthy fake whose raw error embeds connection detail, to prove the endpoint scrubs it.</summary>
+public sealed class FakeUnhealthySourceHealthCheck : ISourceHealthCheck
+{
+    public const string SecretHost = "db.internal.corp:1433";
+    public const string SecretUser = "sa";
+
+    public string Type => "leaky";
+
+    public Task<SourceHealthResult> CheckAsync(SourceDefinition definition, IServiceProvider services, CancellationToken cancellationToken) =>
+        Task.FromResult(new SourceHealthResult(
+            Healthy: false,
+            Error: $"Login failed for user '{SecretUser}'. Server={SecretHost};Database=payroll",
+            Latency: TimeSpan.FromMilliseconds(3)));
 }
 
 /// <summary>Always-healthy fake health check for the <c>"fake"</c> source type.</summary>
