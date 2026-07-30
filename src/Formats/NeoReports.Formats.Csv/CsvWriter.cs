@@ -118,6 +118,11 @@ public sealed class CsvWriter : IReportWriter
         if (!string.IsNullOrEmpty(column.Format) && value is IFormattable formattable)
             return formattable.ToString(column.Format, culture);
 
+        // Binary would otherwise stringify to "System.Byte[]" (total data loss); Base64 is a faithful,
+        // culture-independent text form (matches the XLSX writer).
+        if (value is byte[] bytes)
+            return Convert.ToBase64String(bytes);
+
         return Convert.ToString(value, culture) ?? string.Empty;
     }
 

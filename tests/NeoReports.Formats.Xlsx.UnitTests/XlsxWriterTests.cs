@@ -63,6 +63,33 @@ public class XlsxWriterTests
     }
 
     [Fact]
+    public async Task Serializes_edge_case_values_without_corrupting_the_file()
+    {
+        var schema = new ReportSchema(new[]
+        {
+            new ReportColumn("Text", ColumnType.String),
+            new ReportColumn("Number", ColumnType.Decimal),
+            new ReportColumn("Binary", ColumnType.String),
+            new ReportColumn("Time", ColumnType.String),
+        });
+        var rows = new object?[][]
+        {
+            new object?[] { "AB\u0001CD", double.NaN, new byte[] { 1, 2, 3 }, new TimeOnly(14, 30, 15) },
+        };
+
+        // The write must not throw and the workbook must reopen — before the fix an illegal control
+        // char aborted the whole file and a NaN produced an invalid (un-openable) number cell.
+        using var wb = await WriteAndReopen(new XlsxOptions().SheetName("Edge"), schema, rows);
+        var ws = wb.Worksheet("Edge");
+
+        ws.Cell(2, 1).GetString().ShouldBe("ABCD"); // 0x01 stripped so the sheet stays valid XML
+        ws.Cell(2, 2).GetString().ShouldBe("NaN");   // NaN emitted as text, not an invalid number cell
+        ws.Cell(2, 3).GetString().ShouldBe(Convert.ToBase64String(new byte[] { 1, 2, 3 })); // not "System.Byte[]"
+        ws.Cell(2, 4).GetString().ShouldBe(
+            new TimeOnly(14, 30, 15).ToString("O", System.Globalization.CultureInfo.InvariantCulture)); // invariant
+    }
+
+    [Fact]
     public async Task AutoFilter_is_enabled_when_requested()
     {
         var rows = new object?[][] { new object?[] { 1L, "Ana", 1m, new DateTime(2026, 1, 1) } };

@@ -76,6 +76,18 @@ public class CsvWriterTests
     }
 
     [Fact]
+    public async Task Binary_values_render_as_base64_not_the_type_name()
+    {
+        var schema = new ReportSchema(new[] { new ReportColumn("Blob", ColumnType.String, DisplayName: "Blob") });
+        var rows = new object?[][] { new object?[] { new byte[] { 1, 2, 3 } } };
+
+        var bytes = await WriteAsync(new CsvOptions().Header(false), schema, rows);
+        var text = Encoding.UTF8.GetString(bytes);
+
+        text.ShouldBe(Convert.ToBase64String(new byte[] { 1, 2, 3 }) + "\r\n"); // "AQID", not "System.Byte[]"
+    }
+
+    [Fact]
     public async Task Null_values_render_empty_and_header_can_be_disabled()
     {
         var schema = new ReportSchema(new[]
