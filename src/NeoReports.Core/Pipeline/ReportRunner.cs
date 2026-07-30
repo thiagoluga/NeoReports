@@ -18,6 +18,10 @@ namespace NeoReports.Core.Pipeline;
 /// </summary>
 public sealed class ReportRunner : IReportRunner
 {
+    // The "fileName" job-event data key, shared by the OutputsFinalized / UploadCompleted /
+    // UploadFailed emits below.
+    private const string FileNameKey = "fileName";
+
     private readonly IReportRegistry _registry;
     private readonly IServiceProvider _services;
     private readonly ILoggerFactory _loggerFactory;
@@ -351,7 +355,7 @@ public sealed class ReportRunner : IReportRunner
 
                     await events.EmitAsync(JobEventTypes.OutputsFinalized, null, new Dictionary<string, string>
                     {
-                        ["fileName"] = output.FileName,
+                        [FileNameKey] = output.FileName,
                         ["sizeBytes"] = output.SizeBytes.ToString(CultureInfo.InvariantCulture),
                     }, cancellationToken).ConfigureAwait(false);
                 }
@@ -368,7 +372,7 @@ public sealed class ReportRunner : IReportRunner
 
                     await events.EmitAsync(JobEventTypes.OutputsFinalized, null, new Dictionary<string, string>
                     {
-                        ["fileName"] = output.FileName,
+                        [FileNameKey] = output.FileName,
                         ["sizeBytes"] = output.SizeBytes.ToString(CultureInfo.InvariantCulture),
                     }, cancellationToken).ConfigureAwait(false);
                 }
@@ -395,7 +399,7 @@ public sealed class ReportRunner : IReportRunner
                             await events.EmitAsync(JobEventTypes.UploadCompleted, null, new Dictionary<string, string>
                             {
                                 ["destinationType"] = destSpec.Factory.Type,
-                                ["fileName"] = finished.FileName,
+                                [FileNameKey] = finished.FileName,
                             }, cancellationToken).ConfigureAwait(false);
                         }
                         else
@@ -414,7 +418,7 @@ public sealed class ReportRunner : IReportRunner
                             await events.EmitAsync(JobEventTypes.UploadFailed, uploadResult.ErrorMessage, new Dictionary<string, string>
                             {
                                 ["destinationType"] = destSpec.Factory.Type,
-                                ["fileName"] = finished.FileName,
+                                [FileNameKey] = finished.FileName,
                             }, cancellationToken).ConfigureAwait(false);
                         }
                     }

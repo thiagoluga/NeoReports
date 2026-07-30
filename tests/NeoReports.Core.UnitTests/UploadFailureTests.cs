@@ -10,7 +10,7 @@ namespace NeoReports.Core.UnitTests;
 
 public class UploadFailureTests
 {
-    private static IReadOnlyList<Sale> Page(params long[] ids) =>
+    private static Sale[] Page(params long[] ids) =>
         ids.Select(id => new Sale(id, $"C{id}", id * 10m, DateTime.UnixEpoch)).ToArray();
 
     private static ReportExecutionContext Exec() =>
