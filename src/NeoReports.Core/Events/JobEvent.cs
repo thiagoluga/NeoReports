@@ -47,6 +47,9 @@ public static class JobEventTypes
     /// <summary>A finished file was uploaded to a destination. Data: "destinationType", "fileName".</summary>
     public const string UploadCompleted = "upload-completed";
 
+    /// <summary>A finished file failed to upload to a destination. Data: "destinationType", "fileName"; <see cref="JobEvent.Message"/> carries the failure reason.</summary>
+    public const string UploadFailed = "upload-failed";
+
     /// <summary>Terminal: the run finished (with or without skipped batches). No <see cref="JobEvent.Data"/>.</summary>
     public const string RunCompleted = "run-completed";
 

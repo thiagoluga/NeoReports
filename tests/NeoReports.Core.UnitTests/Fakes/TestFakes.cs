@@ -238,3 +238,38 @@ public sealed class CapturingDestinationFactory : IDestinationFactory
         return destination;
     }
 }
+
+/// <summary>Destination that returns a failed <see cref="UploadResult"/> without throwing.</summary>
+public sealed class FailingDestination : IReportDestination
+{
+    private readonly string _type;
+    private readonly string _reason;
+
+    public FailingDestination(string type, string reason)
+    {
+        _type = type;
+        _reason = reason;
+    }
+
+    public string Type => _type;
+
+    public Task<UploadResult> UploadAsync(ReportFile file, DestinationContext context, CancellationToken cancellationToken) =>
+        Task.FromResult(UploadResult.Fail(_reason));
+}
+
+/// <summary>Factory that produces a <see cref="FailingDestination"/> (mirrors how S3/Local report a failed upload).</summary>
+public sealed class FailingDestinationFactory : IDestinationFactory
+{
+    private readonly string _reason;
+
+    public FailingDestinationFactory(string type = "failing", string reason = "simulated upload failure")
+    {
+        Type = type;
+        _reason = reason;
+    }
+
+    public string Type { get; }
+
+    public IReportDestination Create(IReadOnlyDictionary<string, object?> options, IServiceProvider services) =>
+        new FailingDestination(Type, _reason);
+}
