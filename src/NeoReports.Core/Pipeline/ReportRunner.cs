@@ -18,6 +18,10 @@ namespace NeoReports.Core.Pipeline;
 /// </summary>
 public sealed class ReportRunner : IReportRunner
 {
+    // The "fileName" job-event data key, shared by the OutputsFinalized / UploadCompleted /
+    // UploadFailed emits below.
+    private const string FileNameKey = "fileName";
+
     private readonly IReportRegistry _registry;
     private readonly IServiceProvider _services;
     private readonly ILoggerFactory _loggerFactory;
@@ -334,6 +338,8 @@ public sealed class ReportRunner : IReportRunner
 
             long bytesWritten = 0;
             var uploads = new List<UploadResult>();
+            var uploadFailed = false;
+            string? uploadError = null;
 
             if (status != ReportRunStatus.Failed)
             {
@@ -349,7 +355,7 @@ public sealed class ReportRunner : IReportRunner
 
                     await events.EmitAsync(JobEventTypes.OutputsFinalized, null, new Dictionary<string, string>
                     {
-                        ["fileName"] = output.FileName,
+                        [FileNameKey] = output.FileName,
                         ["sizeBytes"] = output.SizeBytes.ToString(CultureInfo.InvariantCulture),
                     }, cancellationToken).ConfigureAwait(false);
                 }
@@ -366,7 +372,7 @@ public sealed class ReportRunner : IReportRunner
 
                     await events.EmitAsync(JobEventTypes.OutputsFinalized, null, new Dictionary<string, string>
                     {
-                        ["fileName"] = output.FileName,
+                        [FileNameKey] = output.FileName,
                         ["sizeBytes"] = output.SizeBytes.ToString(CultureInfo.InvariantCulture),
                     }, cancellationToken).ConfigureAwait(false);
                 }
@@ -383,15 +389,38 @@ public sealed class ReportRunner : IReportRunner
                         var file = new ReportFile(
                             finished.FileName, finished.MimeType, finished.SizeBytes,
                             () => new FileStream(finished.Path, FileMode.Open, FileAccess.Read, FileShare.Read));
-                        uploads.Add(await destination.UploadAsync(
+                        UploadResult uploadResult = await destination.UploadAsync(
                             file, new DestinationContext(execution, destSpec.Options), cancellationToken)
-                            .ConfigureAwait(false));
+                            .ConfigureAwait(false);
+                        uploads.Add(uploadResult);
 
-                        await events.EmitAsync(JobEventTypes.UploadCompleted, null, new Dictionary<string, string>
+                        if (uploadResult.Success)
                         {
-                            ["destinationType"] = destSpec.Factory.Type,
-                            ["fileName"] = finished.FileName,
-                        }, cancellationToken).ConfigureAwait(false);
+                            await events.EmitAsync(JobEventTypes.UploadCompleted, null, new Dictionary<string, string>
+                            {
+                                ["destinationType"] = destSpec.Factory.Type,
+                                [FileNameKey] = finished.FileName,
+                            }, cancellationToken).ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            // A destination that returns a failed UploadResult (bad credentials,
+                            // wrong bucket, network) must never be reported as a delivered report:
+                            // the run fails and says which destination/file did not land, instead of
+                            // completing green with the file still on the box (delivery-integrity).
+                            uploadFailed = true;
+                            uploadError ??= $"Upload of '{finished.FileName}' to destination " +
+                                $"'{destSpec.Factory.Type}' failed: {uploadResult.ErrorMessage}";
+                            execution.Logger.LogError(
+                                "Report {Report} (job {JobId}) failed to upload '{FileName}' to destination '{DestinationType}': {Reason}",
+                                report.Name, execution.JobId, finished.FileName, destSpec.Factory.Type, uploadResult.ErrorMessage);
+
+                            await events.EmitAsync(JobEventTypes.UploadFailed, uploadResult.ErrorMessage, new Dictionary<string, string>
+                            {
+                                ["destinationType"] = destSpec.Factory.Type,
+                                [FileNameKey] = finished.FileName,
+                            }, cancellationToken).ConfigureAwait(false);
+                        }
                     }
                 }
 
@@ -412,6 +441,19 @@ public sealed class ReportRunner : IReportRunner
                 // only a genuine failure captures partials (D11's batch-atomicity: the partial file
                 // contains exactly the fully-written batches).
                 await CapturePartialArtifactsAsync().ConfigureAwait(false);
+            }
+
+            // A delivery failure escalates the run to Failed after the fact: the output files were
+            // produced and finalized correctly (so they are retained above for later download), but
+            // the report did not reach its configured destination, and reporting that as a success
+            // would tell an operator the report was delivered when it was not. Partials are not
+            // captured here — unlike a batch failure, the files are complete, not partial.
+            // uploadFailed is only ever set inside the success block above (status was not Failed
+            // there), so reaching here with it set means the run otherwise Completed/CompletedPartial.
+            if (uploadFailed)
+            {
+                status = ReportRunStatus.Failed;
+                error = uploadError;
             }
 
             await events.EmitAsync(
