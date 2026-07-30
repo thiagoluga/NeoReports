@@ -133,6 +133,30 @@ public class KeysetSqlGeneratorTests
     }
 
     [Fact]
+    public void Oracle_casts_a_numeric_cursor_with_TO_NUMBER()
+    {
+        QueryModel model = SingleTable(new QuerySelectColumn(Ref("t0", "id"), "Id", "NUMBER")) with { KeyDataType = "NUMBER" };
+
+        GeneratedQuery result = KeysetSqlGenerator.Generate(model, SqlDialect.Oracle);
+
+        result.Sql.ShouldContain("t0.\"id\" > TO_NUMBER(:cursor,");
+    }
+
+    [Fact]
+    public void Oracle_casts_a_temporal_cursor_with_TO_TIMESTAMP()
+    {
+        // Regression: a DATE/TIMESTAMP key's cursor is the codec's ISO-8601 text. Without an explicit
+        // format model Oracle implicit-converts it with the session NLS_DATE_FORMAT (not ISO-8601) and
+        // throws ORA-01858 on the second page. The generated cast must parse it with the exact model
+        // the codec documents.
+        QueryModel model = SingleTable(new QuerySelectColumn(Ref("t0", "id"), "Id", "TIMESTAMP")) with { KeyDataType = "TIMESTAMP" };
+
+        GeneratedQuery result = KeysetSqlGenerator.Generate(model, SqlDialect.Oracle);
+
+        result.Sql.ShouldContain("t0.\"id\" > TO_TIMESTAMP(:cursor, 'YYYY-MM-DD\"T\"HH24:MI:SS.FF7')");
+    }
+
+    [Fact]
     public void A_hostile_column_name_is_neutralized_by_quoting()
     {
         QueryModel model = SingleTable(new QuerySelectColumn(Ref("t0", "x\"; DROP TABLE t; --"), "X", "varchar"));

@@ -46,6 +46,10 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   the host — D20 — this is a nudge, not a behaviour change).
 
 ### Fixed
+- Pro `QueryBuilder` Oracle keyset on a `DATE`/`TIMESTAMP` key no longer crashes on the second page:
+  the generated SQL now casts the ISO-8601 cursor with `TO_TIMESTAMP(:cursor,
+  'YYYY-MM-DD"T"HH24:MI:SS.FF7')` instead of leaving it bare (Oracle's `NLS_DATE_FORMAT` implicit
+  conversion threw `ORA-01858`).
 - Keyset cursor now encodes `DateTime`/`byte[]` keys type-faithfully (was corrupting/duplicating rows).
 - Local destination blocks path traversal via run-time parameters.
 - A failed upload now fails the run instead of reporting success.

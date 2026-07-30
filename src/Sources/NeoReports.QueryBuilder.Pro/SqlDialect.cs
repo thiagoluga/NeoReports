@@ -79,6 +79,14 @@ public sealed record SqlDialect(
     {
         ColumnType.Integer or ColumnType.Decimal or ColumnType.Money =>
             $"TO_NUMBER({token}, 'FM999999999999999990.099999999999999999', 'NLS_NUMERIC_CHARACTERS=''.,''')",
+        // A temporal key's cursor is the KeysetCursorCodec's culture-invariant ISO-8601 round-trip
+        // form (e.g. 2026-01-01T00:00:00.0000000). Oracle binds it as text and would otherwise
+        // implicit-convert it with the session's NLS_DATE_FORMAT — which is not ISO-8601, so the
+        // second page throws ORA-01858. Parse it explicitly with the exact format model the codec
+        // documents (7 fractional digits, matching .NET's "O" specifier). Comparing a DATE column
+        // against a TIMESTAMP promotes the DATE, so one model covers DATE/DATETIME/TIMESTAMP keys.
+        ColumnType.Date or ColumnType.DateTime or ColumnType.Timestamp =>
+            $"TO_TIMESTAMP({token}, 'YYYY-MM-DD\"T\"HH24:MI:SS.FF7')",
         _ => null,
     };
 }
