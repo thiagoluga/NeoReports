@@ -67,13 +67,11 @@ enterprise-readiness and test coverage, and shipped everything actionable.
   hard-fails instead of silently degrading to "all skipped", while local `dotnet test` (var unset)
   keeps skipping. Covered by `DockerGateTests`.
 
-### 3. Pre-existing CodeQL alerts
-- **~30 open repository code-scanning alerts** predating the audit (e.g. `cs/path-combine` in
-  `Sources.Xlsx.UnitTests`, `cs/local-not-disposed` / `cs/catch-of-all-exceptions` in
-  `Sources.Files.Common`, `cs/linq/missed-where` in `Core/Sources/ReflectedRowShape.cs`). Each needs
-  either a real fix or an explicit dismissal via
-  `PATCH /repos/thiagoluga/NeoReports/code-scanning/alerts/{number}` with a `dismissed_reason`
-  (resolving a PR thread does **not** close a repo-level alert). None touch the audit's files.
+### 3. Pre-existing CodeQL alerts — **done**
+- The ~30 open repository code-scanning alerts predating the audit were cleared: 21 fixed (auto-closed
+  on the master CodeQL run) and 11 dismissed as false-positive / deliberate. Repo-level open count is
+  now **0**. (Resolving a PR thread does **not** close a repo-level alert, so each was handled via
+  `PATCH /repos/thiagoluga/NeoReports/code-scanning/alerts/{number}` or a real fix.)
 
 ### 4. Pro packaging (Epic Q3b/c) — blocked on the maintainer
 - The three Pro packages are enforced (Q1/Q2) and an issuing tool exists (Q3a), but publishing is
@@ -81,6 +79,43 @@ enterprise-readiness and test coverage, and shipped everything actionable.
   tool's `keygen` **locally**, store the private half in a vault, and commit only the new public
   key. The key generated during development is compromised (it appeared in a chat transcript) and
   must never be the production signing key.
+
+### 5. Follow-up bug-hunt findings (2026-07-30)
+A focused review of the keyset/cursor and resilience/failure paths surfaced these. One is fixed; the
+rest are recorded with a concrete repro because each needs a design decision or a fix that isn't
+locally verifiable.
+- **Oracle temporal keyset cursor crashed on page 2 — FIXED (PR pending/merged).** The Pro
+  `QueryBuilder`'s `SqlDialect.OracleCast` emitted no cast for `Date`/`DateTime`/`Timestamp` keys, so
+  the ISO-8601 cursor was implicit-converted by Oracle's `NLS_DATE_FORMAT` → `ORA-01858` on the
+  second page. Now casts with the codec's documented `TO_TIMESTAMP(:cursor,
+  'YYYY-MM-DD"T"HH24:MI:SS.FF7')`. Unit test asserts the emitted SQL; an Oracle integration test
+  (`A_timestamp_keyset_cursor_round_trips_across_pages`) empirically validates the model.
+- **Postgres/Redshift `timestamptz` keyset boundary can shift under a non-UTC session.** `PostgresCast`
+  casts the cursor to `::timestamp` (no zone). For a `timestamptz` key that discards the offset and
+  re-interprets it in the session `TimeZone`, silently skipping or duplicating a window of rows.
+  Naïvely switching to `::timestamptz` just moves the bug to plain `timestamp` keys — `ColumnType`
+  doesn't distinguish the two. **Needs** the catalog to carry the with/without-time-zone distinction
+  (a design change). Same class as the Oracle `TIMESTAMP WITH TIME ZONE` sub-case (the FF7 model has
+  no `TZH:TZM`). Workaround today: key on a plain `timestamp`/UTC column, or run the session in UTC.
+- **QueryBuilder allows a non-unique keyset key.** Single-column keyset with strict `>` requires a
+  unique, monotonic key; if the user picks a non-unique column, the tail of a duplicate group that
+  straddles a page boundary is dropped. Not statically detectable (no PK/unique metadata in the
+  model). Consider a builder warning when the key isn't a PK, or documenting the requirement more
+  loudly. Needs a product decision.
+- **Multi-output batch writes are not atomic (contradicts D11 batch-atomicity).** `ReportRunner`
+  writes each batch to every output in a sequential loop with no per-batch buffer/transaction; if
+  output *k* throws after output *k-1* already appended, a `SkipBatchAndLog` batch is "skipped" yet
+  physically present in the earlier output's file, and an abort leaves a torn batch across outputs.
+  Delivered files for "the same report" can diverge and the stats won't match the bytes. A real fix
+  (buffer each batch per output, commit all-or-nothing) is a write-path change that should be a
+  recorded decision. Only exercised with ≥2 outputs and a real writer (the single-output
+  `FakeWriterFactory` tests don't hit it).
+- **`FailureRate` threshold has no minimum-sample guard.** The ratio is `totalFailures / batchesSoFar`
+  with the current failing batch already counted, so an early failure degenerates: the first failing
+  batch yields `1/k` and any `FailureRate` below that aborts immediately (e.g. `FailureRate: 0.5`
+  aborts if either of the first two batches fails). The arithmetic matches the documented definition,
+  so this is a semantics choice — consider only evaluating the ratio after N batches if the intent is
+  "fraction over a large run." Needs a decision.
 
 ---
 
