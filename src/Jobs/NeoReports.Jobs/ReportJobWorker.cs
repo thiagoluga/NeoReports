@@ -69,17 +69,31 @@ public sealed class ReportJobWorker
                 "Job {JobId} for report {Report} finished with status {Status} (read={Read}, written={Written}).",
                 jobId, reportName, status, result.Stats.RecordsRead, result.Stats.RecordsWritten);
         }
-        catch (OperationCanceledException)
+        // A cancellation is either one caused by OUR token (a caller-requested cancel) or a run that
+        // exceeded its configured deadline — the runner reports the latter as
+        // ReportDeadlineExceededException precisely because the caller's token is not cancelled for
+        // it. An unfiltered catch also swallowed an OperationCanceledException raised by anything
+        // else — most commonly HttpClient.Timeout, which throws TaskCanceledException carrying its
+        // own internal token, and which the runner deliberately lets through (its batch handlers
+        // filter on `ex is not OperationCanceledException`). Those are genuine failures: labelling
+        // them "Cancelled." discarded the real error and, because this path does not rethrow, made
+        // Hangfire record the run as succeeded.
+        catch (OperationCanceledException ex)
+            when (cancellationToken.IsCancellationRequested || ex is ReportDeadlineExceededException)
         {
             // Record the event before flipping the store status, so any observer that polls the
             // store and sees Cancelled is guaranteed to already find the event on lookup — not a
             // race where the status update wins and the event append hasn't landed yet.
             await TryEmitCancelledEventAsync(jobId).ConfigureAwait(false);
+            // A deadline expiry is still a cancellation, but say so: "Cancelled." alone gives an
+            // operator no way to tell a caller-requested cancel from a run that ran out of time. The
+            // message is ours (curated, secret-free), so it is safe to persist verbatim.
+            var reason = ex is ReportDeadlineExceededException deadline ? deadline.Message : "Cancelled.";
             // Use CancellationToken.None for the store update — the cancelling token is already
             // tripped and we still need to record the terminal state.
-            await _store.UpdateStatusAsync(jobId, ReportJobStatus.Cancelled, "Cancelled.", CancellationToken.None)
+            await _store.UpdateStatusAsync(jobId, ReportJobStatus.Cancelled, reason, CancellationToken.None)
                 .ConfigureAwait(false);
-            _logger.LogInformation("Job {JobId} for report {Report} was cancelled.", jobId, reportName);
+            _logger.LogInformation(ex, "Job {JobId} for report {Report} was cancelled ({Reason}).", jobId, reportName, reason);
         }
         catch (Exception ex)
         {

@@ -99,9 +99,41 @@ public class FileScheduleOverrideStoreTests : IDisposable
             () => store.SaveAsync(invalidName, new ScheduleOverrideEntry("0 6 * * 1"), CancellationToken.None));
     }
 
+    [Fact]
+    public async Task A_successful_save_leaves_no_temp_file_behind()
+    {
+        var store = new FileScheduleOverrideStore(_directory);
+
+        await store.SaveAsync("alpha", new ScheduleOverrideEntry("0 6 * * 1"), CancellationToken.None);
+
+        // The write is staged through a unique temp file and moved into place; nothing may linger
+        // (a stray temp would also have to stay out of ListAsync's "*.json" enumeration).
+        Directory.EnumerateFiles(_directory, "*.tmp").ShouldBeEmpty();
+        (await store.ListAsync(CancellationToken.None)).ShouldHaveSingleItem().ReportName.ShouldBe("alpha");
+    }
+
+    [Fact]
+    public async Task A_failed_save_cleans_up_its_temp_file_and_surfaces_the_error()
+    {
+        var store = new FileScheduleOverrideStore(_directory);
+        Directory.CreateDirectory(_directory);
+        // A directory sitting where the store wants its file makes the final move fail *after* the
+        // temp file has been written — the one path that must not leave an orphan behind.
+        Directory.CreateDirectory(Path.Join(_directory, "alpha.json"));
+
+        // The exact type is the OS's business (Windows raises UnauthorizedAccessException here, other
+        // platforms an IOException); what matters is that the failure surfaces rather than being
+        // swallowed by the cleanup.
+        await Should.ThrowAsync<Exception>(
+            () => store.SaveAsync("alpha", new ScheduleOverrideEntry("0 6 * * 1"), CancellationToken.None));
+
+        Directory.EnumerateFiles(_directory, "*.tmp").ShouldBeEmpty();
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory))
             Directory.Delete(_directory, recursive: true);
+        GC.SuppressFinalize(this);
     }
 }

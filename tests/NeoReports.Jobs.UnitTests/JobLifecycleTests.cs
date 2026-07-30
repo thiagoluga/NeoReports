@@ -133,4 +133,38 @@ public class JobLifecycleTests
         job.Status.ShouldBe(ReportJobStatus.Failed);
         job.Error.ShouldNotBeNullOrEmpty();
     }
+
+    [Fact]
+    public async Task A_source_timeout_is_reported_as_failed_not_cancelled()
+    {
+        // Regression: HttpClient.Timeout raises TaskCanceledException (an OperationCanceledException)
+        // whose token is not the run's. An unfiltered catch recorded it as "Cancelled." — hiding a
+        // real failure behind a status that reads as operator-initiated, and (by not rethrowing)
+        // letting Hangfire mark the background job succeeded.
+        await using var provider = BuildProvider(new TimingOutSource(), out _);
+        var scheduler = provider.GetRequiredService<IReportJobScheduler>();
+
+        var jobId = await scheduler.EnqueueAsync(new ReportJobRequest("sales"), CancellationToken.None);
+
+        var job = await WaitForAsync(scheduler, jobId, s => s is ReportJobStatus.Failed or ReportJobStatus.Cancelled);
+        job.Status.ShouldBe(ReportJobStatus.Failed);
+        job.Error.ShouldNotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task An_expired_deadline_is_still_recorded_as_cancelled()
+    {
+        // The deadline cancels through a LINKED token, so the worker's own token is NOT cancelled —
+        // only the runner's ReportDeadlineExceededException tells the two apart. Without it, tightening
+        // the cancellation filter would silently downgrade a deadline to Failed (and, because that
+        // path rethrows, hand it to Hangfire's automatic retry).
+        await using var provider = BuildProvider(new SlowSource(), out _, b => b.Deadline(TimeSpan.FromMilliseconds(50)));
+        var scheduler = provider.GetRequiredService<IReportJobScheduler>();
+
+        var jobId = await scheduler.EnqueueAsync(new ReportJobRequest("sales"), CancellationToken.None);
+
+        var job = await WaitForAsync(scheduler, jobId, s => s is ReportJobStatus.Cancelled or ReportJobStatus.Failed);
+        job.Status.ShouldBe(ReportJobStatus.Cancelled);
+        job.Error!.ShouldContain("deadline"); // says why, rather than a bare "Cancelled."
+    }
 }

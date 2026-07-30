@@ -6,8 +6,8 @@ namespace NeoReports.Core.Scheduling;
 /// <summary>
 /// File-backed <see cref="IScheduleOverrideStore"/>: one <c>{reportName}.json</c> file per override
 /// in a configured directory, containing the serialized <see cref="ScheduleOverrideEntry"/> (a null
-/// <c>cron</c> is the tombstone). Writes go through a temp file plus an atomic move, the same
-/// pattern <see cref="FileReportConfigStore"/> uses.
+/// <c>cron</c> is the tombstone). Writes go through <see cref="AtomicFileWrite"/> (unique temp file
+/// plus an atomic move), shared with <see cref="FileReportConfigStore"/>.
 /// </summary>
 public sealed class FileScheduleOverrideStore : IScheduleOverrideStore
 {
@@ -30,11 +30,8 @@ public sealed class FileScheduleOverrideStore : IScheduleOverrideStore
         ArgumentNullException.ThrowIfNull(entry);
 
         Directory.CreateDirectory(_directory);
-        string finalPath = GetPath(reportName);
-        string tempPath = finalPath + ".tmp";
         string document = JsonSerializer.Serialize(entry, Json);
-        await File.WriteAllTextAsync(tempPath, document, cancellationToken).ConfigureAwait(false);
-        File.Move(tempPath, finalPath, overwrite: true);
+        await AtomicFileWrite.WriteAsync(GetPath(reportName), document, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
