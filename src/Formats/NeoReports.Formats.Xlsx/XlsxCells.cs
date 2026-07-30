@@ -1,72 +1,102 @@
-using ClosedXML.Excel;
-using NeoReports.Abstractions;
+using System.Globalization;
+using DocumentFormat.OpenXml;
+using DocumentFormat.OpenXml.Spreadsheet;
 
 namespace NeoReports.Formats.Xlsx;
 
 /// <summary>
-/// Writes a single projected value into a ClosedXML cell with the right native Excel type (number,
-/// date, boolean, ...) and the column's number/date format. Public so packages built on the XLSX
-/// format (e.g. a multi-sheet workbook writer) reuse the exact same cell semantics without
-/// duplicating them.
+/// Builds a single streaming XLSX <see cref="Cell"/> with the right native Excel type (number, date,
+/// boolean, inline string) and the precomputed per-column style index. Shared by the single-sheet and
+/// multi-sheet workbook writers so their cell semantics stay identical. Strings are emitted as INLINE
+/// strings (never shared strings), which keeps memory constant — a shared-string table would buffer
+/// every distinct value for the life of the write.
 /// </summary>
-public static class XlsxCells
+internal static class XlsxCells
 {
-    /// <summary>Sets a cell's value (native-typed) and applies the column's format.</summary>
-    /// <param name="cell">The target ClosedXML cell.</param>
-    /// <param name="value">The projected value, or <c>null</c> to clear the cell.</param>
-    /// <param name="column">The column metadata (drives the applied format).</param>
-    public static void SetCell(IXLCell cell, object? value, ReportColumn column)
+    /// <summary>
+    /// Builds the cell for a projected value, or returns <c>null</c> when the value is <c>null</c> (the
+    /// caller omits the cell so it reads back as empty). <paramref name="numberStyleIndex"/> styles
+    /// numeric cells and <paramref name="dateStyleIndex"/> styles date cells; both come from
+    /// <see cref="XlsxStyleTable"/>.
+    /// </summary>
+    public static Cell? BuildCell(object? value, string reference, int numberStyleIndex, int dateStyleIndex)
     {
-        ArgumentNullException.ThrowIfNull(cell);
-        ArgumentNullException.ThrowIfNull(column);
-
         if (value is null)
-        {
-            cell.Clear(XLClearOptions.Contents);
-            return;
-        }
+            return null;
 
         switch (value)
         {
             case bool b:
-                cell.Value = b;
-                break;
-            case byte or sbyte or short or ushort or int or uint or long or ulong
-                or float or double or decimal:
-                cell.Value = Convert.ToDouble(value, System.Globalization.CultureInfo.InvariantCulture);
-                ApplyFormat(cell, column);
-                break;
+                return new Cell
+                {
+                    CellReference = reference,
+                    DataType = CellValues.Boolean,
+                    CellValue = new CellValue(b ? "1" : "0"),
+                };
+            case byte or sbyte or short or ushort or int or uint or long or ulong or float or double or decimal:
+                return NumberCell(Convert.ToDouble(value, CultureInfo.InvariantCulture), reference, numberStyleIndex);
             case DateTime dt:
-                cell.Value = dt;
-                ApplyDateFormat(cell, column);
-                break;
+                return DateCell(dt, reference, dateStyleIndex);
             case DateTimeOffset dto:
-                cell.Value = dto.DateTime;
-                ApplyDateFormat(cell, column);
-                break;
+                return DateCell(dto.DateTime, reference, dateStyleIndex);
             case DateOnly d:
-                cell.Value = d.ToDateTime(TimeOnly.MinValue);
-                ApplyDateFormat(cell, column);
-                break;
+                return DateCell(d.ToDateTime(TimeOnly.MinValue), reference, dateStyleIndex);
             case Guid g:
-                cell.Value = g.ToString();
-                break;
+                return InlineStringCell(g.ToString(), reference);
             default:
-                cell.Value = value.ToString();
-                break;
+                return InlineStringCell(value.ToString() ?? string.Empty, reference);
         }
     }
 
-    private static void ApplyFormat(IXLCell cell, ReportColumn column)
+    /// <summary>Builds a bold header cell holding an inline string.</summary>
+    public static Cell HeaderCell(string text, string reference) => new()
     {
-        if (!string.IsNullOrEmpty(column.Format))
-            cell.Style.NumberFormat.Format = ExcelFormat.FromNetFormat(column.Format!, column);
+        CellReference = reference,
+        StyleIndex = XlsxStyleTable.HeaderStyleIndex,
+        DataType = CellValues.InlineString,
+        InlineString = new InlineString(new Text(text) { Space = SpaceProcessingModeValues.Preserve }),
+    };
+
+    /// <summary>Converts a 0-based column index to Excel column letters (0 → A, 25 → Z, 26 → AA).</summary>
+    public static string ColumnLetter(int columnIndex)
+    {
+        Span<char> buffer = stackalloc char[8];
+        var position = buffer.Length;
+        var n = columnIndex;
+        do
+        {
+            buffer[--position] = (char)('A' + (n % 26));
+            n = (n / 26) - 1;
+        }
+        while (n >= 0);
+
+        return new string(buffer[position..]);
     }
 
-    private static void ApplyDateFormat(IXLCell cell, ReportColumn column)
+    private static Cell NumberCell(double value, string reference, int styleIndex)
     {
-        cell.Style.DateFormat.Format = string.IsNullOrEmpty(column.Format)
-            ? "yyyy-mm-dd"
-            : ExcelFormat.FromNetDateFormat(column.Format!);
+        var cell = new Cell
+        {
+            CellReference = reference,
+            CellValue = new CellValue(value.ToString(CultureInfo.InvariantCulture)),
+        };
+        if (styleIndex != XlsxStyleTable.DefaultStyleIndex)
+            cell.StyleIndex = (uint)styleIndex;
+        return cell;
     }
+
+    // Dates are stored as their numeric OADate serial (no data type) styled with a date number-format.
+    private static Cell DateCell(DateTime value, string reference, int styleIndex) => new()
+    {
+        CellReference = reference,
+        StyleIndex = (uint)styleIndex,
+        CellValue = new CellValue(value.ToOADate().ToString(CultureInfo.InvariantCulture)),
+    };
+
+    private static Cell InlineStringCell(string text, string reference) => new()
+    {
+        CellReference = reference,
+        DataType = CellValues.InlineString,
+        InlineString = new InlineString(new Text(text) { Space = SpaceProcessingModeValues.Preserve }),
+    };
 }

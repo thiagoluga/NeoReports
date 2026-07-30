@@ -23,6 +23,7 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="AWSSDK.S3" />
     <PackageReference Include="NSubstitute" />
+    <PackageReference Include="ClosedXML" />
   </ItemGroup>
 
 </Project>

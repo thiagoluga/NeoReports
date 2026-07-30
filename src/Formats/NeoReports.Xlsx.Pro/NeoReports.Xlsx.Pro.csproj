@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
-    <Description>NeoReports Pro — multi-sheet XLSX workbook writer (one worksheet per view), backed by ClosedXML.</Description>
+    <Description>NeoReports Pro — streaming multi-sheet XLSX workbook writer (one worksheet per view).</Description>
     <PackageTags>reports;reporting;xlsx;excel;workbook;multi-sheet</PackageTags>
 
     <!-- Commercial package. NOT MIT: licensed under PolyForm Small Business 1.0.0 (free for
@@ -28,7 +28,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="ClosedXML" />
+    <PackageReference Include="DocumentFormat.OpenXml" />
   </ItemGroup>
 
 </Project>
