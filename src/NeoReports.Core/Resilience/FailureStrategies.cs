@@ -13,8 +13,16 @@ public sealed class AbortStrategy : IFailureStrategy
     public Task<FailureDecision> HandleAsync(BatchFailureContext context, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
+        // The reason is persisted as the run's error (ReportRunResult.Error, the RunFailed event, and
+        // GET /jobs). NeoReports' own exceptions carry curated, secret-free messages and are kept; any
+        // other exception (a driver exception, whose message can echo the connection string) is
+        // reduced to its type name. The full exception is logged through ILogger by the runner's
+        // abort path for diagnosis regardless.
+        var detail = context.Exception is NeoReportsException
+            ? context.Exception.Message
+            : context.Exception.GetType().Name;
         return Task.FromResult(FailureDecision.Abort(
-            $"Batch {context.PageNumber} failed after {context.AttemptsExhausted} attempt(s): {context.Exception.Message}"));
+            $"Batch {context.PageNumber} failed after {context.AttemptsExhausted} attempt(s): {detail}"));
     }
 }
 

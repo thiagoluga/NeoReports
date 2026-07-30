@@ -30,7 +30,8 @@ public sealed class CompiledReport
         ScheduleConfig? schedule = null,
         string? sourceRef = null,
         bool trackProgress = true,
-        Func<ReportExecutionContext, IServiceProvider, CancellationToken, Task<long?>>? countRows = null)
+        Func<ReportExecutionContext, IServiceProvider, CancellationToken, Task<long?>>? countRows = null,
+        TimeSpan? deadline = null)
     {
         Name = name;
         Schema = schema;
@@ -47,6 +48,7 @@ public sealed class CompiledReport
         SourceRef = sourceRef;
         TrackProgress = trackProgress;
         RowCountFactory = countRows;
+        Deadline = deadline;
 
         OutputFormats = outputs.Select(o => o.Factory.Format).ToArray();
         DestinationTypes = destinations.Select(d => d.Factory.Type).ToArray();
@@ -129,4 +131,14 @@ public sealed class CompiledReport
     /// needs only this one check, not <see cref="TrackProgress"/> separately.
     /// </summary>
     internal Func<ReportExecutionContext, IServiceProvider, CancellationToken, Task<long?>>? RowCountFactory { get; }
+
+    /// <summary>
+    /// An overall wall-clock deadline for a whole run, declared via <c>ReportBuilder&lt;T&gt;.Deadline(...)</c>,
+    /// or <c>null</c> (the default) for no deadline. Complements the per-attempt read timeout
+    /// (<c>RetryOptions.Timeout</c>, which bounds each read): the deadline bounds the entire report —
+    /// reads, writes and uploads together — so a run that never hangs on any single step but drags on
+    /// overall is still stopped. Enforced cooperatively by <c>ReportRunner.RunAsync</c>: on expiry the
+    /// run is cancelled (it surfaces as a cancelled run), for any work that honors cancellation.
+    /// </summary>
+    public TimeSpan? Deadline { get; }
 }
