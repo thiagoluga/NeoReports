@@ -121,6 +121,69 @@ public class ResilienceTests
     }
 
     [Fact]
+    public async Task TotalFailures_threshold_aborts_on_non_consecutive_failures()
+    {
+        // Fails pages 1, 3, 5 (never two in a row), so ConsecutiveFailures never exceeds 1 — only the
+        // TotalFailures accumulator can trip. Aborts when the third total failure lands on page 5.
+        var source = new FakeBatchSource<Sale>(new[] { Page(1), Page(2), Page(3), Page(4), Page(5) });
+        var writer = new FakeWriterFactory(1, 3, 5);
+        var report = Build(source, writer, b => b
+            .OnFailure(f => f.SkipBatchAndLog().AbortIf(new AbortThresholdConfig(TotalFailures: 3))));
+
+        var result = await Run(report);
+
+        result.Status.ShouldBe(ReportRunStatus.Failed);
+    }
+
+    [Fact]
+    public async Task FailureRate_threshold_aborts_when_the_ratio_is_reached()
+    {
+        // Page 1 succeeds, 2 and 3 fail: ratios are 0, 0.5, then 2/3 ≈ 0.667. A 0.6 threshold trips on
+        // page 3. Neither the consecutive (max 2) nor total (2) count would abort, so this isolates rate.
+        var source = new FakeBatchSource<Sale>(new[] { Page(1), Page(2), Page(3) });
+        var writer = new FakeWriterFactory(2, 3);
+        var report = Build(source, writer, b => b
+            .OnFailure(f => f.SkipBatchAndLog().AbortIf(new AbortThresholdConfig(FailureRate: 0.6))));
+
+        var result = await Run(report);
+
+        result.Status.ShouldBe(ReportRunStatus.Failed);
+    }
+
+    [Fact]
+    public async Task Consecutive_failure_counter_resets_after_an_intervening_success()
+    {
+        // Fails 1, 2, then 4, 5 with page 3 succeeding in between. The run of consecutive failures
+        // never reaches 3 (it resets to 0 at page 3), so a ConsecutiveFailures(3) threshold must NOT
+        // abort — the classic off-by-one/never-resets bug. The run completes partial with 4 skips.
+        var source = new FakeBatchSource<Sale>(new[] { Page(1), Page(2), Page(3), Page(4), Page(5) });
+        var writer = new FakeWriterFactory(1, 2, 4, 5);
+        var report = Build(source, writer, b => b
+            .OnFailure(f => f.SkipBatchAndLog().AbortIf(new AbortThresholdConfig(ConsecutiveFailures: 3))));
+
+        var result = await Run(report);
+
+        result.Status.ShouldBe(ReportRunStatus.CompletedPartial);
+        result.SkippedBatches.ShouldBe(4);
+    }
+
+    [Fact]
+    public async Task Threshold_just_below_the_limit_does_not_abort()
+    {
+        // Two consecutive failures with a threshold of 3 — the boundary just below abort. The run must
+        // complete partial, not fail.
+        var source = new FakeBatchSource<Sale>(new[] { Page(1), Page(2), Page(3), Page(4) });
+        var writer = new FakeWriterFactory(1, 2);
+        var report = Build(source, writer, b => b
+            .OnFailure(f => f.SkipBatchAndLog().AbortIf(new AbortThresholdConfig(ConsecutiveFailures: 3))));
+
+        var result = await Run(report);
+
+        result.Status.ShouldBe(ReportRunStatus.CompletedPartial);
+        result.SkippedBatches.ShouldBe(2);
+    }
+
+    [Fact]
     public async Task Attempt_timeout_bounds_a_hung_read_and_fails_the_run()
     {
         // Without the per-attempt timeout this run would hang forever on the first read, wedging the
