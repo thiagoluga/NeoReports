@@ -10,7 +10,7 @@ namespace NeoReports.Core.UnitTests;
 
 public class ObservabilityTests
 {
-    private static IReadOnlyList<Sale> Page(params long[] ids) =>
+    private static Sale[] Page(params long[] ids) =>
         ids.Select(id => new Sale(id, $"C{id}", id * 10m, DateTime.UnixEpoch)).ToArray();
 
     private static CompiledReport Build(FakeBatchSource<Sale> source, FakeWriterFactory writer, Action<ReportBuilder<Sale>>? extra = null)
@@ -47,8 +47,8 @@ public class ObservabilityTests
 
         // Every line the run produced is inside a scope carrying the job id and report name, so a
         // host's sink can group a concurrent run's output.
-        logger.Scopes.ShouldContain(s => s.ContainsKey("JobId") && Equals(s["JobId"], jobId));
-        logger.Scopes.ShouldContain(s => s.ContainsKey("ReportName") && Equals(s["ReportName"], "sales"));
+        logger.Scopes.ShouldContain(s => s.TryGetValue("JobId", out var v) && Equals(v, jobId));
+        logger.Scopes.ShouldContain(s => s.TryGetValue("ReportName", out var v) && Equals(v, "sales"));
     }
 
     [Fact]
