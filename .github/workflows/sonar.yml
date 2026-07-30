@@ -54,6 +54,8 @@ jobs:
       - name: Build, test (with coverage) and analyze
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Hard-fail the Testcontainers suites if Docker can't start here too (see tests/Shared/DockerGate.cs).
+          NEOREPORTS_REQUIRE_DOCKER: "1"
         run: |
           dotnet sonarscanner begin \
             /k:"lugarini_NeoReports" \
