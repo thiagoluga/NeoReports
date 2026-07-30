@@ -29,7 +29,7 @@ public class ErrorScrubTests
             .OnFailure(f => f.AbortReport())
             .Build();
 
-        var execution = new ReportExecutionContext("job", "r", null, NullLogger.Instance, CancellationToken.None);
+        var execution = new ReportExecutionContext(Guid.NewGuid().ToString("N"), "r", null, NullLogger.Instance, CancellationToken.None);
         return await ReportRunner.ExecuteAsync(report, execution, new EmptyServiceProvider(), CancellationToken.None);
     }
 
@@ -61,7 +61,7 @@ public class ErrorScrubTests
             .OnFailure(f => f.SkipBatchAndLog())
             .Build();
 
-        var execution = new ReportExecutionContext("job", "r", null, NullLogger.Instance, CancellationToken.None);
+        var execution = new ReportExecutionContext(Guid.NewGuid().ToString("N"), "r", null, NullLogger.Instance, CancellationToken.None);
         ReportRunResult result = await ReportRunner.ExecuteAsync(report, execution, new EmptyServiceProvider(), CancellationToken.None);
 
         result.Status.ShouldBe(ReportRunStatus.Failed);

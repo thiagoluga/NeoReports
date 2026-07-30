@@ -28,7 +28,10 @@ public class ObservabilityTests
     public async Task Aborted_run_logs_an_error_and_correlates_the_scope_with_the_job()
     {
         var logger = new CapturingLogger();
-        var jobId = "job-123";
+        // A unique job id per test: the runner writes its output under a temp dir keyed on the job id
+        // (Path.Combine(GetTempPath(), "neoreports", jobId)), so a fixed id would let parallel test
+        // classes collide on — and clean up — each other's files (an intermittent FileNotFound).
+        var jobId = Guid.NewGuid().ToString("N");
         var execution = new ReportExecutionContext(jobId, "sales", null, logger, CancellationToken.None);
 
         var report = Build(
@@ -55,7 +58,7 @@ public class ObservabilityTests
     public async Task Aborted_read_failure_also_logs_an_error()
     {
         var logger = new CapturingLogger();
-        var execution = new ReportExecutionContext("job", "sales", null, logger, CancellationToken.None);
+        var execution = new ReportExecutionContext(Guid.NewGuid().ToString("N"), "sales", null, logger, CancellationToken.None);
 
         // Fails the first read definitively (no retry configured), so the run aborts on the read path.
         var source = new FakeBatchSource<Sale>(new[] { Page(1) }, new Dictionary<int, int> { [1] = 1 });
@@ -71,7 +74,7 @@ public class ObservabilityTests
     public async Task Successful_run_logs_no_error()
     {
         var logger = new CapturingLogger();
-        var execution = new ReportExecutionContext("job", "sales", null, logger, CancellationToken.None);
+        var execution = new ReportExecutionContext(Guid.NewGuid().ToString("N"), "sales", null, logger, CancellationToken.None);
 
         var report = Build(new FakeBatchSource<Sale>(new[] { Page(1, 2) }), new FakeWriterFactory());
 
