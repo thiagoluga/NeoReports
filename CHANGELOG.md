@@ -8,6 +8,40 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 
 ## [Unreleased]
 
+### Removed (breaking, Abstractions ABI — next major)
+- **Removed the never-thrown exception types `BatchFailedException`, `SourceFailedException` and
+  `ThresholdExceededException` from `NeoReports.Abstractions`.** They described a batch/source/
+  threshold failure but were never thrown anywhere: the pipeline reports those failures through
+  `ReportRunResult.Status` + its error string and the `IFailureStrategy` decision, not by throwing.
+  As dead surface in a frozen ABI (rule 7) they were a liability. `NeoReportsException` (the base)
+  and `ConfigurationException` are unchanged and still used. This is source-breaking for any consumer
+  that referenced those three types (nothing ever threw them, so no `catch` for them could have
+  fired) and is therefore slated for the next **major** release.
+
+### Added
+- **Streaming XLSX output at constant memory (resolves D14).** Both the MIT single-sheet XLSX writer
+  and the Pro multi-sheet workbook writer are rebuilt on `DocumentFormat.OpenXml`'s SAX writer and a
+  hand-assembled `ZipArchive`, streaming each worksheet to a temp file and deflating straight to the
+  output — bypassing `System.IO.Packaging`'s in-memory buffer. Measured live memory is flat writing
+  100k→2.4M rows. ClosedXML is removed from both writer packages. The only behavioural change is the
+  dropped column auto-fit. (`AdjustToContents` can't stream.)
+- **Opt-in `AddNeoReportsStartupValidation()`** compiles config-driven reports at host startup so a
+  malformed document fails fast at boot rather than on the first request.
+
+### Changed
+- **Startup warning when the API is mapped without authentication.** `MapNeoReports()` logs a warning
+  when neither host authentication nor `RequireAuthorization` is configured (auth still inherits from
+  the host — D20 — this is a nudge, not a behaviour change).
+
+### Fixed
+- Keyset cursor now encodes `DateTime`/`byte[]` keys type-faithfully (was corrupting/duplicating rows).
+- Local destination blocks path traversal via run-time parameters.
+- A failed upload now fails the run instead of reporting success.
+- Run-time parameters override same-named static parameters; `@name` matched on an identifier boundary.
+- Health/sync-run error responses are scrubbed of connection details (logged server-side instead).
+- Multi-artifact zip downloads stream at constant memory (were buffered in a `MemoryStream`).
+- Run failures are surfaced through `ILogger` (scoped with job id + report name), not only the event store.
+
 ### Changed (breaking, commercial packages only)
 - **The Pro packages now require a license key at run time (D70/Epic Q).** `NeoReports.Xlsx.Pro`,
   `NeoReports.Sources.Join.Pro` and `NeoReports.QueryBuilder.Pro` previously had **no runtime
