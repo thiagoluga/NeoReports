@@ -30,21 +30,31 @@ public sealed class LocalDestination : IReportDestination
         ArgumentNullException.ThrowIfNull(context);
 
         var extension = Path.GetExtension(file.FileName).TrimStart('.');
-        var resolved = PathTemplate.Expand(
-            _pathTemplate,
-            context.Execution.ReportName,
-            extension,
-            context.Execution.StartedAt,
-            context.Execution.Parameters);
 
-        var fullPath = Path.GetFullPath(resolved);
-        var directory = Path.GetDirectoryName(fullPath);
-        if (!string.IsNullOrEmpty(directory))
-            Directory.CreateDirectory(directory);
-
-        var tempPath = fullPath + ".tmp-" + Guid.NewGuid().ToString("N");
+        string fullPath;
+        var tempPath = string.Empty;
         try
         {
+            var resolved = PathTemplate.Expand(
+                _pathTemplate,
+                context.Execution.ReportName,
+                extension,
+                context.Execution.StartedAt,
+                context.Execution.Parameters,
+                // Substituted values (report name, extension, run-time parameters) must each be a
+                // single path segment — a run-time parameter is caller-controlled, so a "../.." in
+                // one would otherwise let Path.GetFullPath below escape the directory the template
+                // intended and overwrite an arbitrary file. The template's own literal separators
+                // are unaffected. A rejection surfaces here as a failed upload, not a partial write.
+                LocalPathSegment.EnsureSafe);
+
+            fullPath = Path.GetFullPath(resolved);
+            var directory = Path.GetDirectoryName(fullPath);
+            if (!string.IsNullOrEmpty(directory))
+                Directory.CreateDirectory(directory);
+
+            tempPath = fullPath + ".tmp-" + Guid.NewGuid().ToString("N");
+
             await using (var source = file.OpenRead())
             await using (var target = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             {
@@ -56,8 +66,9 @@ public sealed class LocalDestination : IReportDestination
         }
         catch (Exception ex)
         {
-            TryDelete(tempPath);
-            return UploadResult.Fail($"Local upload to '{fullPath}' failed: {ex.Message}");
+            if (tempPath.Length > 0)
+                TryDelete(tempPath);
+            return UploadResult.Fail($"Local upload failed: {ex.Message}");
         }
 
         return UploadResult.Ok(new Uri(fullPath).AbsoluteUri, fullPath);
