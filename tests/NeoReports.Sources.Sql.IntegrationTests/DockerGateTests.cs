@@ -20,4 +20,11 @@ public sealed class DockerGateTests
     [InlineData("1", false)]   // CI opt-in → do not skip, let the start failure propagate
     public void ShouldSkip_is_false_only_for_the_exact_require_docker_opt_in(string? value, bool expectedSkip) =>
         DockerGate.ShouldSkip(value).ShouldBe(expectedSkip);
+
+    [Fact]
+    public void SkipWhenUnavailable_reflects_ShouldSkip_of_the_ambient_variable() =>
+        // Environment-independent invariant: the live property must equal the pure decision applied
+        // to whatever the require-Docker variable currently is (unset locally, "1" in CI).
+        DockerGate.SkipWhenUnavailable.ShouldBe(
+            DockerGate.ShouldSkip(Environment.GetEnvironmentVariable(DockerGate.RequireDockerVariable)));
 }
