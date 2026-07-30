@@ -117,6 +117,25 @@ locally verifiable.
   so this is a semantics choice — consider only evaluating the ratio after N batches if the intent is
   "fraction over a large run." Needs a decision.
 
+A second hunt over the CSV/XLSX writers (output correctness) found these. The file-breaking / total-loss
+ones are **fixed** (PR pending/merged); two representation tradeoffs are recorded.
+- **XLSX cell edge cases — FIXED.** In `XlsxCells.BuildCell` (shared by the MIT and Pro writers):
+  (a) an XML-illegal C0 control char in a string threw and aborted the **whole** file — now stripped;
+  (b) `NaN`/`Infinity` produced an invalid number cell Excel refused to open — now emitted as text;
+  (c) `byte[]` stringified to `"System.Byte[]"` — now Base64 (also fixed in the CSV writer);
+  (d) `TimeOnly` used the machine's current culture — now an invariant round-trip string. CSV's
+  RFC-4180 escaping and invariant number/date formatting were verified **correct**.
+- **XLSX loses precision for 64-bit ints / high-precision decimals (deferred — representation
+  tradeoff).** `long`/`ulong`/`decimal` are funneled through `Convert.ToDouble`, so a value beyond
+  2^53 (a `bigint` key) or a `decimal` past double's ~15–17 digits is silently rounded. Excel stores
+  numbers as IEEE-754 doubles, so preserving the exact value **requires** writing it as text — which
+  loses Excel's numeric sorting/formatting. That number-vs-text tradeoff is a product decision, so it
+  is left as-is with the value rounded (today's behaviour) pending a call.
+- **XLSX `DateTimeOffset` drops the offset and pre-1900 dates misrender (deferred — narrow).** `dto`
+  is stored via `dto.DateTime` (offset discarded) and `DateTime.ToOADate()` can't represent dates
+  before 1899-12-30. Both are inherent to the OADate/no-tz cell model; revisit only if a real report
+  needs sub-day-offset fidelity or pre-1900 dates.
+
 ---
 
 ## Where the fuller context lives

@@ -46,6 +46,11 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   the host — D20 — this is a nudge, not a behaviour change).
 
 ### Fixed
+- XLSX output no longer corrupts on edge-case cell values: an XML-illegal control character in a
+  string is stripped (previously it threw and aborted the whole file), `NaN`/`Infinity` are written
+  as text (previously an un-openable number cell), `byte[]` is Base64 (previously `"System.Byte[]"`),
+  and `TimeOnly` uses an invariant format (previously the server's culture). `byte[]` is Base64 in the
+  CSV writer too.
 - Pro `QueryBuilder` Oracle keyset on a `DATE`/`TIMESTAMP` key no longer crashes on the second page:
   the generated SQL now casts the ISO-8601 cursor with `TO_TIMESTAMP(:cursor,
   'YYYY-MM-DD"T"HH24:MI:SS.FF7')` instead of leaving it bare (Oracle's `NLS_DATE_FORMAT` implicit
