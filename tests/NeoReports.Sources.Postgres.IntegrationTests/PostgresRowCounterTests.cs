@@ -8,7 +8,8 @@ using Xunit;
 namespace NeoReports.Sources.Postgres.IntegrationTests;
 
 /// <summary>ADR D47: <see cref="ISourceRowCounter"/> against a real PostgreSQL container.</summary>
-public class PostgresRowCounterTests : IClassFixture<PostgresServerFixture>
+[Collection(nameof(PostgresServerCollection))]
+public class PostgresRowCounterTests
 {
     private readonly PostgresServerFixture _fixture;
 

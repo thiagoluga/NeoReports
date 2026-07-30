@@ -16,7 +16,8 @@ namespace NeoReports.Sources.Postgres.IntegrationTests;
 /// end. The dynamic <c>"postgres"</c> source materializes positional <see cref="ReportRecord"/>
 /// rows by schema-column name, reusing the shared ADO.NET keyset engine and the existing pipeline.
 /// </summary>
-public class DynamicConfigPostgresTests : IClassFixture<PostgresServerFixture>, IDisposable
+[Collection(nameof(PostgresServerCollection))]
+public class DynamicConfigPostgresTests : IDisposable
 {
     private readonly PostgresServerFixture _fixture;
     private readonly string _outDir = Path.Combine(Path.GetTempPath(), "nr-dyn-postgres", Guid.NewGuid().ToString("N"));

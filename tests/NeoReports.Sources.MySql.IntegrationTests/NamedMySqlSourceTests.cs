@@ -12,7 +12,8 @@ namespace NeoReports.Sources.MySql.IntegrationTests;
 /// fresh at the start of every run — proven here against a real MySQL server (Testcontainers) by
 /// pointing the same registered source name at two different databases between two runs.
 /// </summary>
-public class NamedMySqlSourceTests : IClassFixture<MySqlServerFixture>
+[Collection(nameof(MySqlServerCollection))]
+public class NamedMySqlSourceTests
 {
     private readonly MySqlServerFixture _fixture;
 

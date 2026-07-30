@@ -7,7 +7,8 @@ namespace NeoReports.Sources.Postgres.IntegrationTests;
 
 public sealed record Sale(long Id, string Customer, decimal Amount, DateTime Date);
 
-public class PostgresKeysetSourceTests : IClassFixture<PostgresServerFixture>
+[Collection(nameof(PostgresServerCollection))]
+public class PostgresKeysetSourceTests
 {
     private readonly PostgresServerFixture _fixture;
 

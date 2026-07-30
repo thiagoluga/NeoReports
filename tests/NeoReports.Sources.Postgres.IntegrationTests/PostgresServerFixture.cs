@@ -5,7 +5,7 @@ using Xunit;
 namespace NeoReports.Sources.Postgres.IntegrationTests;
 
 /// <summary>
-/// Spins up an ephemeral PostgreSQL container once per test class and seeds a Sales table.
+/// Spins up an ephemeral PostgreSQL container once per test collection (shared across the assembly) and seeds a Sales table.
 /// Skipped automatically when Docker is unavailable.
 /// </summary>
 public sealed class PostgresServerFixture : IAsyncLifetime

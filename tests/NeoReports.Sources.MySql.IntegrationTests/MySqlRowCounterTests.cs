@@ -7,7 +7,8 @@ using Xunit;
 namespace NeoReports.Sources.MySql.IntegrationTests;
 
 /// <summary>ADR D47: <see cref="ISourceRowCounter"/> against a real MySQL container.</summary>
-public class MySqlRowCounterTests : IClassFixture<MySqlServerFixture>
+[Collection(nameof(MySqlServerCollection))]
+public class MySqlRowCounterTests
 {
     private readonly MySqlServerFixture _fixture;
 

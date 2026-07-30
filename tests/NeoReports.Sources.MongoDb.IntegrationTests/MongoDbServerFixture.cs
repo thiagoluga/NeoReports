@@ -6,7 +6,7 @@ using Xunit;
 namespace NeoReports.Sources.MongoDb.IntegrationTests;
 
 /// <summary>
-/// Spins up an ephemeral MongoDB container once per test class and seeds a Sales collection.
+/// Spins up an ephemeral MongoDB container once per test collection (shared across the assembly) and seeds a Sales collection.
 /// Skipped automatically when Docker is unavailable.
 /// </summary>
 public sealed class MongoDbServerFixture : IAsyncLifetime

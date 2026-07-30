@@ -12,7 +12,8 @@ namespace NeoReports.Sources.Sql.IntegrationTests;
 /// registry fresh at the start of every run — proven here against a real SQL Server (Testcontainers)
 /// by pointing the same registered source name at two different databases between two runs.
 /// </summary>
-public class NamedSqlSourceTests : IClassFixture<SqlServerFixture>
+[Collection(nameof(SqlServerCollection))]
+public class NamedSqlSourceTests
 {
     private readonly SqlServerFixture _fixture;
 

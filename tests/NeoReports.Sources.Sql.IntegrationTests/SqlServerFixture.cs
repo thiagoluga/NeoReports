@@ -5,7 +5,7 @@ using Xunit;
 namespace NeoReports.Sources.Sql.IntegrationTests;
 
 /// <summary>
-/// Spins up an ephemeral SQL Server container once per test class and seeds a Sales table.
+/// Spins up an ephemeral SQL Server container once per test collection (shared across the assembly) and seeds a Sales table.
 /// Skipped automatically when Docker is unavailable.
 /// </summary>
 public sealed class SqlServerFixture : IAsyncLifetime

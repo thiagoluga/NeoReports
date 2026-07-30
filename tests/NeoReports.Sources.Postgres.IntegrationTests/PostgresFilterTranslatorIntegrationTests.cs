@@ -18,7 +18,8 @@ namespace NeoReports.Sources.Postgres.IntegrationTests;
 /// D43 hit for keyset cursors, but here there is no report-author-controlled SQL text to hand-write a
 /// cast into, so the translator itself must add it).
 /// </summary>
-public sealed class PostgresFilterTranslatorIntegrationTests : IClassFixture<PostgresServerFixture>
+[Collection(nameof(PostgresServerCollection))]
+public sealed class PostgresFilterTranslatorIntegrationTests
 {
     private readonly PostgresServerFixture _fixture;
 

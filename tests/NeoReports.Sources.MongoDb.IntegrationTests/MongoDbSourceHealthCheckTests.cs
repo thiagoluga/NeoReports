@@ -4,7 +4,8 @@ using Xunit;
 
 namespace NeoReports.Sources.MongoDb.IntegrationTests;
 
-public class MongoDbSourceHealthCheckTests : IClassFixture<MongoDbServerFixture>
+[Collection(nameof(MongoDbServerCollection))]
+public class MongoDbSourceHealthCheckTests
 {
     private readonly MongoDbServerFixture _fixture;
 

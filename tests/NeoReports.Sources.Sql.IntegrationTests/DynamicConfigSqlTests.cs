@@ -16,7 +16,8 @@ namespace NeoReports.Sources.Sql.IntegrationTests;
 /// CSV, end to end. The dynamic <c>"sql"</c> source materializes positional <see cref="ReportRecord"/>
 /// rows by schema-column name, reusing the v1 keyset engine and the existing pipeline.
 /// </summary>
-public class DynamicConfigSqlTests : IClassFixture<SqlServerFixture>, IDisposable
+[Collection(nameof(SqlServerCollection))]
+public class DynamicConfigSqlTests : IDisposable
 {
     private readonly SqlServerFixture _fixture;
     private readonly string _outDir = Path.Combine(Path.GetTempPath(), "nr-dyn-sql", Guid.NewGuid().ToString("N"));

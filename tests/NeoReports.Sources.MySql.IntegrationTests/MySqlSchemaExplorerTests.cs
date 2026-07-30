@@ -12,7 +12,8 @@ namespace NeoReports.Sources.MySql.IntegrationTests;
 /// catalog shape, FK discovery (MySQL exposes <c>referenced_*</c> directly on
 /// <c>key_column_usage</c>), and a bounded preview. Scoped to the connection's current database.
 /// </summary>
-public class MySqlSchemaExplorerTests : IClassFixture<MySqlServerFixture>
+[Collection(nameof(MySqlServerCollection))]
+public class MySqlSchemaExplorerTests
 {
     private readonly MySqlServerFixture _fixture;
 
