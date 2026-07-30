@@ -25,6 +25,7 @@ public sealed class ReportBuilder<TRow>
     private readonly List<DestinationSpec> _destinations = new();
     private readonly RetryOptions _retry = new();
     private readonly FailureStrategyBuilder _failure = new();
+    private TimeSpan? _deadline;
 
     private IBatchSource<TRow>? _batchSource;
     private IStreamingSource<TRow>? _streamingSource;
@@ -244,6 +245,21 @@ public sealed class ReportBuilder<TRow>
         return this;
     }
 
+    /// <summary>
+    /// Sets an overall wall-clock deadline for the whole run — reads, writes and uploads together.
+    /// Complements the per-attempt read timeout (<c>Retry(r =&gt; r.Timeout(...))</c>): the deadline
+    /// bounds the entire report so a run that never hangs on a single step but drags on overall is
+    /// still stopped. Off by default. On expiry the run is cooperatively cancelled (for work that
+    /// honors cancellation) and surfaces as a cancelled run.
+    /// </summary>
+    /// <param name="deadline">A positive overall deadline.</param>
+    public ReportBuilder<TRow> Deadline(TimeSpan deadline)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(deadline, TimeSpan.Zero);
+        _deadline = deadline;
+        return this;
+    }
+
     /// <summary>Configures what happens after a batch exhausts its retries.</summary>
     /// <param name="configure">Action that mutates the failure-strategy builder.</param>
     public ReportBuilder<TRow> OnFailure(Action<FailureStrategyBuilder> configure)
@@ -358,7 +374,8 @@ public sealed class ReportBuilder<TRow>
             _schedule,
             _sourceRef,
             _trackProgress,
-            countRows);
+            countRows,
+            _deadline);
     }
 
     private (ReportSchema Schema, OutputProjection<TRow> Projection) ResolveView(OutputView<TRow>? view, string what)

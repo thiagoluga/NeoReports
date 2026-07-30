@@ -189,9 +189,10 @@ public static class NeoReportsEndpointRouteBuilderExtensions
             if (result.Status == ReportRunStatus.Failed)
             {
                 await artifactStore.DeleteAsync(jobId, CancellationToken.None).ConfigureAwait(false);
-                // result.Error is the run's failure reason, which for a source read failure is a
-                // driver exception message that can echo connection-string fragments. Log it and
-                // return a generic detail, the same scrub-and-log stance as the schema endpoints.
+                // result.Error is already scrubbed at the source (a driver exception is reduced to its
+                // type name, only NeoReports' own curated messages survive). Log it and still return a
+                // generic detail — defence in depth, the same scrub-and-log stance as the schema
+                // endpoints — so the response never carries even the run's own reason string.
                 http.RequestServices.GetRequiredService<ILoggerFactory>()
                     .CreateLogger("NeoReports.Run")
                     .LogWarning("Synchronous run of report '{Report}' (job {JobId}) failed: {Reason}", name, jobId, result.Error);

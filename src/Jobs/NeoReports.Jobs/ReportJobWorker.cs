@@ -83,7 +83,13 @@ public sealed class ReportJobWorker
         }
         catch (Exception ex)
         {
-            await _store.UpdateStatusAsync(jobId, ReportJobStatus.Failed, ex.Message, CancellationToken.None)
+            // Persisted as job.Error (surfaced by GET /jobs). This path handles exceptions that
+            // escape the runner rather than becoming a Failed result (e.g. a source/writer that
+            // throws during setup). Keep a NeoReports message (curated, secret-free); reduce any
+            // other — a driver exception can echo the connection string — to its type name. The full
+            // exception is logged just below for diagnosis.
+            var reason = ex is NeoReportsException ? ex.Message : ex.GetType().Name;
+            await _store.UpdateStatusAsync(jobId, ReportJobStatus.Failed, reason, CancellationToken.None)
                 .ConfigureAwait(false);
             _logger.LogError(ex, "Job {JobId} for report {Report} failed.", jobId, reportName);
             throw;

@@ -38,7 +38,7 @@ public sealed class ReportRunner : IReportRunner
     }
 
     /// <inheritdoc />
-    public Task<ReportRunResult> RunAsync(
+    public async Task<ReportRunResult> RunAsync(
         string reportName,
         IReadOnlyDictionary<string, object?>? parameters = null,
         string? jobId = null,
@@ -49,9 +49,31 @@ public sealed class ReportRunner : IReportRunner
 
         jobId ??= Guid.NewGuid().ToString("N");
         var logger = _loggerFactory.CreateLogger($"NeoReports.Report.{report.Name}");
-        var execution = new ReportExecutionContext(jobId, report.Name, parameters, logger, cancellationToken);
 
-        return ExecuteAsync(report, execution, _services, cancellationToken);
+        // An overall wall-clock deadline (opt-in): a linked source cancels the whole run once the
+        // report's Deadline elapses, on top of any per-attempt read timeout. On expiry the run
+        // cancels like any cooperative cancellation (Cancelled outcome) — a warning distinguishes it
+        // in the log from a caller-requested cancel.
+        using CancellationTokenSource? deadlineCts = report.Deadline is not null
+            ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+            : null;
+        // Only evaluated when deadlineCts is non-null — i.e. exactly when report.Deadline has a value.
+        deadlineCts?.CancelAfter(report.Deadline!.Value);
+        CancellationToken runToken = deadlineCts?.Token ?? cancellationToken;
+
+        var execution = new ReportExecutionContext(jobId, report.Name, parameters, logger, runToken);
+
+        try
+        {
+            return await ExecuteAsync(report, execution, _services, runToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (deadlineCts is { IsCancellationRequested: true } && !cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(
+                "Report {Report} (job {JobId}) exceeded its {Deadline} deadline and was cancelled.",
+                report.Name, jobId, report.Deadline);
+            throw;
+        }
     }
 
     /// <summary>
@@ -112,7 +134,12 @@ public sealed class ReportRunner : IReportRunner
             execution.Logger.LogDebug(
                 "Retrying batch {Page} (attempt {Attempt}) after {DelayMs}ms: {ExceptionType}",
                 pageNumber, attempt, delay.TotalMilliseconds, ex?.GetType().Name ?? "Unknown");
-            await events.EmitAsync(JobEventTypes.Retry, ex?.Message, new Dictionary<string, string>
+            // The event message is the persisted retry reason (shown by GET /jobs/{id}/events). Keep a
+            // NeoReports message (curated, secret-free); reduce any other exception (a transient driver
+            // exception whose message can echo the connection string) to its type — which the data
+            // dictionary's "exceptionType" already carries anyway. The full exception is at Debug above.
+            var retryReason = ex is NeoReportsException ? ex.Message : ex?.GetType().Name;
+            await events.EmitAsync(JobEventTypes.Retry, retryReason, new Dictionary<string, string>
             {
                 ["page"] = pageNumber.ToString(CultureInfo.InvariantCulture),
                 ["attempt"] = attempt.ToString(CultureInfo.InvariantCulture),
@@ -282,9 +309,14 @@ public sealed class ReportRunner : IReportRunner
                     // A read failure cannot advance keyset pagination, so skipping is impossible:
                     // either the strategy aborts, or we abort to avoid silently truncating data.
                     status = ReportRunStatus.Failed;
+                    // This string is persisted as the run's error (surfaced by GET /jobs and the
+                    // RunFailed event). NeoReports' own exceptions carry secret-free messages and are
+                    // kept; any other (a driver exception that can echo connection-string fragments) is
+                    // reduced to its type name. The full exception is logged just below.
+                    var readDetail = ex is NeoReportsException ? ex.Message : ex.GetType().Name;
                     error = decision.Action == FailureAction.AbortReport
                         ? decision.Reason
-                        : $"Batch {pageNumber} could not be read and cannot be skipped (no cursor to advance): {ex.Message}";
+                        : $"Batch {pageNumber} could not be read and cannot be skipped (no cursor to advance): {readDetail}";
                     execution.Logger.LogError(
                         ex, "Report {ReportName} failed at batch {Page} (read failure, run aborted): {Reason}",
                         report.Name, pageNumber, error);
