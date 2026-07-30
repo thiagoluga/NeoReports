@@ -448,7 +448,9 @@ public sealed class ReportRunner : IReportRunner
             // the report did not reach its configured destination, and reporting that as a success
             // would tell an operator the report was delivered when it was not. Partials are not
             // captured here — unlike a batch failure, the files are complete, not partial.
-            if (uploadFailed && status != ReportRunStatus.Failed)
+            // uploadFailed is only ever set inside the success block above (status was not Failed
+            // there), so reaching here with it set means the run otherwise Completed/CompletedPartial.
+            if (uploadFailed)
             {
                 status = ReportRunStatus.Failed;
                 error = uploadError;
