@@ -40,6 +40,10 @@ jobs:
         run: dotnet build NeoReports.sln --configuration Release --no-restore -p:Version=${{ steps.ver.outputs.version }}
 
       - name: Test
+        env:
+          # Never publish a release whose integration suites silently skipped for a broken/missing
+          # Docker on the runner — hard-fail instead (see tests/Shared/DockerGate.cs).
+          NEOREPORTS_REQUIRE_DOCKER: "1"
         run: dotnet test NeoReports.sln --configuration Release --no-build --verbosity normal
 
       - name: Pack

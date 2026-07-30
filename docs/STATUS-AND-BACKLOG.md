@@ -59,12 +59,13 @@ enterprise-readiness and test coverage, and shipped everything actionable.
   (Changed → breaking, public API) alongside the #228 removal.
 
 ### 2. CI hardening
-- **Fail (not skip) the Testcontainers integration tests when Docker is absent in CI.** They are
-  `[SkippableFact]` + `Skip.IfNot(fixture.Available, …)` today, which is correct for local dev (a
-  contributor without Docker can still `dotnet test`), but means a broken container image silently
-  degrades to "all skipped" and CI stays green. Fix: gate on a CI-only env var (e.g.
-  `NEOREPORTS_REQUIRE_DOCKER=1` in the workflow) so the fixture throws instead of setting
-  `Available=false` when the var is set. Do **not** make it a hard fail unconditionally.
+- **Fail (not skip) the Testcontainers integration tests when Docker is absent in CI.** — **done**:
+  the five container `ServerFixture`s now swallow a start failure only through an exception filter,
+  `catch (Exception) when (DockerGate.SkipWhenUnavailable)`. `DockerGate` (a file linked into all
+  five integration projects, `tests/Shared/DockerGate.cs`) skips unless `NEOREPORTS_REQUIRE_DOCKER=1`,
+  which the CI/Sonar/release workflows set — so a broken image or Docker outage on the runner
+  hard-fails instead of silently degrading to "all skipped", while local `dotnet test` (var unset)
+  keeps skipping. Covered by `DockerGateTests`.
 
 ### 3. Pre-existing CodeQL alerts
 - **~30 open repository code-scanning alerts** predating the audit (e.g. `cs/path-combine` in

@@ -26,4 +26,10 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Linked, not referenced: the fixture uses it in an exception filter, so it must be
+         compiled into this assembly. Shared with the other container integration suites. -->
+    <Compile Include="..\Shared\DockerGate.cs" Link="DockerGate.cs" />
+  </ItemGroup>
+
 </Project>

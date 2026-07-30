@@ -48,6 +48,13 @@ jobs:
         run: dotnet build NeoReports.sln --configuration Release --no-restore
 
       - name: Test
+        env:
+          # Fail (don't silently skip) the Testcontainers integration suites if Docker can't start.
+          # GitHub-hosted Linux runners always have Docker, so a skip here would mean a broken image
+          # or a Docker outage — which must not pass as green. Read by tests/Shared/DockerGate.cs.
+          # Local `dotnet test` leaves the var unset and keeps skipping, so contributors without
+          # Docker can still run the suite.
+          NEOREPORTS_REQUIRE_DOCKER: "1"
         run: dotnet test NeoReports.sln --configuration Release --no-build --verbosity normal
 
       - name: Format (verify)

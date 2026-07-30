@@ -25,9 +25,10 @@ public sealed class SqlServerFixture : IAsyncLifetime
         {
             await _container.StartAsync();
         }
-        catch (Exception)
+        catch (Exception) when (NeoReports.IntegrationTests.Support.DockerGate.SkipWhenUnavailable)
         {
-            // Docker not available in this environment — tests will skip.
+            // Docker isn't available and CI hasn't demanded it (see DockerGate) — tests skip;
+            // with NEOREPORTS_REQUIRE_DOCKER=1 the filter is false and this start failure propagates.
             Available = false;
             return;
         }
