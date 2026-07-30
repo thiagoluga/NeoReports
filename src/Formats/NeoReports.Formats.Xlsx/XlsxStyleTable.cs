@@ -38,7 +38,7 @@ internal sealed class XlsxStyleTable
         ArgumentNullException.ThrowIfNull(column);
         return string.IsNullOrEmpty(column.Format)
             ? DefaultStyleIndex
-            : GetOrAdd(ExcelFormat.FromNetFormat(column.Format!, column));
+            : GetOrAdd(ExcelFormat.FromNetFormat(column.Format, column));
     }
 
     /// <summary>
@@ -50,7 +50,7 @@ internal sealed class XlsxStyleTable
         ArgumentNullException.ThrowIfNull(column);
         var code = string.IsNullOrEmpty(column.Format)
             ? "yyyy-mm-dd"
-            : ExcelFormat.FromNetDateFormat(column.Format!);
+            : ExcelFormat.FromNetDateFormat(column.Format);
         return GetOrAdd(code);
     }
 
@@ -60,34 +60,39 @@ internal sealed class XlsxStyleTable
         var stylesheet = new Stylesheet();
 
         if (_formatCodes.Count > 0)
-        {
-            var numberingFormats = new NumberingFormats { Count = (uint)_formatCodes.Count };
-            for (var i = 0; i < _formatCodes.Count; i++)
-            {
-                numberingFormats.Append(new NumberingFormat
-                {
-                    NumberFormatId = FirstCustomNumFmtId + (uint)i,
-                    FormatCode = _formatCodes[i],
-                });
-            }
+            stylesheet.AppendChild(BuildNumberingFormats());
 
-            stylesheet.Append(numberingFormats);
+        stylesheet.AppendChild(BuildFonts());
+        stylesheet.AppendChild(BuildFills());
+        stylesheet.AppendChild(BuildBorders());
+        stylesheet.AppendChild(BuildCellStyleFormats());
+        stylesheet.AppendChild(BuildCellFormats());
+        stylesheet.AppendChild(BuildCellStyles());
+
+        return stylesheet;
+    }
+
+    private NumberingFormats BuildNumberingFormats()
+    {
+        var numberingFormats = new NumberingFormats { Count = (uint)_formatCodes.Count };
+        for (var i = 0; i < _formatCodes.Count; i++)
+        {
+            numberingFormats.AppendChild(new NumberingFormat
+            {
+                NumberFormatId = FirstCustomNumFmtId + (uint)i,
+                FormatCode = _formatCodes[i],
+            });
         }
 
-        stylesheet.Append(new Fonts(new Font(), new Font(new Bold())) { Count = 2 });
-        stylesheet.Append(new Fills(
-            new Fill(new PatternFill { PatternType = PatternValues.None }),
-            new Fill(new PatternFill { PatternType = PatternValues.Gray125 }))
-        { Count = 2 });
-        stylesheet.Append(new Borders(new Border()) { Count = 1 });
-        stylesheet.Append(new CellStyleFormats(
-            new CellFormat { NumberFormatId = 0, FontId = 0, FillId = 0, BorderId = 0 })
-        { Count = 1 });
+        return numberingFormats;
+    }
 
+    private CellFormats BuildCellFormats()
+    {
         var cellFormats = new CellFormats { Count = (uint)(2 + _formatCodes.Count) };
         // Index 0: default. Index 1: bold header.
-        cellFormats.Append(new CellFormat { NumberFormatId = 0, FontId = 0, FillId = 0, BorderId = 0, FormatId = 0 });
-        cellFormats.Append(new CellFormat
+        cellFormats.AppendChild(new CellFormat { NumberFormatId = 0, FontId = 0, FillId = 0, BorderId = 0, FormatId = 0 });
+        cellFormats.AppendChild(new CellFormat
         {
             NumberFormatId = 0,
             FontId = 1,
@@ -98,7 +103,7 @@ internal sealed class XlsxStyleTable
         });
         for (var i = 0; i < _formatCodes.Count; i++)
         {
-            cellFormats.Append(new CellFormat
+            cellFormats.AppendChild(new CellFormat
             {
                 NumberFormatId = FirstCustomNumFmtId + (uint)i,
                 FontId = 0,
@@ -109,12 +114,53 @@ internal sealed class XlsxStyleTable
             });
         }
 
-        stylesheet.Append(cellFormats);
-        stylesheet.Append(new CellStyles(
-            new CellStyle { Name = "Normal", FormatId = 0, BuiltinId = 0 })
-        { Count = 1 });
+        return cellFormats;
+    }
 
-        return stylesheet;
+    private static Fonts BuildFonts()
+    {
+        var boldFont = new Font();
+        boldFont.AppendChild(new Bold());
+
+        var fonts = new Fonts { Count = 2 };
+        fonts.AppendChild(new Font());
+        fonts.AppendChild(boldFont);
+        return fonts;
+    }
+
+    private static Fills BuildFills()
+    {
+        var noneFill = new Fill();
+        noneFill.AppendChild(new PatternFill { PatternType = PatternValues.None });
+
+        var gray125Fill = new Fill();
+        gray125Fill.AppendChild(new PatternFill { PatternType = PatternValues.Gray125 });
+
+        var fills = new Fills { Count = 2 };
+        fills.AppendChild(noneFill);
+        fills.AppendChild(gray125Fill);
+        return fills;
+    }
+
+    private static Borders BuildBorders()
+    {
+        var borders = new Borders { Count = 1 };
+        borders.AppendChild(new Border());
+        return borders;
+    }
+
+    private static CellStyleFormats BuildCellStyleFormats()
+    {
+        var cellStyleFormats = new CellStyleFormats { Count = 1 };
+        cellStyleFormats.AppendChild(new CellFormat { NumberFormatId = 0, FontId = 0, FillId = 0, BorderId = 0 });
+        return cellStyleFormats;
+    }
+
+    private static CellStyles BuildCellStyles()
+    {
+        var cellStyles = new CellStyles { Count = 1 };
+        cellStyles.AppendChild(new CellStyle { Name = "Normal", FormatId = 0, BuiltinId = 0 });
+        return cellStyles;
     }
 
     private int GetOrAdd(string formatCode)

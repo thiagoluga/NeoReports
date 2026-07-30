@@ -135,10 +135,14 @@ public sealed class XlsxWriter : IReportWriter
         _writer.WriteEndElement(); // </worksheet>
         _writer.Dispose();
         _writer = null;
-        _sheetFile?.Dispose(); // flush the streamed worksheet XML to disk before it is copied out
-        _sheetFile = null;
+        if (_sheetFile is not null)
+        {
+            // Flush the streamed worksheet XML to disk before it is copied out.
+            await _sheetFile.DisposeAsync().ConfigureAwait(false);
+            _sheetFile = null;
+        }
 
-        var tempPath = _tempPath;
+        string tempPath = _tempPath;
         _tempPath = null;
         try
         {
@@ -152,14 +156,17 @@ public sealed class XlsxWriter : IReportWriter
     }
 
     /// <inheritdoc />
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         _writer?.Dispose();
         _writer = null;
-        _sheetFile?.Dispose();
-        _sheetFile = null;
+        if (_sheetFile is not null)
+        {
+            await _sheetFile.DisposeAsync().ConfigureAwait(false);
+            _sheetFile = null;
+        }
+
         XlsxOpcPackage.TryDelete(_tempPath);
         _tempPath = null;
-        return ValueTask.CompletedTask;
     }
 }

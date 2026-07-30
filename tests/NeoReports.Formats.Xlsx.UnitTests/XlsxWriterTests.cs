@@ -114,7 +114,7 @@ public class XlsxWriterTests
         // (~190 MB for 400k rows); the streaming writer retains only small per-batch buffers. Drives
         // the writer over a write-only FileStream — the real pipeline contract, not a MemoryStream.
         var schema = Schema();
-        var path = Path.Combine(Path.GetTempPath(), "nr-xlsx-mem-" + Guid.NewGuid().ToString("N") + ".xlsx");
+        var path = Path.Join(Path.GetTempPath(), "nr-xlsx-mem-" + Guid.NewGuid().ToString("N") + ".xlsx");
         try
         {
             await using var output = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);

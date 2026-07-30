@@ -19,34 +19,23 @@ internal static class XlsxCells
     /// numeric cells and <paramref name="dateStyleIndex"/> styles date cells; both come from
     /// <see cref="XlsxStyleTable"/>.
     /// </summary>
-    public static Cell? BuildCell(object? value, string reference, int numberStyleIndex, int dateStyleIndex)
+    public static Cell? BuildCell(object? value, string reference, int numberStyleIndex, int dateStyleIndex) => value switch
     {
-        if (value is null)
-            return null;
-
-        switch (value)
+        null => null,
+        bool b => new Cell
         {
-            case bool b:
-                return new Cell
-                {
-                    CellReference = reference,
-                    DataType = CellValues.Boolean,
-                    CellValue = new CellValue(b ? "1" : "0"),
-                };
-            case byte or sbyte or short or ushort or int or uint or long or ulong or float or double or decimal:
-                return NumberCell(Convert.ToDouble(value, CultureInfo.InvariantCulture), reference, numberStyleIndex);
-            case DateTime dt:
-                return DateCell(dt, reference, dateStyleIndex);
-            case DateTimeOffset dto:
-                return DateCell(dto.DateTime, reference, dateStyleIndex);
-            case DateOnly d:
-                return DateCell(d.ToDateTime(TimeOnly.MinValue), reference, dateStyleIndex);
-            case Guid g:
-                return InlineStringCell(g.ToString(), reference);
-            default:
-                return InlineStringCell(value.ToString() ?? string.Empty, reference);
-        }
-    }
+            CellReference = reference,
+            DataType = CellValues.Boolean,
+            CellValue = new CellValue(b ? "1" : "0"),
+        },
+        byte or sbyte or short or ushort or int or uint or long or ulong or float or double or decimal =>
+            NumberCell(Convert.ToDouble(value, CultureInfo.InvariantCulture), reference, numberStyleIndex),
+        DateTime dt => DateCell(dt, reference, dateStyleIndex),
+        DateTimeOffset dto => DateCell(dto.DateTime, reference, dateStyleIndex),
+        DateOnly d => DateCell(d.ToDateTime(TimeOnly.MinValue), reference, dateStyleIndex),
+        Guid g => InlineStringCell(g.ToString(), reference),
+        _ => InlineStringCell(value.ToString() ?? string.Empty, reference),
+    };
 
     /// <summary>Builds a bold header cell holding an inline string.</summary>
     public static Cell HeaderCell(string text, string reference) => new()
@@ -54,7 +43,7 @@ internal static class XlsxCells
         CellReference = reference,
         StyleIndex = XlsxStyleTable.HeaderStyleIndex,
         DataType = CellValues.InlineString,
-        InlineString = new InlineString(new Text(text) { Space = SpaceProcessingModeValues.Preserve }),
+        InlineString = InlineStringElement(text),
     };
 
     /// <summary>Converts a 0-based column index to Excel column letters (0 → A, 25 → Z, 26 → AA).</summary>
@@ -97,6 +86,13 @@ internal static class XlsxCells
     {
         CellReference = reference,
         DataType = CellValues.InlineString,
-        InlineString = new InlineString(new Text(text) { Space = SpaceProcessingModeValues.Preserve }),
+        InlineString = InlineStringElement(text),
     };
+
+    private static InlineString InlineStringElement(string text)
+    {
+        var inlineString = new InlineString();
+        inlineString.AppendChild(new Text(text) { Space = SpaceProcessingModeValues.Preserve });
+        return inlineString;
+    }
 }

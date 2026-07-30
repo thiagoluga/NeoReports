@@ -112,8 +112,10 @@ public sealed class XlsxWorkbookWriter : IReportSectionedWriter
             FileStream sheetFile = XlsxOpcPackage.CreateTempFile(tempPath);
             _sheetFiles[s] = sheetFile;
 
-            var writer = new OpenXmlPartWriter(sheetFile);
-            _writers[s] = writer;
+            // Assign the new writer straight to the field (its owner) — a separate local would look like
+            // an undisposed IDisposable to CodeQL, which cannot see it stored in the array field.
+            _writers[s] = new OpenXmlPartWriter(sheetFile);
+            OpenXmlWriter writer = _writers[s]!;
             writer.WriteStartElement(new Worksheet());
             writer.WriteStartElement(new SheetData());
             _nextRow[s] = 1;
@@ -196,8 +198,14 @@ public sealed class XlsxWorkbookWriter : IReportSectionedWriter
             writer.WriteEndElement(); // </worksheet>
             writer.Dispose();
             _writers[s] = null;
-            _sheetFiles[s]?.Dispose(); // flush the streamed worksheet XML to disk before it is copied out
-            _sheetFiles[s] = null;
+
+            FileStream? sheetFile = _sheetFiles[s];
+            if (sheetFile is not null)
+            {
+                // Flush the streamed worksheet XML to disk before it is copied out.
+                await sheetFile.DisposeAsync().ConfigureAwait(false);
+                _sheetFiles[s] = null;
+            }
         }
 
         try
@@ -217,20 +225,24 @@ public sealed class XlsxWorkbookWriter : IReportSectionedWriter
     }
 
     /// <inheritdoc />
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         for (var s = 0; s < _writers.Length; s++)
         {
             _writers[s]?.Dispose();
             _writers[s] = null;
-            _sheetFiles[s]?.Dispose();
-            _sheetFiles[s] = null;
+
+            FileStream? sheetFile = _sheetFiles[s];
+            if (sheetFile is not null)
+            {
+                await sheetFile.DisposeAsync().ConfigureAwait(false);
+                _sheetFiles[s] = null;
+            }
         }
 
         foreach (var tempPath in _tempPaths)
             XlsxOpcPackage.TryDelete(tempPath);
         _tempPaths = [];
-        return ValueTask.CompletedTask;
     }
 
     // Excel worksheet names: 1-31 chars, none of : \ / ? * [ ], and unique within the workbook.

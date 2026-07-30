@@ -45,7 +45,7 @@ internal static class XlsxOpcPackage
 
     /// <summary>Returns a unique temp-file path for a worksheet part being streamed.</summary>
     public static string CreateTempPath() =>
-        Path.Combine(Path.GetTempPath(), $"neoreports-xlsx-{Guid.NewGuid():N}.tmp");
+        Path.Join(Path.GetTempPath(), $"neoreports-xlsx-{Guid.NewGuid():N}.tmp");
 
     /// <summary>
     /// Opens a read/write temp file for a worksheet part. On non-Windows the file is created 0600
@@ -196,12 +196,12 @@ internal static class XlsxOpcPackage
         Stream entryStream = entry.Open();
         await using (entryStream.ConfigureAwait(false))
         {
-            var source = new FileStream(
+            // Declaration-form await-using so the dispose is statically visible (CodeQL does not track a
+            // FileStream through a ConfigureAwait(false) wrapper); dropping ConfigureAwait on this leaf
+            // local dispose is fine.
+            await using FileStream source = new FileStream(
                 tempPath, FileMode.Open, FileAccess.Read, FileShare.None, bufferSize: 81920, useAsync: true);
-            await using (source.ConfigureAwait(false))
-            {
-                await source.CopyToAsync(entryStream, cancellationToken).ConfigureAwait(false);
-            }
+            await source.CopyToAsync(entryStream, cancellationToken).ConfigureAwait(false);
         }
     }
 
