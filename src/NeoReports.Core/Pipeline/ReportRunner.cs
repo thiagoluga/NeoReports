@@ -67,12 +67,17 @@ public sealed class ReportRunner : IReportRunner
         {
             return await ExecuteAsync(report, execution, _services, runToken).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (deadlineCts is { IsCancellationRequested: true } && !cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException ex) when (deadlineCts is { IsCancellationRequested: true } && !cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning(
                 "Report {Report} (job {JobId}) exceeded its {Deadline} deadline and was cancelled.",
                 report.Name, jobId, report.Deadline);
-            throw;
+            // Rethrown as a deadline-specific OperationCanceledException: the caller's own token is
+            // NOT cancelled here, so a plain OCE is indistinguishable from one raised by something
+            // else (an HttpClient.Timeout, say — a genuine failure). The job worker needs that
+            // distinction to keep recording a deadline as Cancelled while reporting the rest as
+            // Failed. Still an OperationCanceledException, so existing catch sites are unaffected.
+            throw new ReportDeadlineExceededException(report.Name, report.Deadline!.Value, ex);
         }
     }
 

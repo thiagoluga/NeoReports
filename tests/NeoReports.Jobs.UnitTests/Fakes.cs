@@ -59,6 +59,31 @@ public sealed class ThrowingSource : IBatchSource<Sale>
         throw new InvalidOperationException("source exploded");
 }
 
+/// <summary>
+/// Source that fails the way <see cref="HttpClient"/> does when its own <c>Timeout</c> elapses: a
+/// <see cref="TaskCanceledException"/> (an <see cref="OperationCanceledException"/>) carrying a token
+/// that is <b>not</b> the run's. It must be reported as a failure, not as a cancellation.
+/// </summary>
+public sealed class TimingOutSource : IBatchSource<Sale>
+{
+    public ReportSchema Schema { get; } = new(new[] { new ReportColumn("Id", ColumnType.Integer) });
+
+    public Task<BatchResult<Sale>> ReadBatchAsync(BatchContext context, CancellationToken cancellationToken) =>
+        throw new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout of 100 seconds elapsing.");
+}
+
+/// <summary>Source whose every read outlives any short deadline, so the run is cut off by it.</summary>
+public sealed class SlowSource : IBatchSource<Sale>
+{
+    public ReportSchema Schema { get; } = new(new[] { new ReportColumn("Id", ColumnType.Integer) });
+
+    public async Task<BatchResult<Sale>> ReadBatchAsync(BatchContext context, CancellationToken cancellationToken)
+    {
+        await Task.Delay(TimeSpan.FromMinutes(5), cancellationToken).ConfigureAwait(false);
+        return new BatchResult<Sale>(Array.Empty<Sale>(), null, false);
+    }
+}
+
 /// <summary>Writer that discards content (we assert on job status / uploads, not bytes).</summary>
 public sealed class NullWriter : IReportWriter
 {

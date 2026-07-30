@@ -25,10 +25,7 @@ public sealed class FileReportConfigStore : IReportConfigStore
         ArgumentNullException.ThrowIfNull(configDocument);
 
         Directory.CreateDirectory(_directory);
-        string finalPath = GetPath(name);
-        string tempPath = finalPath + ".tmp";
-        await File.WriteAllTextAsync(tempPath, configDocument, cancellationToken).ConfigureAwait(false);
-        File.Move(tempPath, finalPath, overwrite: true);
+        await AtomicFileWrite.WriteAsync(GetPath(name), configDocument, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />

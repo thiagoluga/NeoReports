@@ -36,6 +36,11 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   dropped column auto-fit. (`AdjustToContents` can't stream.)
 - **Opt-in `AddNeoReportsStartupValidation()`** compiles config-driven reports at host startup so a
   malformed document fails fast at boot rather than on the first request.
+- **`ReportDeadlineExceededException`** (in `NeoReports.Core.Pipeline`), thrown when a run exceeds its
+  configured `Deadline`. It derives from `OperationCanceledException`, so every existing catch site is
+  unaffected and a deadline still surfaces as a cancelled run — the distinct type exists because the
+  caller's own token is *not* cancelled on a deadline, which left it indistinguishable from an
+  unrelated `OperationCanceledException` (an `HttpClient.Timeout`, say — a genuine failure).
 - **Parameterless `ReportBuilder<T>.Retry()`** enabling a sensible production default (3 attempts,
   exponential backoff from 1s, jitter). Retries remain **off by default** — this lowers the barrier
   to turning them on and the docs now flag the recommendation for production network sources.
@@ -46,6 +51,16 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   the host — D20 — this is a nudge, not a behaviour change).
 
 ### Fixed
+- A job whose source times out is now recorded as **Failed**, not "Cancelled". The worker caught
+  every `OperationCanceledException`, including the `TaskCanceledException` an `HttpClient.Timeout`
+  raises (its token is not the run's), so a real failure was labelled as an operator-initiated
+  cancellation with its error detail discarded — and, because that path does not rethrow, Hangfire
+  recorded the run as succeeded. Only a cancellation from the run's own token takes that path now.
+- Concurrent saves of the same report's schedule override — or of the same report config — no longer
+  collide: both file stores staged every write through a temp path derived only from the report name,
+  so two overlapping saves shared it (sharing violation, or a `FileNotFound` when the second move
+  found the first had taken it). Both now share `AtomicFileWrite`, whose temp name is unique per
+  write and cleaned up if the save fails.
 - XLSX output no longer corrupts on edge-case cell values: an XML-illegal control character in a
   string is stripped (previously it threw and aborted the whole file), `NaN`/`Infinity` are written
   as text (previously an un-openable number cell), `byte[]` is Base64 (previously `"System.Byte[]"`),

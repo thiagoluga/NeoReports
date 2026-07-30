@@ -136,6 +136,56 @@ ones are **fixed** (PR pending/merged); two representation tradeoffs are recorde
   before 1899-12-30. Both are inherent to the OADate/no-tz cell model; revisit only if a real report
   needs sub-day-offset fidelity or pre-1900 dates.
 
+A third hunt covered the destination (upload) and job/scheduling layers. Two fixes shipped; the rest
+need a decision.
+- **Job/schedule robustness — FIXED.** (a) The worker's unfiltered `catch (OperationCanceledException)`
+  recorded an `HttpClient.Timeout` (`TaskCanceledException`, foreign token) as "Cancelled." and did
+  not rethrow, so a genuine failure looked operator-initiated and Hangfire saw success — now filtered
+  on the run's own token. Because a **deadline** also cancels through a linked token (the run's own
+  token is not cancelled either), the runner now reports it as `ReportDeadlineExceededException` — an
+  `OperationCanceledException` subclass — so the worker keeps recording a deadline as `Cancelled`
+  (now with a reason saying so) while everything else becomes `Failed`. Both directions are covered by
+  regression tests, each verified to fail without its fix. (b) `FileScheduleOverrideStore` **and**
+  `FileReportConfigStore` staged every save through a fixed `{name}.json.tmp`, so concurrent saves for
+  one name collided — both now use the shared `AtomicFileWrite` (unique temp name, deleted if the save
+  fails). Verified correct in the same pass: `InMemoryJobStore` thread-safety,
+  `EffectiveSchedule.Resolve` (override/tombstone/fallback), `ScheduleReconciliationHostedService`
+  (add/update/remove, no duplicate), `CronValidation` (UTC, Cronos, no off-by-one), and the whole
+  Local/S3 upload path for stream position, disposal, failure mapping and atomicity.
+- **⚠️ S3 key templating does not guard caller-controlled parameters (highest open security item).**
+  `LocalDestination` passes `LocalPathSegment.EnsureSafe` to `PathTemplate.Expand` (the WP2 guard);
+  `S3Destination` passes **none** — deliberately, since `/` is a legitimate key separator. But that
+  reasoning covers the author's template, not `{param}` values, which come from the run request body.
+  With a key template like `reports/{tenant}/{name}.{ext}`, a caller posting `tenant = "other"` (or a
+  value containing `/`) steers the object into another prefix — a **cross-tenant write** where a
+  shared bucket relies on prefix isolation. Not an OS traversal (S3 keys are literal, `..` is not
+  collapsed) and harmless in a single-tenant bucket. The fix is a decision because the safe version
+  (reject `/` in substituted **values** while keeping it in template literals) would break anyone
+  intentionally passing a hierarchy fragment as a parameter. **Recommended:** adopt that guard and
+  note it as breaking, or document that S3 key templates must not interpolate untrusted parameters.
+- **Upload swallows `OperationCanceledException` into a `Fail` result (deferred — semantics).** Both
+  destinations' `catch (Exception)` also catch a cancellation, so a deadline firing mid-upload is
+  reported as a destination error rather than a cancellation. The run still ends Failed, so this is
+  attribution accuracy; rethrowing would also change multi-destination behaviour (today the loop
+  continues and reports per-destination results).
+- **Hangfire applies its default 10-attempt `AutomaticRetry` (deferred — decision).** The invoker
+  carries no `[AutomaticRetry(Attempts = 0)]` and nothing configures `GlobalJobFilters`, so a
+  deterministically failing job (bad credentials, unreachable source) is re-run up to 10× — re-reading
+  the whole dataset each time and flapping the stored status Failed→Running→Failed. Output integrity
+  holds (temp-dir staging is idempotent), but it contradicts the "a job is atomic, one attempt"
+  model (rule 6). Decide whether NeoReports should pin `Attempts = 0` or leave retries to the host.
+- **`InMemoryJobScheduler.RegisterRecurringAsync` remove-then-add isn't atomic (deferred — narrow).**
+  Two concurrent registrations for one report can both start a loop; the loser is overwritten in the
+  dictionary without its CTS being cancelled, so it keeps firing untracked for the process lifetime.
+  Reachable only by racing two schedule updates (or one against startup reconciliation); the Hangfire
+  path is safe (`AddOrUpdate` is idempotent). A lock around register/remove would fix it.
+- **The in-memory recurring loop has no catch-all (deferred — narrow).** Any non-cancellation throw
+  faults the fire-and-forget loop and the schedule silently stops for the process lifetime, unlogged.
+- **`CompletedPartial` surfaces as a `Completed` job (by design, flagged).** A run that skipped
+  batches maps to `ReportJobStatus.Completed`; the skip is visible only in `Stats.SkippedBatches`.
+  There is no `Partial` job status. Worth confirming this is still the intent, since silent partial
+  data reads as a green job.
+
 ---
 
 ## Where the fuller context lives
