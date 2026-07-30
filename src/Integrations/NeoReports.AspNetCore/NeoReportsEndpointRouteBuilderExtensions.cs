@@ -171,8 +171,16 @@ public static class NeoReportsEndpointRouteBuilderExtensions
             if (result.Status == ReportRunStatus.Failed)
             {
                 await artifactStore.DeleteAsync(jobId, CancellationToken.None).ConfigureAwait(false);
+                // result.Error is the run's failure reason, which for a source read failure is a
+                // driver exception message that can echo connection-string fragments. Log it and
+                // return a generic detail, the same scrub-and-log stance as the schema endpoints.
+                http.RequestServices.GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("NeoReports.Run")
+                    .LogWarning("Synchronous run of report '{Report}' (job {JobId}) failed: {Reason}", name, jobId, result.Error);
                 return Results.Problem(
-                    title: "Report run failed.", detail: result.Error, statusCode: StatusCodes.Status500InternalServerError);
+                    title: "Report run failed.",
+                    detail: "The report run failed. See the server logs for details.",
+                    statusCode: StatusCodes.Status500InternalServerError);
             }
 
             var artifacts = await artifactStore.ListAsync(jobId, cancellationToken).ConfigureAwait(false);
@@ -949,10 +957,17 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         SourceHealthResult result = await check.CheckAsync(definition, http.RequestServices, cancellationToken).ConfigureAwait(false);
         DateTimeOffset checkedAt = DateTimeOffset.UtcNow;
 
-        ISourceHealthCache? healthCache = http.RequestServices.GetService<ISourceHealthCache>();
-        healthCache?.Set(name, new SourceHealthReading(result.Healthy, result.Error, result.Latency.TotalMilliseconds, checkedAt));
+        // A failed health check's Error is the raw connectivity error — for a relational or file
+        // source that is a driver/IO exception message that can echo the host, port, database,
+        // username or on-disk path. Log the detail server-side and surface only a generic,
+        // secret-free reason to the caller (and into the cached reading GET /sources shows), the
+        // same scrub-and-log stance the schema/preview endpoints already take (see SchemaProblem).
+        string? clientError = ScrubHealthError(http, name, result.Healthy, result.Error);
 
-        return Results.Ok(new SourceHealthResponse(result.Healthy, result.Error, result.Latency.TotalMilliseconds, checkedAt));
+        ISourceHealthCache? healthCache = http.RequestServices.GetService<ISourceHealthCache>();
+        healthCache?.Set(name, new SourceHealthReading(result.Healthy, clientError, result.Latency.TotalMilliseconds, checkedAt));
+
+        return Results.Ok(new SourceHealthResponse(result.Healthy, clientError, result.Latency.TotalMilliseconds, checkedAt));
     }
 
     // The UI's preview size cap (ADR D49). The engine (AdoSchemaExplorer) also clamps to its own
@@ -1099,6 +1114,21 @@ public static class NeoReportsEndpointRouteBuilderExtensions
             title: title,
             detail: "The source's database could not be read. See the server logs for details.",
             statusCode: StatusCodes.Status502BadGateway);
+    }
+
+    // A failed health check's raw Error is the underlying driver/IO exception message, which can echo
+    // connection-string fragments (host, port, database, username) or an on-disk path. Log it
+    // server-side and hand the caller only a generic, secret-free reason — the same stance
+    // SchemaProblem takes. Returns null for a healthy source (no error to show).
+    private static string? ScrubHealthError(HttpContext http, string sourceName, bool healthy, string? rawError)
+    {
+        if (healthy || string.IsNullOrEmpty(rawError))
+            return null;
+
+        http.RequestServices.GetRequiredService<ILoggerFactory>()
+            .CreateLogger("NeoReports.SourceHealth")
+            .LogWarning("Health check for source '{Source}' reported unhealthy: {Reason}", sourceName, rawError);
+        return "The source could not be reached. See the server logs for details.";
     }
 
     // Resolves the named source and its registered ISchemaExplorer, or returns the appropriate
