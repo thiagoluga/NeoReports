@@ -47,8 +47,8 @@ public class ObservabilityTests
 
         // Every line the run produced is inside a scope carrying the job id and report name, so a
         // host's sink can group a concurrent run's output.
-        logger.Scopes.ShouldContain(s => s.TryGetValue("JobId", out var v) && Equals(v, jobId));
-        logger.Scopes.ShouldContain(s => s.TryGetValue("ReportName", out var v) && Equals(v, "sales"));
+        logger.Scopes.Any(s => s.TryGetValue("JobId", out var v) && Equals(v, jobId)).ShouldBeTrue();
+        logger.Scopes.Any(s => s.TryGetValue("ReportName", out var v) && Equals(v, "sales")).ShouldBeTrue();
     }
 
     [Fact]
