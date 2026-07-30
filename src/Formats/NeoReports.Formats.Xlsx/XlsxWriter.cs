@@ -1,29 +1,38 @@
-using ClosedXML.Excel;
+using System.Globalization;
+using DocumentFormat.OpenXml;
+using DocumentFormat.OpenXml.Spreadsheet;
 using NeoReports.Abstractions;
 
 namespace NeoReports.Formats.Xlsx;
 
 /// <summary>
-/// XLSX writer backed by ClosedXML. Non-generic by contract: it receives already-projected
-/// <c>object?[]</c> rows in schema order. Values keep their native Excel types (numbers, dates,
-/// booleans) so the spreadsheet is strongly typed; the column's format string is applied as a
-/// number/date format. The auto-filter and the workbook itself are finalized in
-/// <see cref="FinalizeAsync"/>.
+/// Streaming XLSX writer built on <see cref="OpenXmlWriter"/> (the SAX-style, forward-only writer).
+/// Non-generic by contract: it receives already-projected <c>object?[]</c> rows in schema order.
+/// Values keep their native Excel types (numbers, dates, booleans) so the spreadsheet is strongly
+/// typed; the column's format string is applied as a number/date format via a precomputed stylesheet.
 /// </summary>
 /// <remarks>
-/// ClosedXML builds the whole workbook in memory before saving, so this writer's memory grows
-/// with the row count — unlike the streaming CSV writer (see ADR D14). Acceptable for the v1
-/// report sizes; a streaming OpenXML writer is a post-MVP option.
+/// Memory stays constant regardless of row count: the worksheet XML is streamed straight to a temp
+/// file (nothing buffered per row), and the final <c>.xlsx</c> is assembled with
+/// <see cref="XlsxOpcPackage"/> — a hand-written <c>ZipArchive</c> that deflates each entry to the
+/// output as it copies, bypassing <c>System.IO.Packaging</c>'s in-memory entry buffer. Strings are
+/// written as inline strings (not shared strings) so no per-value table accumulates. This replaces the
+/// previous ClosedXML implementation, which materialized the whole workbook in memory (ADR D14).
 /// </remarks>
 public sealed class XlsxWriter : IReportWriter
 {
     private readonly XlsxOptions _options;
-    private XLWorkbook? _workbook;
-    private IXLWorksheet? _sheet;
     private ReportSchema? _schema;
     private Stream? _output;
+    private Stylesheet? _stylesheet;
+    private string? _tempPath;
+    private FileStream? _sheetFile;
+    private OpenXmlWriter? _writer;
+    private int[] _numberStyles = [];
+    private int[] _dateStyles = [];
     private int _nextRow = 1;
     private int _columnCount;
+    private bool _hasDataRows;
 
     /// <summary>Creates an XLSX writer with the given options.</summary>
     /// <param name="options">XLSX formatting options.</param>
@@ -45,19 +54,37 @@ public sealed class XlsxWriter : IReportWriter
         _schema = context.Schema;
         _output = context.Output;
         _columnCount = _schema.Count;
-        _workbook = new XLWorkbook();
-        _sheet = _workbook.AddWorksheet(_options.Sheet);
+
+        var styles = new XlsxStyleTable();
+        _numberStyles = new int[_columnCount];
+        _dateStyles = new int[_columnCount];
+        for (var i = 0; i < _columnCount; i++)
+        {
+            ReportColumn column = _schema.Columns[i];
+            _numberStyles[i] = styles.RegisterNumberStyle(column);
+            _dateStyles[i] = styles.RegisterDateStyle(column);
+        }
+
+        _stylesheet = styles.Build();
+
+        _tempPath = XlsxOpcPackage.CreateTempPath();
+        _sheetFile = XlsxOpcPackage.CreateTempFile(_tempPath);
+        _writer = new OpenXmlPartWriter(_sheetFile);
+        _writer.WriteStartElement(new Worksheet());
+        _writer.WriteStartElement(new SheetData());
 
         if (_options.WriteHeader)
         {
-            for (var i = 0; i < _schema.Count; i++)
+            _writer.WriteStartElement(new Row { RowIndex = 1U });
+            for (var i = 0; i < _columnCount; i++)
             {
-                var column = _schema.Columns[i];
-                _sheet.Cell(_nextRow, i + 1).Value = column.DisplayName ?? column.Name;
+                ReportColumn column = _schema.Columns[i];
+                var header = column.DisplayName ?? column.Name;
+                _writer.WriteElement(XlsxCells.HeaderCell(header, XlsxCells.ColumnLetter(i) + "1"));
             }
 
-            _sheet.Row(_nextRow).Style.Font.Bold = true;
-            _nextRow++;
+            _writer.WriteEndElement();
+            _nextRow = 2;
         }
 
         return Task.CompletedTask;
@@ -67,20 +94,25 @@ public sealed class XlsxWriter : IReportWriter
     public Task WriteRowsAsync(IReadOnlyList<object?[]> rows, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(rows);
-        if (_sheet is null || _schema is null)
+        if (_writer is null || _schema is null)
             throw new InvalidOperationException("InitializeAsync must be called before WriteRowsAsync.");
 
         foreach (var row in rows)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            for (var i = 0; i < _schema.Count; i++)
+            var rowRef = _nextRow.ToString(CultureInfo.InvariantCulture);
+            _writer.WriteStartElement(new Row { RowIndex = (uint)_nextRow });
+            for (var i = 0; i < _columnCount; i++)
             {
                 var value = i < row.Length ? row[i] : null;
-                var cell = _sheet.Cell(_nextRow, i + 1);
-                XlsxCells.SetCell(cell, value, _schema.Columns[i]);
+                Cell? cell = XlsxCells.BuildCell(value, XlsxCells.ColumnLetter(i) + rowRef, _numberStyles[i], _dateStyles[i]);
+                if (cell is not null)
+                    _writer.WriteElement(cell);
             }
 
+            _writer.WriteEndElement();
             _nextRow++;
+            _hasDataRows = true;
         }
 
         return Task.CompletedTask;
@@ -89,25 +121,52 @@ public sealed class XlsxWriter : IReportWriter
     /// <inheritdoc />
     public async Task FinalizeAsync(CancellationToken cancellationToken)
     {
-        if (_workbook is null || _sheet is null || _output is null)
+        if (_writer is null || _output is null || _stylesheet is null || _tempPath is null)
             return;
 
-        if (_options.UseAutoFilter && _columnCount > 0 && _nextRow > 1)
-            _sheet.Range(1, 1, _nextRow - 1, _columnCount).SetAutoFilter();
+        _writer.WriteEndElement(); // </sheetData>
 
-        _sheet.Columns().AdjustToContents();
+        if (_options.UseAutoFilter && _columnCount > 0 && _hasDataRows)
+        {
+            var reference = $"A1:{XlsxCells.ColumnLetter(_columnCount - 1)}{_nextRow - 1}";
+            _writer.WriteElement(new AutoFilter { Reference = reference });
+        }
 
-        // ClosedXML saves synchronously into the (in-memory) output stream.
-        await Task.Run(() => _workbook!.SaveAs(_output!), cancellationToken).ConfigureAwait(false);
+        _writer.WriteEndElement(); // </worksheet>
+        _writer.Dispose();
+        _writer = null;
+        if (_sheetFile is not null)
+        {
+            // Flush the streamed worksheet XML to disk before it is copied out.
+            await _sheetFile.DisposeAsync().ConfigureAwait(false);
+            _sheetFile = null;
+        }
+
+        string tempPath = _tempPath;
+        _tempPath = null;
+        try
+        {
+            XlsxSheetPart[] sheets = [new XlsxSheetPart(_options.Sheet, tempPath)];
+            await XlsxOpcPackage.AssembleAsync(_output, _stylesheet, sheets, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            XlsxOpcPackage.TryDelete(tempPath);
+        }
     }
 
     /// <inheritdoc />
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
-        _workbook?.Dispose();
-        _workbook = null;
-        _sheet = null;
-        return ValueTask.CompletedTask;
-    }
+        _writer?.Dispose();
+        _writer = null;
+        if (_sheetFile is not null)
+        {
+            await _sheetFile.DisposeAsync().ConfigureAwait(false);
+            _sheetFile = null;
+        }
 
+        XlsxOpcPackage.TryDelete(_tempPath);
+        _tempPath = null;
+    }
 }

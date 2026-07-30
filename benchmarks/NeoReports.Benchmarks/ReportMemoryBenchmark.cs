@@ -13,8 +13,10 @@ namespace NeoReports.Benchmarks;
 /// <see cref="RowCount"/> rows. With <c>MemoryDiagnoser</c>, the key signal is that the
 /// <b>Allocated</b> column scales <i>linearly</i> with <see cref="RowCount"/> (constant
 /// allocation per row, no super-linear growth) and that the working set does not grow with the
-/// total — i.e. nothing buffers the whole report. CSV is fully streaming; XLSX is included for
-/// contrast (ClosedXML builds the workbook in memory by design — see ADR D14).
+/// total — i.e. nothing buffers the whole report. Both CSV and XLSX are fully streaming: the XLSX
+/// writer streams each worksheet to a temp file and assembles the package with a hand-written
+/// <c>ZipArchive</c>, so live memory stays flat regardless of row count (it no longer builds the
+/// workbook in memory — the ClosedXML approach noted in ADR D14 was replaced).
 /// </summary>
 [MemoryDiagnoser]
 public class ReportMemoryBenchmark
@@ -61,7 +63,7 @@ public class ReportMemoryBenchmark
         return result.Stats.RecordsWritten;
     }
 
-    [Benchmark(Description = "XLSX (ClosedXML, in-memory)")]
+    [Benchmark(Description = "XLSX (streaming)")]
     public async Task<long> Xlsx()
     {
         var result = await RunAsync(_xlsxReport).ConfigureAwait(false);

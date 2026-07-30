@@ -2,9 +2,13 @@
 
   <PropertyGroup>
     <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
-    <Description>XLSX (Excel) format writer for NeoReports, backed by ClosedXML.</Description>
+    <Description>Streaming XLSX (Excel) format writer for NeoReports.</Description>
     <PackageTags>reports;reporting;xlsx;excel;data-export</PackageTags>
   </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="NeoReports.Xlsx.Pro" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\NeoReports.Abstractions\NeoReports.Abstractions.csproj" />
@@ -12,7 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="ClosedXML" />
+    <PackageReference Include="DocumentFormat.OpenXml" />
   </ItemGroup>
 
 </Project>
