@@ -146,7 +146,7 @@ public sealed class XlsxWriter : IReportWriter
         _tempPath = null;
         try
         {
-            var sheets = new[] { new XlsxSheetPart(_options.Sheet, tempPath) };
+            XlsxSheetPart[] sheets = [new XlsxSheetPart(_options.Sheet, tempPath)];
             await XlsxOpcPackage.AssembleAsync(_output, _stylesheet, sheets, cancellationToken).ConfigureAwait(false);
         }
         finally

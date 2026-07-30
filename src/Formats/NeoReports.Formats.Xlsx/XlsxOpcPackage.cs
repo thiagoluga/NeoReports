@@ -199,7 +199,7 @@ internal static class XlsxOpcPackage
             // Declaration-form await-using so the dispose is statically visible (CodeQL does not track a
             // FileStream through a ConfigureAwait(false) wrapper); dropping ConfigureAwait on this leaf
             // local dispose is fine.
-            await using FileStream source = new FileStream(
+            await using var source = new FileStream(
                 tempPath, FileMode.Open, FileAccess.Read, FileShare.None, bufferSize: 81920, useAsync: true);
             await source.CopyToAsync(entryStream, cancellationToken).ConfigureAwait(false);
         }
