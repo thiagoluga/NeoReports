@@ -42,7 +42,12 @@ public static class JobParameters
         JsonValueKind.True => true,
         JsonValueKind.False => false,
         JsonValueKind.String => ConvertString(value.GetString()),
-        JsonValueKind.Number => value.TryGetInt64(out var l) ? l : value.GetDouble(),
+        // The (object) cast is load-bearing — without it the conditional's static type unifies long
+        // and double (long widens implicitly), silently re-boxing every whole number as a double even
+        // when TryGetInt64 succeeded. That made this path disagree with the sync/in-memory one, which
+        // yields long, and it loses precision past 2^53: a bigint id bound as a float compares wrong.
+        // Same trap, same fix as PrimitiveObjectConverter.
+        JsonValueKind.Number => value.TryGetInt64(out var l) ? (object)l : value.GetDouble(),
         _ => value.GetRawText(),
     };
 

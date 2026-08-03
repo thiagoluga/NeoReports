@@ -20,12 +20,7 @@ public sealed class PrimitiveObjectConverter : JsonConverter<object?>
             JsonTokenType.True => true,
             JsonTokenType.False => false,
             JsonTokenType.String => ConvertString(reader.GetString()),
-            // The (object) cast on the long arm is load-bearing: without it, the switch expression's
-            // static result type unifies long and double to double (long -> double is an implicit
-            // widening conversion), silently re-boxing every whole-number property as a double even
-            // when TryGetInt64 succeeds — so `raw is long` never once matched anywhere this value
-            // was consumed, for any whole number, ever.
-            JsonTokenType.Number => reader.TryGetInt64(out var l) ? (object)l : reader.GetDouble(),
+            JsonTokenType.Number => ReadNumber(ref reader),
             _ => JsonDocument.ParseValue(ref reader).RootElement.Clone(),
         };
 
@@ -59,6 +54,24 @@ public sealed class PrimitiveObjectConverter : JsonConverter<object?>
                 JsonSerializer.Serialize(writer, value, value.GetType(), options);
                 break;
         }
+    }
+
+    private static object ReadNumber(ref Utf8JsonReader reader)
+    {
+        // The (object) cast is load-bearing: returned from a conditional alongside a double, a long
+        // would widen implicitly and every whole number would come back boxed as a double — so
+        // `raw is long` never matched anywhere this value was consumed, for any whole number, ever.
+        if (reader.TryGetInt64(out var l))
+            return (object)l;
+
+        // A magnitude past double's range parses to ±Infinity, which is not representable in JSON:
+        // re-serializing the value then throws ("positive and negative infinity cannot be written as
+        // valid JSON"), turning a readable document into an unwritable one. Keep the token itself in
+        // that case — the same shape nested values already use — so it round-trips verbatim.
+        if (reader.TryGetDouble(out var d) && double.IsFinite(d))
+            return d;
+
+        return JsonDocument.ParseValue(ref reader).RootElement.Clone();
     }
 
     private static object? ConvertString(string? text)

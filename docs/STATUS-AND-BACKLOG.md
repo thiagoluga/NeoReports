@@ -186,6 +186,99 @@ need a decision.
   There is no `Partial` job status. Worth confirming this is still the intent, since silent partial
   data reads as a green job.
 
+### 6. Source-pagination and API findings (2026-08-03) — deferred, each needs a decision
+Two more hunts (the nine HTTP-family source packages; the AspNetCore endpoint layer) produced these.
+The unambiguous ones shipped — the engine's reserved `cursor`/`pageSize` bind names, and run-time
+parameters arriving as `JsonElement`. What is left changes behaviour or semantics, so it is recorded
+rather than decided:
+
+- **The page loop has no safety net.** `ReportRunner`'s loop is `while(true)` driven purely by
+  `HasMore`: no page cap, no "the cursor did not change" guard, no "zero rows but still more" guard.
+  Every item below is only as dangerous as that. A generic guard here would bound *all* of them at
+  once and is probably the highest-leverage single change — but it changes termination semantics for
+  every source, so it needs a call.
+- **`records.Count == pageSize` ends a run early when the server caps the page.** OData's `Skip`
+  strategy (`ODataBatchSource`) and the HTTP source's `Page`/`Offset` strategies infer "more data"
+  from a full page. Services that clamp `$top`/`limit` below the engine's 1000 default (Dynamics, SAP
+  Gateway, Business Central; many REST APIs silently reduce an over-max `limit`) return a short first
+  page → the run stops there and reports **`Completed`** with partial data. `Skip` is opt-in and
+  `NextLink` is the default, which limits blast radius. A fix means either honouring `@odata.nextLink`
+  in `Skip` mode too, or paging until a page returns zero rows — both change termination semantics.
+- **Elasticsearch treats a partially-failed search as a short page.** ES returns **HTTP 200** with
+  `timed_out: true` / `_shards.failed > 0` and fewer hits; neither field is inspected, so the report
+  silently ends early as `Completed`. GraphQL already fails loudly on 200-with-`errors`; the ES
+  equivalent would be consistent, but it turns today's silent success into a hard failure.
+- **HTTP `Cursor` strategy has no non-advancing-cursor guard.** If an API echoes the requested cursor
+  on the last page (Facebook Graph's `paging.cursors.after`, among others), `hasMore` stays true with
+  an identical token → the same request repeats **forever**. GraphQL (D63) and Elasticsearch both
+  guard this explicitly; the generic HTTP source — the most exposed, since the cursor path is
+  author-configured — does not.
+- **`Link`-header parsing breaks on a comma inside the URL.** `HttpBatchSource` splits the header on
+  `,` unconditionally, but RFC 8288 permits commas in the target URI and in quoted parameters. A base
+  URL like `?fields=id,name` echoed into the next-page link makes `rel="next"` unparseable → paging
+  stops silently after page 1.
+- **A relative next-page URL throws.** Both `HttpBatchSource` and `ODataBatchSource` call
+  `new Uri(nextUrl)` (absolute-only) on a server-supplied link; RFC 8288 and OData both permit a
+  relative one. Fails loudly (`UriFormatException`, opaque message) rather than silently. Salesforce
+  is the only package that resolves this correctly.
+- **`HttpHealthProbe.CombineUrl` still has the relative-`Uri` bug — the 5th sighting of this class.**
+  `new Uri(baseUri, path)` drops the base's last path segment when it has no trailing slash, and a
+  leading `/` resets to the host root. Elasticsearch (D64), HubSpot, Airtable and Salesforce each
+  independently rewrote away from it — with comments naming it — but the shared helper still does it,
+  and `HttpSourceHealthCheck` + `ODataSourceHealthCheck` still call it: a health check can probe the
+  wrong URL and report a healthy source unhealthy (or vice-versa). **Fixing the shared helper by
+  concatenation, as the four leaf packages already do, is the cheapest win in this list.**
+- **Google Sheets: three data-fidelity bugs.** (a) header cells that aren't JSON strings are dropped,
+  so a year-numbered column (`2024`) never binds and every row's value for it is null/zero — the
+  requests use `UNFORMATTED_VALUE`, which returns numeric headers as JSON numbers, while the data path
+  already decodes all kinds; (b) a header range that comes back without `values` caches an **empty**
+  index, so a misconfigured `headerRow` produces N rows of all-nulls reported as success instead of
+  failing loudly; (c) an interior blank row is returned as `[]` and materialized as a phantom
+  all-default row. (a) is the clearest and most contained.
+- **HubSpot and Airtable default to a page size their API rejects.** Both send the engine's 1000
+  default as `limit`/`pageSize`, but both providers cap at 100 (recorded in `DECISIONS.md`), so a
+  source built with defaults fails its very first request until the author calls `.PageSize(100)`.
+  Loud, but the default configuration is non-functional. Clamping vs. failing with a clear message is
+  a product call.
+- **API: `POST /reports/{name}/preview` is the one data-plane endpoint that doesn't scrub driver
+  exceptions.** It catches only `ConfigurationException`, so a bad filter value surfaces the raw
+  `SqlException`/`PostgresException` (host, port, database) as a 500 — its siblings all route through
+  `SchemaProblem`. Should be a 400 (bad filter) or the scrubbed 502 the others return.
+- **API: schedule/preview write paths reach a name-validating store without the guard.**
+  `SetScheduleAsync`, `ClearScheduleAsync` and `ReportPreviewRunner`'s config-store probe pass the
+  report name straight through, so a legitimate **code-first** report whose name is outside
+  `^[a-zA-Z][a-zA-Z0-9_-]{0,99}$` (e.g. `sales.daily`) gets a **500** from `ArgumentException`. The
+  read paths already guard, which shows it is an oversight.
+- **API: `GET /jobs/{id}` returns raw destination-exception text** (server paths, S3 bucket + key, AWS
+  error strings). The read- and write-failure paths in the same method scrub; the **upload** path does
+  not — and the sync endpoint deliberately suppresses the very same string, so one route hides what
+  the other returns verbatim.
+- **API: sync mode's single-output guard ignores sectioned outputs.** `OutputCount` counts only
+  `Outputs`, so a report with one plain and one sectioned output passes the guard, the runner writes
+  two artifacts, and the caller silently receives **one** — which one decided by directory-enumeration
+  order. The same undercount makes `GET /reports` under-report a sectioned report's formats.
+- **API: `Location`/`Content-Location` headers hardcode `/api`**, ignoring `MapNeoReports`'s
+  configurable prefix — under `MapNeoReports("/v2")` the 202's `Location` is a 404 for any client that
+  follows it.
+- **Array/object run parameters still diverge by backend.** Complex parameter values are documented
+  out of scope for v1, but nothing rejects them: sync/in-memory hand the source a `JsonElement` (the
+  very thing an ADO provider can't bind) while Hangfire hands it the raw JSON text. Either reject them
+  at the boundary with a 400, or agree one representation — the current silence produces a driver
+  error at read time.
+- **`POST/PUT /sources` property bags are not normalized.** `SourceRequest.Properties` is the same
+  caller-supplied `object?` bag as run parameters. `FileSourceRegistryStore` launders it on write and
+  read, but `InMemorySourceRegistryStore` stores it as-is — so with `AddInMemorySourceRegistry()` a
+  source created over HTTP fails later with *"requires a non-empty 'connectionString' property"*
+  because the value is a `JsonElement`, not a `string`. Pre-existing; the same one-line normalization
+  the run endpoint now does would close it.
+
+Verified correct in the same pass (worth not re-auditing): artifact download path handling (no
+caller-supplied filename reaches disk; no zip-slip; `0600` temp), job-id handling, SQL-injection
+surface via run parameters, preview filter validation, list-endpoint pagination clamping, cursor
+round-tripping in all nine source packages (`OpaqueCursor` is Base64-JSON, lossless), GraphQL /
+HubSpot / Airtable / Salesforce termination logic, and the Elasticsearch "capture the last sort"
+loop.
+
 ---
 
 ## Where the fuller context lives
