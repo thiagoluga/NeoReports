@@ -245,11 +245,14 @@ rather than decided:
   source built with defaults fails its very first request until the author calls `.PageSize(100)`.
   Loud, but the default configuration is non-functional. Clamping vs. failing with a clear message is
   a product call.
-- **API: `POST /reports/{name}/preview` is the one data-plane endpoint that doesn't scrub driver
-  exceptions.** It catches only `ConfigurationException`, so a bad filter value surfaces the raw
+- ~~**API: `POST /reports/{name}/preview` is the one data-plane endpoint that doesn't scrub driver
+  exceptions.**~~ **FIXED** (routes through `SchemaProblem` like its siblings). Original description: It catches only `ConfigurationException`, so a bad filter value surfaces the raw
   `SqlException`/`PostgresException` (host, port, database) as a 500 — its siblings all route through
   `SchemaProblem`. Should be a 400 (bad filter) or the scrubbed 502 the others return.
-- **API: schedule/preview write paths reach a name-validating store without the guard.**
+- **API: schedule/preview write paths reach a name-validating store without the guard.** The
+  **preview** half is **FIXED** (a name no config store can hold is now treated as not-dynamic, so the
+  endpoint returns its intended 400). `SetScheduleAsync`/`ClearScheduleAsync` still 500 — original
+  description:
   `SetScheduleAsync`, `ClearScheduleAsync` and `ReportPreviewRunner`'s config-store probe pass the
   report name straight through, so a legitimate **code-first** report whose name is outside
   `^[a-zA-Z][a-zA-Z0-9_-]{0,99}$` (e.g. `sales.daily`) gets a **500** from `ArgumentException`. The

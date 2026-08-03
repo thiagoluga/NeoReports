@@ -72,6 +72,31 @@ public class PreviewEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task Filters_on_a_typed_report_whose_name_the_config_store_cannot_hold_return_400()
+    {
+        // A code-first report's name is only checked for non-blank, so "sales.daily" is legal — but a
+        // config store validates its argument against the dynamic-name pattern and throws for it. The
+        // preview runner probed the store before deciding the report was typed, so that ArgumentException
+        // escaped as a 500 instead of the clear "typed report" 400 this endpoint means to return.
+        // A real (file-backed) config store must be registered, otherwise the runner short-circuits on
+        // `configStore is null` and never reaches the name check this test is about.
+        using var host = await TestApp.StartAsync(services =>
+        {
+            services.AddDynamicReports(o => o.Directory = _configDir);
+            services.AddReport<Sale>("sales.daily", b => b
+                .From(new InMemorySource(rows: 3, pageSize: 10))
+                .Column(v => v.Id, "Id")
+                .To(NeoReports.Formats.Csv.Format.Csv()));
+        });
+        var client = host.GetTestClient();
+
+        var response = await PostJsonAsync(client, "/api/reports/sales.daily/preview",
+            """{ "filters": [ { "column": "Id", "operator": "Equals", "value": 1 } ] }""");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task Filters_on_a_typed_report_return_400()
     {
         using var host = await TestApp.StartAsync();

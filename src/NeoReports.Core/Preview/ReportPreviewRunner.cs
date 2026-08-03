@@ -51,7 +51,13 @@ public static class ReportPreviewRunner
             return await PreviewUnfilteredAsync(report, pageSize, execution, services, cancellationToken).ConfigureAwait(false);
 
         IReportConfigStore? configStore = services.GetService<IReportConfigStore>();
+        // Check the name is one a config store could even hold before probing it: the file-backed
+        // store validates its argument and throws for anything outside the dynamic-name pattern, and
+        // a code-first report is under no such restriction (a name like "sales.daily" is legal). That
+        // threw out of the endpoint as an unhandled ArgumentException — a 500 — instead of the clear
+        // "typed report" message below. A name the store cannot hold is definitively not dynamic.
         bool isDynamic = configStore is not null
+            && DynamicReportName.IsValid(report.Name)
             && await configStore.ExistsAsync(report.Name, cancellationToken).ConfigureAwait(false);
 
         if (!isDynamic)

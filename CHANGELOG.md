@@ -58,6 +58,14 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   the host — D20 — this is a nudge, not a behaviour change).
 
 ### Fixed
+- **The report-preview endpoint no longer leaks driver exceptions, and answers 400 where it meant to.**
+  It caught only `ConfigurationException`, so a bad filter value surfaced the raw `SqlException`/
+  `PostgresException`/`OracleException` — naming the host, port and database — as an unhandled 500
+  (with a full stack trace on a host running in Development). It now routes those through the same
+  scrubbed 502 its sibling schema endpoints use. Separately, a **code-first** report whose name a
+  config store cannot hold (`sales.daily`, say — code-first names are unrestricted) made the preview
+  runner throw while probing that store, another 500; such a name is now recognised as definitively
+  not-dynamic, giving the intended 400 explaining that typed reports have no filterable source.
 - **Sectioned outputs are counted as outputs.** `CompiledReport.OutputCount` (and `OutputFormats`)
   omitted them, so a report with one plain and one sectioned output looked single-output: the API's
   sync mode — which supports single-output reports only — accepted it, the runner wrote both files,
