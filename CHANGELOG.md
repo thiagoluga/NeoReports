@@ -36,6 +36,13 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   dropped column auto-fit. (`AdjustToContents` can't stream.)
 - **Opt-in `AddNeoReportsStartupValidation()`** compiles config-driven reports at host startup so a
   malformed document fails fast at boot rather than on the first request.
+- **`ReportBuilder<T>.Deadline(TimeSpan)`** — an opt-in wall-clock bound on the *whole* run. On expiry
+  the run is cooperatively cancelled and surfaces as a cancelled run, so a report wedged against a
+  slow source can no longer occupy the single worker indefinitely. Off by default.
+- **`RetryOptions.Timeout(TimeSpan)`** — an opt-in *per-attempt* read timeout, so one hung read is
+  abandoned and retried instead of stalling the run. Cooperative: it interrupts a read that honours
+  cancellation (the async ADO/HTTP/Mongo reads do). Complements `Deadline`, which bounds the whole
+  run rather than a single attempt.
 - **`ReportDeadlineExceededException`** (in `NeoReports.Core.Pipeline`), thrown when a run exceeds its
   configured `Deadline`. It derives from `OperationCanceledException`, so every existing catch site is
   unaffected and a deadline still surfaces as a cancelled run — the distinct type exists because the
