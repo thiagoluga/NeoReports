@@ -58,6 +58,17 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   the host — D20 — this is a nudge, not a behaviour change).
 
 ### Fixed
+- **Run-time parameters now work on every job backend.** The run request types its parameter values
+  as `object?`, so `System.Text.Json` handed each one to the pipeline as a `JsonElement` — which no
+  ADO provider can bind (*"No mapping exists from object type System.Text.Json.JsonElement"*). Every
+  parameterized report therefore failed on the **sync** and **in-memory job** paths, while the
+  Hangfire path happened to work because it round-trips parameters through `JobParameters`. Values are
+  now converted to CLR primitives at the request boundary, so all three backends behave identically.
+  That equivalence also required fixing `JobParameters`, which boxed **every** whole number as a
+  `double`: a conditional returning `long` alongside `double` widens implicitly unless the `long` is
+  cast to `object` first. A `bigint` id past 2^53 was therefore bound as a float and compared wrong on
+  the Hangfire path. A number too large for `double` is now kept as its original JSON token rather
+  than becoming `±Infinity`, which is not representable in JSON and made re-serializing it throw.
 - **A run-time parameter can no longer take over the engine's keyset cursor.** Execution parameters
   were bound before the engine's own `@cursor`/`@pageSize`, and the binder keeps whichever name was
   bound first — so a report run supplying a parameter called `cursor` pinned it for every page. The

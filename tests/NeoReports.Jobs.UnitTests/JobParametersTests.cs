@@ -22,8 +22,12 @@ public class JobParametersTests
         var back = JobParameters.Deserialize(json);
 
         back["name"].ShouldBe("sales");
-        back["count"].ShouldBe(42L);
-        back["ratio"].ShouldBe(1.5);
+        // ShouldBe alone can't police this: Shouldly compares numerics by value, so a double 42.0
+        // satisfies ShouldBe(42L) and the whole-number-boxed-as-double bug slipped through. Assert
+        // the runtime type — a provider binds an integer column by the CLR type it is handed, and a
+        // double past 2^53 silently loses precision.
+        back["count"].ShouldBeOfType<long>().ShouldBe(42L);
+        back["ratio"].ShouldBeOfType<double>().ShouldBe(1.5);
         back["active"].ShouldBe(true);
         back["missing"].ShouldBeNull();
     }

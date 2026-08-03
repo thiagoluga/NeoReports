@@ -172,7 +172,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
             });
         }
 
-        var parameters = body?.Parameters;
+        IReadOnlyDictionary<string, object?>? parameters = NormalizeParameters(body?.Parameters);
 
         if (string.Equals(mode, "sync", StringComparison.OrdinalIgnoreCase))
         {
@@ -1184,6 +1184,28 @@ public static class NeoReportsEndpointRouteBuilderExtensions
             title: title,
             detail: "The source's database could not be read. See the server logs for details.",
             statusCode: StatusCodes.Status502BadGateway);
+    }
+
+    // The run request types its parameter values as `object?`, so System.Text.Json materializes each
+    // one as a JsonElement. Nothing downstream can use that: an ADO provider rejects it outright
+    // ("No mapping exists from object type System.Text.Json.JsonElement"), so every parameterized
+    // report failed on the sync and in-memory-job paths — while the Hangfire path happened to work,
+    // because it round-trips parameters through JobParameters, which converts them. Convert here
+    // instead, at the one boundary where they enter, so every backend behaves the same. Round-tripping
+    // through PrimitiveObjectConverter reuses the repo's single definition of "JSON value → CLR
+    // primitive" (string/long/double/bool/ISO-8601 DateTime, nested objects left as JsonElement)
+    // rather than restating it; parameter bags are a handful of scalars, so the cost is irrelevant.
+    private static readonly JsonSerializerOptions ParameterJson =
+        new(JsonSerializerDefaults.Web) { Converters = { new PrimitiveObjectConverter() } };
+
+    private static IReadOnlyDictionary<string, object?>? NormalizeParameters(
+        IReadOnlyDictionary<string, object?>? parameters)
+    {
+        if (parameters is null || parameters.Count == 0)
+            return parameters;
+
+        string json = JsonSerializer.Serialize(parameters, ParameterJson);
+        return JsonSerializer.Deserialize<Dictionary<string, object?>>(json, ParameterJson);
     }
 
     // A failed health check's raw Error is the underlying driver/IO exception message, which can echo
