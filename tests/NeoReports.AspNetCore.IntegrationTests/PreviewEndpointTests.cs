@@ -72,6 +72,25 @@ public class PreviewEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task A_driver_failure_during_preview_is_scrubbed_and_not_returned_to_the_caller()
+    {
+        // Preview opens a live connection and runs SQL, so a driver exception is reachable from a
+        // request. Its message routinely echoes the connection target; it must never reach the caller.
+        using Microsoft.Extensions.Hosting.IHost host =
+            await StartWithDynamicReportAsync("fake-sql", new ThrowingFilterTranslator("fake-sql"));
+        var client = host.GetTestClient();
+
+        var response = await PostJsonAsync(client, "/api/reports/dyn/preview",
+            """{ "filters": [ { "column": "Id", "operator": "Equals", "value": 1 } ] }""");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadGateway);
+        var body = await response.Content.ReadAsStringAsync();
+        body.ShouldNotContain("db.internal");
+        body.ShouldNotContain("payroll");
+        body.ShouldNotContain("Login failed");
+    }
+
+    [Fact]
     public async Task Filters_on_a_typed_report_whose_name_the_config_store_cannot_hold_return_400()
     {
         // A code-first report's name is only checked for non-blank, so "sales.daily" is legal — but a
@@ -353,4 +372,20 @@ public sealed class FakeFilterTranslator : IFilterTranslator
         parameters = new Dictionary<string, object?> { ["filter0"] = filters[0].Value };
         return true;
     }
+}
+
+/// <summary>Translator that fails the way a real provider does — an exception whose message names the
+/// connection target — so the endpoint's scrubbing can be asserted.</summary>
+public sealed class ThrowingFilterTranslator : IFilterTranslator
+{
+    public ThrowingFilterTranslator(string type) => Type = type;
+
+    public string Type { get; }
+
+    public bool TryTranslate(
+        IReadOnlyDictionary<string, object?> properties, IReadOnlyList<PreviewFilter> filters, ReportSchema schema,
+        out IReadOnlyDictionary<string, object?> propertyOverrides,
+        out IReadOnlyDictionary<string, object?> parameters) =>
+        throw new InvalidOperationException(
+            "Login failed for user 'sa'. Server=db.internal:1433;Database=payroll");
 }
