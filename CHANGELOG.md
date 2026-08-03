@@ -58,6 +58,13 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   the host — D20 — this is a nudge, not a behaviour change).
 
 ### Fixed
+- **A run-time parameter can no longer take over the engine's keyset cursor.** Execution parameters
+  were bound before the engine's own `@cursor`/`@pageSize`, and the binder keeps whichever name was
+  bound first — so a report run supplying a parameter called `cursor` pinned it for every page. The
+  keyset query then returned the same first page indefinitely and the run never terminated (the page
+  loop only stops when a source reports no more data), growing its staging file the whole time. The
+  engine's reserved names are now bound first; run-time parameters still override the source's static
+  ones for every other name.
 - A job whose source times out is now recorded as **Failed**, not "Cancelled". The worker caught
   every `OperationCanceledException`, including the `TaskCanceledException` an `HttpClient.Timeout`
   raises (its token is not the run's), so a real failure was labelled as an operator-initiated

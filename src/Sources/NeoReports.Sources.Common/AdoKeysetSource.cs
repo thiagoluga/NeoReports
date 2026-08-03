@@ -90,19 +90,22 @@ public sealed class AdoKeysetSource<T> : IBatchSource<T>, ISourceRowCounter
         command.CommandText = _sql;
         _configureCommand?.Invoke(command);
 
+        // The engine's own bind names go FIRST so nothing can take them over: AddParameter skips a
+        // name that is already bound, so whichever is added first wins. A run-time parameter called
+        // "cursor" would otherwise pin the keyset cursor to a caller-supplied value for every page —
+        // the query keeps returning the same first page and the run never terminates. "pageSize" is
+        // reserved for the same reason (it caps rows per page without requiring TOP/OFFSET/LIMIT/
+        // ROWNUM in the user's SQL, and drives the has-more decision).
+        AddParameter(command, "cursor", DecodeCursor(context.Cursor), _parameterPrefix);
+        AddParameter(command, "pageSize", _pageSize, _parameterPrefix);
+
         // Merge run-time (execution) parameters with the source's static parameters. Run-time values
         // are added FIRST so that when a report supplies a per-run override of a name the author also
-        // set statically (a tenant id, a date range), the run-time value wins — AddParameter skips a
-        // name that is already bound, so whichever is added first takes precedence.
+        // set statically (a tenant id, a date range), the run-time value wins — same first-wins rule.
         foreach (KeyValuePair<string, object?> kvp in context.Execution.Parameters)
             AddParameter(command, kvp.Key, kvp.Value, _parameterPrefix);
         foreach (KeyValuePair<string, object?> kvp in _parameters)
             AddParameter(command, kvp.Key, kvp.Value, _parameterPrefix);
-
-        AddParameter(command, "cursor", DecodeCursor(context.Cursor), _parameterPrefix);
-
-        // Cap rows per page without requiring TOP/OFFSET/LIMIT/ROWNUM in the user's SQL.
-        AddParameter(command, "pageSize", _pageSize, _parameterPrefix);
 
         var records = new List<T>(_pageSize);
         string? lastKey = null;
@@ -152,15 +155,16 @@ public sealed class AdoKeysetSource<T> : IBatchSource<T>, ISourceRowCounter
         command.CommandText = $"SELECT COUNT(*) FROM (\n{innerSql}{_countInnerSuffix}\n) q";
         _configureCommand?.Invoke(command);
 
-        // Same run-time-wins precedence as ReadBatchAsync (execution parameters added first), so the
+        // Same ordering as ReadBatchAsync: the engine's reserved names first (so a run-time parameter
+        // can't take them over), then run-time parameters, then the source's static ones — so the
         // progress count reads with the exact values the real read will use.
+        AddParameter(command, "cursor", null, _parameterPrefix);
+        AddParameter(command, "pageSize", _pageSize, _parameterPrefix);
+
         foreach (KeyValuePair<string, object?> kvp in execution.Parameters)
             AddParameter(command, kvp.Key, kvp.Value, _parameterPrefix);
         foreach (KeyValuePair<string, object?> kvp in _parameters)
             AddParameter(command, kvp.Key, kvp.Value, _parameterPrefix);
-
-        AddParameter(command, "cursor", null, _parameterPrefix);
-        AddParameter(command, "pageSize", _pageSize, _parameterPrefix);
 
         object? result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return Convert.ToInt64(result, CultureInfo.InvariantCulture);
