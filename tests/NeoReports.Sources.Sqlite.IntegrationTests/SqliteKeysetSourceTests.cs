@@ -17,8 +17,28 @@ public class SqliteKeysetSourceTests : IClassFixture<SqliteFileFixture>
         "SELECT Id, Customer, Amount, Date FROM Sales " +
         "WHERE (@cursor IS NULL OR Id > @cursor) ORDER BY Id";
 
-    private static ReportExecutionContext Exec() =>
-        new("job", "sales", null, NullLogger.Instance, CancellationToken.None);
+    private static ReportExecutionContext Exec(IReadOnlyDictionary<string, object?>? parameters = null) =>
+        new("job", "sales", parameters, NullLogger.Instance, CancellationToken.None);
+
+    [Fact]
+    public async Task A_run_time_parameter_cannot_take_over_the_engine_cursor()
+    {
+        // Regression: run-time parameters used to be bound BEFORE the engine's own @cursor, and
+        // AddParameter skips an already-bound name — so a caller passing "cursor" pinned it for every
+        // page. The keyset query then kept returning the same first page and the run never advanced
+        // (an unbounded loop writing to disk, since the page loop only stops on HasMore=false).
+        var hijack = new Dictionary<string, object?> { ["cursor"] = null };
+        var source = Source.Sqlite(_fixture.ConnectionString, Sql).Keyset<Sale, long>(v => v.Id, pageSize: 10);
+
+        var first = await source.ReadBatchAsync(new BatchContext(Exec(hijack), 10, null, 1), CancellationToken.None);
+        var second = await source.ReadBatchAsync(
+            new BatchContext(Exec(hijack), 10, first.NextCursor, 2), CancellationToken.None);
+
+        first.Records.Count.ShouldBe(10);
+        second.Records.Count.ShouldBe(10);
+        // The second page must move past the first — not repeat it.
+        second.Records[0].Id.ShouldBeGreaterThan(first.Records[^1].Id);
+    }
 
     [Fact]
     public async Task Reads_all_pages_in_order_without_gaps_or_duplicates()
