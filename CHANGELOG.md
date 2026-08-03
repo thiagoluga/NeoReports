@@ -58,6 +58,13 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   the host — D20 — this is a nudge, not a behaviour change).
 
 ### Fixed
+- **A configured health-check path is now probed under the source's base URL.** `HttpHealthProbe`
+  resolved it as a relative URI, which replaces the base's last path segment when the base has no
+  trailing slash (`.../v1/orders` + `ping` → `.../v1/ping`) and discards the base path entirely for a
+  leading `/`. The HTTP and OData health checks therefore probed a URL the author never configured —
+  reporting a reachable source unhealthy, or an unreachable one healthy when the wrong URL answered.
+  It now concatenates, matching what the Elasticsearch, HubSpot, Airtable and Salesforce packages
+  already did. An absolute `http(s)` health-check path is still used as given.
 - **Run-time parameters now work on every job backend.** The run request types its parameter values
   as `object?`, so `System.Text.Json` handed each one to the pipeline as a `JsonElement` — which no
   ADO provider can bind (*"No mapping exists from object type System.Text.Json.JsonElement"*). Every
