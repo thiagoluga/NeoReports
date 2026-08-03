@@ -72,6 +72,50 @@ public class PreviewEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task A_driver_failure_during_preview_is_scrubbed_and_not_returned_to_the_caller()
+    {
+        // Preview opens a live connection and runs SQL, so a driver exception is reachable from a
+        // request. Its message routinely echoes the connection target; it must never reach the caller.
+        using Microsoft.Extensions.Hosting.IHost host =
+            await StartWithDynamicReportAsync("fake-sql", new ThrowingFilterTranslator("fake-sql"));
+        var client = host.GetTestClient();
+
+        var response = await PostJsonAsync(client, "/api/reports/dyn/preview",
+            """{ "filters": [ { "column": "Id", "operator": "Equals", "value": 1 } ] }""");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadGateway);
+        var body = await response.Content.ReadAsStringAsync();
+        body.ShouldNotContain("db.internal");
+        body.ShouldNotContain("payroll");
+        body.ShouldNotContain("Login failed");
+    }
+
+    [Fact]
+    public async Task Filters_on_a_typed_report_whose_name_the_config_store_cannot_hold_return_400()
+    {
+        // A code-first report's name is only checked for non-blank, so "sales.daily" is legal — but a
+        // config store validates its argument against the dynamic-name pattern and throws for it. The
+        // preview runner probed the store before deciding the report was typed, so that ArgumentException
+        // escaped as a 500 instead of the clear "typed report" 400 this endpoint means to return.
+        // A real (file-backed) config store must be registered, otherwise the runner short-circuits on
+        // `configStore is null` and never reaches the name check this test is about.
+        using var host = await TestApp.StartAsync(services =>
+        {
+            services.AddDynamicReports(o => o.Directory = _configDir);
+            services.AddReport<Sale>("sales.daily", b => b
+                .From(new InMemorySource(rows: 3, pageSize: 10))
+                .Column(v => v.Id, "Id")
+                .To(NeoReports.Formats.Csv.Format.Csv()));
+        });
+        var client = host.GetTestClient();
+
+        var response = await PostJsonAsync(client, "/api/reports/sales.daily/preview",
+            """{ "filters": [ { "column": "Id", "operator": "Equals", "value": 1 } ] }""");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task Filters_on_a_typed_report_return_400()
     {
         using var host = await TestApp.StartAsync();
@@ -328,4 +372,20 @@ public sealed class FakeFilterTranslator : IFilterTranslator
         parameters = new Dictionary<string, object?> { ["filter0"] = filters[0].Value };
         return true;
     }
+}
+
+/// <summary>Translator that fails the way a real provider does — an exception whose message names the
+/// connection target — so the endpoint's scrubbing can be asserted.</summary>
+public sealed class ThrowingFilterTranslator : IFilterTranslator
+{
+    public ThrowingFilterTranslator(string type) => Type = type;
+
+    public string Type { get; }
+
+    public bool TryTranslate(
+        IReadOnlyDictionary<string, object?> properties, IReadOnlyList<PreviewFilter> filters, ReportSchema schema,
+        out IReadOnlyDictionary<string, object?> propertyOverrides,
+        out IReadOnlyDictionary<string, object?> parameters) =>
+        throw new InvalidOperationException(
+            "Login failed for user 'sa'. Server=db.internal:1433;Database=payroll");
 }

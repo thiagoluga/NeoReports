@@ -262,6 +262,15 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         {
             return Results.BadRequest(new { error = ex.Message });
         }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Preview opens a live connection and runs SQL, so a bad filter value surfaces the raw
+            // driver exception — which names the host, port and database. Every sibling endpoint that
+            // touches a source routes failures through SchemaProblem (logged server-side, generic to
+            // the caller); this one used to let them escape as an unhandled 500, which on a host
+            // running in Development also renders the full stack trace.
+            return SchemaProblem(http, ex, name, "Could not run the report preview.");
+        }
     }
 
     private static IReadOnlyList<PreviewFilter> ParseFilters(IReadOnlyList<PreviewFilterRequest>? filters)
