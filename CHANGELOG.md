@@ -58,6 +58,11 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   the host — D20 — this is a nudge, not a behaviour change).
 
 ### Fixed
+- **Sectioned outputs are counted as outputs.** `CompiledReport.OutputCount` (and `OutputFormats`)
+  omitted them, so a report with one plain and one sectioned output looked single-output: the API's
+  sync mode — which supports single-output reports only — accepted it, the runner wrote both files,
+  and the caller silently received whichever one directory enumeration yielded first. `GET /reports`
+  under-reported such a report's formats for the same reason.
 - **Google Sheets no longer drops a column whose header cell isn't text.** Requests ask for
   `UNFORMATTED_VALUE`, so a year-numbered header (`2024`) or a `TRUE`/`FALSE` one arrives as a JSON
   number/boolean; the header index accepted strings only, while the data path decodes every kind. The

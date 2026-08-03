@@ -50,7 +50,13 @@ public sealed class CompiledReport
         RowCountFactory = countRows;
         Deadline = deadline;
 
-        OutputFormats = outputs.Select(o => o.Factory.Format).ToArray();
+        // Both collections produce a delivered artifact, so both belong in the count and the format
+        // list. Counting only Outputs made a report with one plain and one sectioned output look
+        // single-output: the API's sync guard let it through, the runner then wrote two files, and the
+        // caller silently received whichever one directory enumeration happened to yield first.
+        OutputFormats = outputs.Select(o => o.Factory.Format)
+            .Concat(sectionedOutputs.Select(s => s.Spec.Factory.Format))
+            .ToArray();
         DestinationTypes = destinations.Select(d => d.Factory.Type).ToArray();
     }
 
@@ -64,7 +70,7 @@ public sealed class CompiledReport
     public int PageSize { get; }
 
     /// <summary>Number of configured outputs (formats).</summary>
-    public int OutputCount => Outputs.Count;
+    public int OutputCount => Outputs.Count + SectionedOutputs.Count;
 
     /// <summary>Format id of each configured output, in order (e.g. "csv", "xlsx").</summary>
     public IReadOnlyList<string> OutputFormats { get; }
