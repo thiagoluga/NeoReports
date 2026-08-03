@@ -90,4 +90,26 @@ public sealed class GoogleSheetsConfigSourceProviderTests
         records[0]["Name"].ShouldBe("Ada");
         records[0]["Amount"].ShouldBe(100L);
     }
+
+    [Fact]
+    public async Task A_header_cell_that_is_not_a_string_still_indexes_its_column()
+    {
+        // Requests ask for UNFORMATTED_VALUE, so Sheets returns a year-numbered header (very common
+        // in spreadsheets) as a JSON *number*. The header index used to accept strings only, while the
+        // data path decodes every kind — so the column was never indexed and every row silently read
+        // as the type default, losing the whole column with no error.
+        HttpClient client = StubHttpMessageHandler.CreateClient(_ =>
+            JsonResponse("""{"valueRanges":[{"values":[["Region",2024]]},{"values":[["North",42]]}]}"""), out _);
+
+        var provider = new GoogleSheetsConfigSourceProvider();
+        var source = new SourceConfig("googlesheets", BaseProperties());
+        IBatchSource<ReportRecord> batchSource = provider.Create(
+            source, Schema(("Region", ColumnType.String), ("2024", ColumnType.Integer)), new SingleServiceProvider(client));
+
+        BatchResult<ReportRecord> result = await ReadOnePageAsync(batchSource, pageSize: 10);
+
+        result.Records.Count.ShouldBe(1);
+        result.Records[0]["Region"].ShouldBe("North");
+        result.Records[0]["2024"].ShouldBe(42L);
+    }
 }

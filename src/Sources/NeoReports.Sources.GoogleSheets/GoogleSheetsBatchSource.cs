@@ -117,7 +117,12 @@ internal sealed class GoogleSheetsBatchSource<T> : IBatchSource<T>
         var i = 0;
         foreach (JsonElement cell in headerRows[0].EnumerateArray())
         {
-            if (cell.ValueKind == JsonValueKind.String && cell.GetString() is { Length: > 0 } name)
+            // Decode the header cell the same way the data path does. Requests ask for
+            // UNFORMATTED_VALUE, so a numeric-looking header (a year column such as 2024, or a
+            // TRUE/FALSE one) arrives as a JSON number/bool rather than a string — accepting only
+            // strings here left those columns unindexed, so every row bound the type default and the
+            // whole column silently read as empty.
+            if (GoogleSheetsCellText.TextOrNull(cell) is { Length: > 0 } name)
                 index[name] = i;
             i++;
         }
