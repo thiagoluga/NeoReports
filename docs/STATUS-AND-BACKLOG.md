@@ -258,7 +258,9 @@ rather than decided:
   error strings). The read- and write-failure paths in the same method scrub; the **upload** path does
   not — and the sync endpoint deliberately suppresses the very same string, so one route hides what
   the other returns verbatim.
-- **API: sync mode's single-output guard ignores sectioned outputs.** `OutputCount` counts only
+- ~~**API: sync mode's single-output guard ignores sectioned outputs.**~~ **FIXED** — `OutputCount`
+  and `OutputFormats` now include sectioned outputs, so the guard rejects the mixed report it always
+  claimed to and the listing reports every format. Original description: `OutputCount` counts only
   `Outputs`, so a report with one plain and one sectioned output passes the guard, the runner writes
   two artifacts, and the caller silently receives **one** — which one decided by directory-enumeration
   order. The same undercount makes `GET /reports` under-report a sectioned report's formats.

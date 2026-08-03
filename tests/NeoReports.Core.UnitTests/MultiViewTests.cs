@@ -98,6 +98,26 @@ public class MultiViewTests
     }
 
     [Fact]
+    public void Sectioned_outputs_are_counted_and_listed_alongside_plain_ones()
+    {
+        // Both kinds produce a delivered artifact. Counting only the plain ones made a report like
+        // this one look single-output, so the API's sync guard — which promises "single-output reports
+        // only" — let it through; the runner then wrote two files and the caller silently received
+        // whichever one directory enumeration yielded first.
+        var report = new ReportBuilder<Sale>("mixed")
+            .From(new FakeBatchSource<Sale>(new[] { Page(1) }))
+            .Column(v => v.Id, "Id")
+            .To(new OutputSpec(new FakeWriterFactory()))
+            .ToSections(new SectionedOutputSpec(new FakeSectionedWriterFactory()), s => s
+                .Section("All", v => v.Where(x => x.Id > 0)))
+            .Build();
+
+        report.OutputCount.ShouldBe(2);
+        report.OutputFormats.ShouldContain("fake");
+        report.OutputFormats.Count.ShouldBe(2);
+    }
+
+    [Fact]
     public async Task Sectioned_output_projects_each_section_from_a_single_read()
     {
         var source = new FakeBatchSource<Sale>(new[] { Page(1, 2, 3, 4) });
