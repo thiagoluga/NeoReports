@@ -231,7 +231,9 @@ rather than decided:
   and `HttpSourceHealthCheck` + `ODataSourceHealthCheck` still call it: a health check can probe the
   wrong URL and report a healthy source unhealthy (or vice-versa). **Fixing the shared helper by
   concatenation, as the four leaf packages already do, is the cheapest win in this list.**
-- **Google Sheets: three data-fidelity bugs.** (a) header cells that aren't JSON strings are dropped,
+- **Google Sheets: three data-fidelity bugs.** (a) is **FIXED** — header cells are now decoded exactly
+  like data cells, so a numeric/boolean header indexes its column (covered by a test verified to fail
+  against the old code). (b) and (c) remain. Original description: (a) header cells that aren't JSON strings are dropped,
   so a year-numbered column (`2024`) never binds and every row's value for it is null/zero — the
   requests use `UNFORMATTED_VALUE`, which returns numeric headers as JSON numbers, while the data path
   already decodes all kinds; (b) a header range that comes back without `values` caches an **empty**

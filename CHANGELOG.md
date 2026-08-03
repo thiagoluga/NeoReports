@@ -58,6 +58,11 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   the host — D20 — this is a nudge, not a behaviour change).
 
 ### Fixed
+- **Google Sheets no longer drops a column whose header cell isn't text.** Requests ask for
+  `UNFORMATTED_VALUE`, so a year-numbered header (`2024`) or a `TRUE`/`FALSE` one arrives as a JSON
+  number/boolean; the header index accepted strings only, while the data path decodes every kind. The
+  column was therefore never indexed and every row read as the type default — the whole column silently
+  empty, with no error. Header cells are now decoded exactly like data cells.
 - **A configured health-check path is now probed under the source's base URL.** `HttpHealthProbe`
   resolved it as a relative URI, which replaces the base's last path segment when the base has no
   trailing slash (`.../v1/orders` + `ping` → `.../v1/ping`) and discards the base path entirely for a
