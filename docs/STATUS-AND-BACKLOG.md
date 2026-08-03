@@ -221,7 +221,10 @@ rather than decided:
   `new Uri(nextUrl)` (absolute-only) on a server-supplied link; RFC 8288 and OData both permit a
   relative one. Fails loudly (`UriFormatException`, opaque message) rather than silently. Salesforce
   is the only package that resolves this correctly.
-- **`HttpHealthProbe.CombineUrl` still has the relative-`Uri` bug — the 5th sighting of this class.**
+- ~~**`HttpHealthProbe.CombineUrl` still has the relative-`Uri` bug — the 5th sighting of this class.**~~
+  **FIXED** — the shared helper now concatenates under the base path (absolute `http(s)` paths still
+  used as given), matching the four leaf packages; covered by `HttpHealthProbeUrlTests`, verified to
+  fail against the old implementation. Original description:
   `new Uri(baseUri, path)` drops the base's last path segment when it has no trailing slash, and a
   leading `/` resets to the host root. Elasticsearch (D64), HubSpot, Airtable and Salesforce each
   independently rewrote away from it — with comments naming it — but the shared helper still does it,

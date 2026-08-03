@@ -38,14 +38,46 @@ public static class HttpHealthProbe
         return await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>Resolves the URL to probe: <paramref name="healthCheckPath"/> relative to <paramref name="baseUrl"/>, or <paramref name="baseUrl"/> itself when unset.</summary>
+    /// <summary>
+    /// Resolves the URL to probe: <paramref name="healthCheckPath"/> appended <b>under</b>
+    /// <paramref name="baseUrl"/>, or <paramref name="baseUrl"/> itself when unset. An absolute
+    /// http(s) <paramref name="healthCheckPath"/> is used as given.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately concatenates instead of using <c>new Uri(baseUri, relative)</c>: relative-URI
+    /// resolution replaces the base's last path segment whenever the base has no trailing slash
+    /// (<c>.../v1/orders</c> + <c>ping</c> → <c>.../v1/ping</c>), and a leading <c>/</c> on the
+    /// relative part discards the base path entirely (→ <c>/ping</c> at the host root). Either way the
+    /// probe hits a URL the author never configured, so a reachable source can report unhealthy — or
+    /// an unreachable one report healthy if the wrong URL happens to answer. The Elasticsearch (D64),
+    /// HubSpot, Airtable and Salesforce packages each hit this and moved to concatenation; this shared
+    /// helper is the last place that resolved relatively.
+    /// </remarks>
     public static string CombineUrl(string baseUrl, string? healthCheckPath)
     {
         if (healthCheckPath is null)
             return baseUrl;
 
         var baseUri = new Uri(baseUrl, UriKind.Absolute);
-        return new Uri(baseUri, healthCheckPath).ToString();
+
+        // An absolute probe URL is a deliberate override, not something to append.
+        if (Uri.TryCreate(healthCheckPath, UriKind.Absolute, out Uri? absolute)
+            && (absolute.Scheme == Uri.UriSchemeHttp || absolute.Scheme == Uri.UriSchemeHttps))
+        {
+            return absolute.ToString();
+        }
+
+        // A query on the configured path belongs in the query component, not escaped into the path.
+        var split = healthCheckPath.IndexOf('?', StringComparison.Ordinal);
+        string relativePath = split < 0 ? healthCheckPath : healthCheckPath[..split];
+        string relativeQuery = split < 0 ? string.Empty : healthCheckPath[(split + 1)..];
+
+        var builder = new UriBuilder(baseUri)
+        {
+            Path = baseUri.AbsolutePath.TrimEnd('/') + "/" + relativePath.TrimStart('/'),
+            Query = relativeQuery,
+        };
+        return builder.Uri.ToString();
     }
 
     /// <summary>
