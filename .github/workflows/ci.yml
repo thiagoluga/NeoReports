@@ -47,6 +47,13 @@ jobs:
       - name: Build
         run: dotnet build NeoReports.sln --configuration Release --no-restore
 
+      - name: Install Playwright browsers
+        # The E2E suite drives a real Chromium against the app. Runs after Build so the
+        # generated playwright.ps1 exists; --with-deps pulls the shared libraries a headless
+        # browser needs on a bare runner. Skipped browsers would make the E2E tests self-skip,
+        # so the install failing must fail the job rather than quietly reduce coverage.
+        run: pwsh tests/NeoReports.WebUi.E2ETests/bin/Release/net8.0/playwright.ps1 install --with-deps chromium
+
       - name: Test
         env:
           # Fail (don't silently skip) the Testcontainers integration suites if Docker can't start.
@@ -55,6 +62,9 @@ jobs:
           # Local `dotnet test` leaves the var unset and keeps skipping, so contributors without
           # Docker can still run the suite.
           NEOREPORTS_REQUIRE_DOCKER: "1"
+          # Same reasoning for the browser: installing it is not proof it launches, and without this a
+          # driver mismatch or an OOM-killed Chromium would skip most of the E2E suite silently.
+          NEOREPORTS_REQUIRE_BROWSER: "1"
         run: dotnet test NeoReports.sln --configuration Release --no-build --verbosity normal
 
       - name: Format (verify)

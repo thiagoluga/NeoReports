@@ -39,11 +39,17 @@ jobs:
       - name: Build
         run: dotnet build NeoReports.sln --configuration Release --no-restore -p:Version=${{ steps.ver.outputs.version }}
 
+      - name: Install Playwright browsers
+        # Without this the E2E suite self-skips and the release gate would verify only that the host
+        # boots — 3 of its 16 tests — while looking green. Same stance as the Docker gate below.
+        run: pwsh tests/NeoReports.WebUi.E2ETests/bin/Release/net8.0/playwright.ps1 install --with-deps chromium
+
       - name: Test
         env:
           # Never publish a release whose integration suites silently skipped for a broken/missing
           # Docker on the runner — hard-fail instead (see tests/Shared/DockerGate.cs).
           NEOREPORTS_REQUIRE_DOCKER: "1"
+          NEOREPORTS_REQUIRE_BROWSER: "1"
         run: dotnet test NeoReports.sln --configuration Release --no-build --verbosity normal
 
       - name: Pack

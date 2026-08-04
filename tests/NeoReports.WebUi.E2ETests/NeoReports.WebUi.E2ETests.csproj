@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsPublishable>false</IsPublishable>
+    <!-- Test projects document what is non-obvious in prose, not with XML docs on every [Fact]. -->
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Shouldly" />
+    <PackageReference Include="Microsoft.Playwright" />
+    <PackageReference Include="Xunit.SkippableFact" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The app under test: the UI package plus the same engine wiring sample 09-web-ui-live uses. -->
+    <ProjectReference Include="..\..\src\UI\NeoReports.UI\NeoReports.UI.csproj" />
+    <ProjectReference Include="..\..\src\Integrations\NeoReports.AspNetCore\NeoReports.AspNetCore.csproj" />
+    <ProjectReference Include="..\..\src\NeoReports.Core\NeoReports.Core.csproj" />
+    <ProjectReference Include="..\..\src\Jobs\NeoReports.Jobs\NeoReports.Jobs.csproj" />
+    <ProjectReference Include="..\..\src\Formats\NeoReports.Formats.Csv\NeoReports.Formats.Csv.csproj" />
+    <ProjectReference Include="..\..\src\Formats\NeoReports.Formats.Xlsx\NeoReports.Formats.Xlsx.csproj" />
+    <ProjectReference Include="..\..\src\Destinations\NeoReports.Destinations.Local\NeoReports.Destinations.Local.csproj" />
+    <ProjectReference Include="..\..\samples\NeoReports.Samples.Shared\NeoReports.Samples.Shared.csproj" />
+  </ItemGroup>
+
+</Project>
