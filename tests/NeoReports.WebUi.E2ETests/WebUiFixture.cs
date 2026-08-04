@@ -72,8 +72,12 @@ public sealed class WebUiFixture : IAsyncLifetime
             if (Browser is not null)
                 await Browser.CloseAsync();
         }
-        catch (PlaywrightException)
+        catch (PlaywrightException ex)
         {
+            // Swallowed on purpose — a browser that already died must not stop the steps below from
+            // running, and must not replace whatever failure the test was reporting. Still say so:
+            // silently discarding it would hide a browser that is crashing on every run.
+            Console.WriteLine($"E2E teardown: closing the browser failed and was ignored — {ex.Message}");
         }
 
         _playwright?.Dispose();
