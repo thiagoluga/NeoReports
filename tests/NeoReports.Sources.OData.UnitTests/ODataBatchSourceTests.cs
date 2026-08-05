@@ -69,6 +69,31 @@ public sealed class ODataBatchSourceTests
     }
 
     [Fact]
+    public async Task NextLink_strategy_resolves_a_relative_next_link()
+    {
+        // OData permits a relative @odata.nextLink; `new Uri(string)` accepts absolute URIs only, so
+        // a conformant service failed the run with an opaque UriFormatException instead of paging.
+        var call = 0;
+        HttpClient client = StubHttpMessageHandler.CreateClient(_ =>
+        {
+            call++;
+            return call switch
+            {
+                1 => JsonResponse("""{"value":[{"id":1,"name":"A"}],"@odata.nextLink":"Items?$skiptoken=abc"}"""),
+                _ => JsonResponse("""{"value":[{"id":2,"name":"B"}]}"""),
+            };
+        }, out StubHttpMessageHandler handler);
+
+        var source = Source.OData("http://api.test/svc/Items", client).As<Item>();
+
+        List<Item> all = await CollectAsync(source, pageSize: 10);
+
+        all.Select(i => i.Id).ShouldBe(new long[] { 1, 2 });
+        // RFC 3986 resolution against the request URL: the last segment is replaced, the rest kept.
+        handler.Requests[1].RequestUri!.ToString().ShouldBe("http://api.test/svc/Items?$skiptoken=abc");
+    }
+
+    [Fact]
     public async Task NextLink_strategy_refuses_to_send_credentials_to_a_different_host()
     {
         HttpClient client = StubHttpMessageHandler.CreateClient(_ =>
