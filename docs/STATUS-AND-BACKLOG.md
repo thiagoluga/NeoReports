@@ -113,7 +113,7 @@ locally verifiable.
   straddles a page boundary is dropped. Not statically detectable (no PK/unique metadata in the
   model). Consider a builder warning when the key isn't a PK, or documenting the requirement more
   loudly. Needs a product decision.
-- **Multi-output batch writes are not atomic (contradicts D11 batch-atomicity).** `ReportRunner`
+- ~~**Multi-output batch writes are not atomic (contradicts D11 batch-atomicity).**~~ **FIXED (ADR D79)** — `SkipBatchAndLog` with >1 output is refused at `Build()`. The proposed per-output buffering cannot be built generally (an OpenXML zip cannot be truncated back the way a CSV can), so the state that breaks D11 is never entered instead. Original description: `ReportRunner`
   writes each batch to every output in a sequential loop with no per-batch buffer/transaction; if
   output *k* throws after output *k-1* already appended, a `SkipBatchAndLog` batch is "skipped" yet
   physically present in the earlier output's file, and an abort leaves a torn batch across outputs.

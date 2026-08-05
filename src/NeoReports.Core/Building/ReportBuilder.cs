@@ -1,6 +1,7 @@
 using System.Linq.Expressions;
 using NeoReports.Abstractions;
 using NeoReports.Core.Pipeline;
+using NeoReports.Core.Resilience;
 using NeoReports.Core.Scheduling;
 using NeoReports.Core.Sections;
 using NeoReports.Core.SourceRegistry;
@@ -308,6 +309,19 @@ public sealed class ReportBuilder<TRow>
             _sectioned.Any(s => s.Sections.Any(sd => sd.View.ViewColumns.Count > 0));
         if (_columns.Count == 0 && !anyViewColumns)
             throw new ConfigurationException($"Report '{_name}' has no columns. Call Columns(...) or give a view its own columns.");
+
+        // Caught here as well as in the runner so the mistake surfaces at registration rather than
+        // partway through the first run. The runner's guard is the load-bearing one — it also covers
+        // a custom IFailureStrategy and the dynamic config path, neither of which is a
+        // SkipAndLogStrategy — but by then a report is already half written (D79).
+        if (_failure.Build() is SkipAndLogStrategy && _outputs.Count + _sectioned.Count > 1)
+        {
+            throw new ConfigurationException(
+                $"Report '{_name}' configures SkipBatchAndLog with {_outputs.Count + _sectioned.Count} outputs. " +
+                "A skipped batch would remain in the outputs already written and be missing from the rest, so " +
+                "the delivered files would disagree with each other and with the run's stats (D11 batch " +
+                "atomicity). Use a single output, or AbortReport.");
+        }
 
         var reportSchema = new ReportSchema(_columns.Select(c => c.Column).ToList());
 
