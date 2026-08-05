@@ -50,6 +50,17 @@ enterprise-readiness and test coverage, and shipped everything actionable.
 
 ## Open backlog — deferred, with rationale
 
+> **State as of 2026-08-05 (end of the autonomous sweep).** §5 and §6 are cleared of everything that
+> had an answer — 12 PRs merged (#261–#271) and ADRs **D72–D75**. What is listed below as still open
+> is open *because it needs the maintainer*, not because it was missed. The four live items are:
+> Pro **Q3b/c** (rotate the compromised placeholder signing key before publishing), the
+> **`Microsoft.Extensions.TimeProvider.Testing`** CPM decision that unblocks the recurring-loop
+> catch-all, **Aspire 9.5 → 13.4** (four majors — a framework migration, not a bump), and the
+> representation trade-offs recorded in §5 (XLSX 64-bit precision, `DateTimeOffset`) plus the design
+> changes that need a catalog/model change (Postgres `timestamptz`, non-unique keyset key,
+> multi-output write atomicity, `FailureRate` minimum sample, upload-cancellation attribution).
+
+
 ### 1. Next-major breaking cleanup (needs a 2.0 line)
 - **Remove the never-thrown ABI exceptions** — already done in #228, tagged for the next major.
 - **CA1068: `CancellationToken` not last** in three **public** health signatures — **done**: the
