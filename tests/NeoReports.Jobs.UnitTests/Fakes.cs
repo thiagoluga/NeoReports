@@ -114,6 +114,50 @@ public sealed class NullWriterFactory : IWriterFactory
         new NullWriter();
 }
 
+/// <summary>
+/// Writer that throws on the Nth batch, so a run driven with <c>SkipBatchAndLog</c> reaches
+/// <c>CompletedPartial</c> — the state the job layer has to translate into a status.
+/// </summary>
+public sealed class FailOnBatchWriter : IReportWriter
+{
+    private readonly int _failOnBatch;
+    private int _batch;
+
+    public FailOnBatchWriter(int failOnBatch) => _failOnBatch = failOnBatch;
+
+    public string Format => "null";
+    public string MimeType => "application/x-null";
+    public string FileExtension => "dat";
+
+    public Task InitializeAsync(WriterContext context, CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task WriteRowsAsync(IReadOnlyList<object?[]> rows, CancellationToken cancellationToken)
+    {
+        _batch++;
+        if (_batch == _failOnBatch)
+            throw new InvalidOperationException($"Simulated write failure on batch {_batch}.");
+
+        return Task.CompletedTask;
+    }
+
+    public Task FinalizeAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}
+
+/// <summary>Factory for <see cref="FailOnBatchWriter"/>.</summary>
+public sealed class FailOnBatchWriterFactory : IWriterFactory
+{
+    private readonly int _failOnBatch;
+
+    public FailOnBatchWriterFactory(int failOnBatch) => _failOnBatch = failOnBatch;
+
+    public string Format => "null";
+
+    public IReportWriter Create(IReadOnlyDictionary<string, object?> options, IServiceProvider services) =>
+        new FailOnBatchWriter(_failOnBatch);
+}
+
 /// <summary>Destination that records the names of every file it received.</summary>
 public sealed class CapturingDestination : IReportDestination
 {

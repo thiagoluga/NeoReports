@@ -167,4 +167,47 @@ public class JobLifecycleTests
         job.Status.ShouldBe(ReportJobStatus.Cancelled);
         job.Error!.ShouldContain("deadline"); // says why, rather than a bare "Cancelled."
     }
+
+    [Fact]
+    public async Task A_run_that_skipped_batches_is_reported_as_Partial_not_Completed()
+    {
+        // SkipBatchAndLog turns a write failure into a skipped batch, so the run finishes but its
+        // output is missing those rows. That used to land on Completed — and the count is no help,
+        // because SkippedBatches lives on ReportRunResult and is not one of JobStats's counters, so
+        // it never reaches the job record at all. A caller of the job API had no way to tell a
+        // partial run from a whole one (ADR D75).
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddReport<Sale>("sales", b => b
+            .From(new ControllableSource(totalRows: 30, pageSize: 10, perPageDelay: TimeSpan.Zero))
+            .WithPageSize(10)
+            .Column(v => v.Id, "Id")
+            .To(new OutputSpec(new FailOnBatchWriterFactory(failOnBatch: 2)))
+            .OnFailure(f => f.SkipBatchAndLog()));
+        services.AddNeoReportsInMemoryJobs();
+
+        await using ServiceProvider provider = services.BuildServiceProvider();
+        var scheduler = provider.GetRequiredService<IReportJobScheduler>();
+
+        string jobId = await scheduler.EnqueueAsync(new ReportJobRequest("sales"), CancellationToken.None);
+        ReportJob job = await WaitForAsync(
+            scheduler, jobId, s => s is ReportJobStatus.Partial or ReportJobStatus.Completed or ReportJobStatus.Failed);
+
+        job.Status.ShouldBe(ReportJobStatus.Partial);
+    }
+
+    [Fact]
+    public async Task A_clean_run_is_still_reported_as_Completed()
+    {
+        // The new status must not swallow the ordinary case: no skips, no Partial.
+        var source = new ControllableSource(totalRows: 30, pageSize: 10, perPageDelay: TimeSpan.Zero);
+        await using ServiceProvider provider = BuildProvider(source, out _);
+        var scheduler = provider.GetRequiredService<IReportJobScheduler>();
+
+        string jobId = await scheduler.EnqueueAsync(new ReportJobRequest("sales"), CancellationToken.None);
+        ReportJob job = await WaitForAsync(
+            scheduler, jobId, s => s is ReportJobStatus.Partial or ReportJobStatus.Completed or ReportJobStatus.Failed);
+
+        job.Status.ShouldBe(ReportJobStatus.Completed);
+    }
 }

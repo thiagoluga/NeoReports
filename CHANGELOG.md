@@ -8,6 +8,17 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 
 ## [Unreleased]
 
+### Added
+- **`ReportJobStatus.Partial` (ADR D75).** A run that skipped batches (`SkipBatchAndLog`) finished
+  with output missing rows the source held, and the job reported `Completed`. The skip count was no
+  help either: `SkippedBatches` is on the runner's `ReportRunResult` and is not one of `JobStats`'s
+  counters, so it never reached the job record — the status was the only possible channel, and it was
+  green. Such runs now report `Partial`.
+  The value is **appended at the end of the enum** so no existing member is renumbered and any status
+  already persisted as an integer keeps its meaning. This is additive at the ABI level, but a
+  consumer with an exhaustive `switch` over `ReportJobStatus` now has an unhandled case (CS8509 under
+  warnings-as-errors).
+
 ### Changed (breaking, S3 destination)
 - **An S3 key template's substituted values may no longer contain `/` (ADR D73).** The template
   itself is unchanged and may still contain `/` freely — that is how a key hierarchy is written. What

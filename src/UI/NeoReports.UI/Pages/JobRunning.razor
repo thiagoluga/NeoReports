@@ -263,6 +263,10 @@
         "Retrying" => ("warn", "refresh", "Retrying", true),
         "Queued" => ("gray", "clock", "Queued", false),
         "Completed" => ("success", "check", "Completed", false),
+        // warn, not success: the run finished but its output is missing rows. `file-alert` is already
+        // in this project's icon set (FileFormatting) and says "the file has a problem", which is
+        // exactly the case — `alert-triangle` is Failed's icon and would read as an outright failure.
+        "Partial" => ("warn", "file-alert", "Partial", false),
         "Failed" => ("danger", "alert-triangle", "Failed", false),
         "Cancelled" => ("gray", "player-stop", "Cancelled", false),
         _ => ("gray", "minus", status, false),
