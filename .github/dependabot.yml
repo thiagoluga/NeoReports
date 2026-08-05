@@ -13,6 +13,13 @@ updates:
       microsoft-extensions:
         patterns:
           - "Microsoft.Extensions.*"
+      # Not noise-reduction: a CORRECTNESS requirement. Hangfire.NetCore arrives transitively and
+      # pins Hangfire.Core to an exact version, so bumping any one member alone fails restore with
+      # NU1608 — PRs #246 and #247 could never go green on their own, whatever CI did. The family
+      # only moves as a unit.
+      hangfire:
+        patterns:
+          - "Hangfire*"
       test-tooling:
         patterns:
           - "xunit*"
