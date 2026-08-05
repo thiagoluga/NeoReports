@@ -1228,3 +1228,28 @@ A rejected substitution returns a failed `UploadResult` rather than throwing, so
 through the same path as any other delivery problem — matching `LocalDestination`, and keeping the
 `IReportDestination` contract intact. The guard's message names the token and the offending value;
 since D72 the runner keeps that detail in the log rather than in the API response.
+
+## D74 — Hangfire jobs run once: `AutomaticRetry(Attempts = 0)` (2026-08-05)
+
+The invoker carried no retry attribute and nothing configured `GlobalJobFilters`, so Hangfire applied
+its **default of 10 attempts**. A deterministically failing job — bad credentials, an unreachable
+source, a report whose SQL no longer matches the schema — was therefore re-run up to ten times,
+re-reading the entire dataset each time and flapping the stored status through
+Failed → Running → Failed, so an operator watching `GET /jobs` saw ten failures for one problem.
+
+**Decision (maintainer, 2026-08-05): pin `Attempts = 0`.**
+
+This makes rule 6 true in practice rather than only on paper ("a job is an atomic unit; if it
+crashes it restarts from zero"). It also removes a duplicated responsibility: retrying a *transient*
+fault is already the pipeline's own job, and it does it far better — Polly retries a single batch in
+isolation from its cursor (D6), which is a cheaper and more precise unit than re-running the whole
+report. Job-level retry was never the layer that could tell a transient failure from a permanent
+one, and it paid full dataset cost either way.
+
+Output integrity was never at risk (temp-dir staging is idempotent), so this changes cost and
+observability, not correctness.
+
+A host that genuinely wants job-level retries can still add them through its own `GlobalJobFilters`
+or by re-enqueuing; nothing here prevents that. The attribute is on the invoker type, which is where
+Hangfire reads it when the job is created, so it covers both the one-shot and the recurring entry
+points.
