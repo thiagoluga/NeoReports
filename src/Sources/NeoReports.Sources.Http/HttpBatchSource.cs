@@ -97,7 +97,7 @@ internal sealed class HttpBatchSource<T> : IBatchSource<T>
             {
                 HttpPaginationStrategy.LinkHeader => BuildLinkHeaderResult(records, response, requestUri),
                 HttpPaginationStrategy.Cursor => BuildCursorResult(records, document.RootElement, state),
-                HttpPaginationStrategy.Page => BuildPageResult(records, state, context.PageSize),
+                HttpPaginationStrategy.Page => BuildPageResult(records, state),
                 HttpPaginationStrategy.Offset => BuildOffsetResult(records, state),
                 _ => throw new InvalidOperationException($"Unsupported pagination strategy '{_options.PaginationStrategy}'."),
             };
@@ -278,7 +278,7 @@ internal sealed class HttpBatchSource<T> : IBatchSource<T>
     // an over-max limit. The short first page then reads as the last one and the run reports
     // Completed with a fraction of the data. Paging until a page comes back EMPTY costs one extra
     // request at the end of a run and cannot truncate (ADR D72).
-    private BatchResult<T> BuildPageResult(List<T> records, HttpCursorState state, int pageSize)
+    private BatchResult<T> BuildPageResult(List<T> records, HttpCursorState state)
     {
         int currentPage = state.Page ?? _options.StartPage;
         bool hasMore = records.Count > 0;
