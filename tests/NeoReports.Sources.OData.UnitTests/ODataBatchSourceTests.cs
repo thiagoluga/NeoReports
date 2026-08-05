@@ -114,12 +114,16 @@ public sealed class ODataBatchSourceTests
     }
 
     [Fact]
-    public async Task Skip_strategy_ends_pagination_on_a_shorter_than_top_page()
+    public async Task Skip_strategy_ends_pagination_on_an_empty_page()
     {
+        // Ends on an EMPTY page, not a short one (ADR D72): a service that clamps $top below what was
+        // asked for returns a short FIRST page, which used to end the run with partial data reported
+        // as Completed. Dynamics, SAP Gateway and Business Central all do this.
         var responses = new Dictionary<int, string>
         {
             [0] = """{"value":[{"id":1,"name":"A"},{"id":2,"name":"B"}]}""",
             [2] = """{"value":[{"id":3,"name":"C"}]}""",
+            [3] = """{"value":[]}""",
         };
 
         HttpClient client = StubHttpMessageHandler.CreateClient(request =>
@@ -135,7 +139,7 @@ public sealed class ODataBatchSourceTests
         List<Item> all = await CollectAsync(source, pageSize: 2);
 
         all.Select(i => i.Id).ShouldBe(new long[] { 1, 2, 3 });
-        handler.Requests.Count.ShouldBe(2);
+        handler.Requests.Count.ShouldBe(3); // the extra request is the empty page that ends the run
         handler.Requests[0].RequestUri!.Query.ShouldContain("$top=2");
         handler.Requests[0].RequestUri!.Query.ShouldNotContain("%24");
     }

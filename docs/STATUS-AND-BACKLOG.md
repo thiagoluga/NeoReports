@@ -199,14 +199,19 @@ rather than decided:
   emitted a constant cursor — every file-backed source would have failed at page 2 — so the adapter
   now emits its page count rather than the runner special-casing a sentinel. Original description:
   no page cap, no "the cursor did not change" guard, no "zero rows but still more" guard.
-- **`records.Count == pageSize` ends a run early when the server caps the page.** OData's `Skip`
+- ~~**`records.Count == pageSize` ends a run early when the server caps the page.**~~ **FIXED
+  (ADR D72)** — `Skip`/`Page`/`Offset` now page until a response comes back **empty**, so this class
+  of truncation is structurally impossible rather than merely unlikely. Costs one extra request per
+  run. Original description: OData's `Skip`
   strategy (`ODataBatchSource`) and the HTTP source's `Page`/`Offset` strategies infer "more data"
   from a full page. Services that clamp `$top`/`limit` below the engine's 1000 default (Dynamics, SAP
   Gateway, Business Central; many REST APIs silently reduce an over-max `limit`) return a short first
   page → the run stops there and reports **`Completed`** with partial data. `Skip` is opt-in and
   `NextLink` is the default, which limits blast radius. A fix means either honouring `@odata.nextLink`
   in `Skip` mode too, or paging until a page returns zero rows — both change termination semantics.
-- **Elasticsearch treats a partially-failed search as a short page.** ES returns **HTTP 200** with
+- ~~**Elasticsearch treats a partially-failed search as a short page.**~~ **FIXED (ADR D72)** — both
+  fields are inspected before the hits are read, and a partial search now fails loudly. Original
+  description: ES returns **HTTP 200** with
   `timed_out: true` / `_shards.failed > 0` and fewer hits; neither field is inspected, so the report
   silently ends early as `Completed`. GraphQL already fails loudly on 200-with-`errors`; the ES
   equivalent would be consistent, but it turns today's silent success into a hard failure.
@@ -252,11 +257,12 @@ rather than decided:
   index, so a misconfigured `headerRow` produces N rows of all-nulls reported as success instead of
   failing loudly; (c) an interior blank row is returned as `[]` and materialized as a phantom
   all-default row. (a) is the clearest and most contained.
-- **HubSpot and Airtable default to a page size their API rejects.** Both send the engine's 1000
-  default as `limit`/`pageSize`, but both providers cap at 100 (recorded in `DECISIONS.md`), so a
+- ~~**HubSpot and Airtable default to a page size their API rejects.**~~ **DECIDED AND FIXED
+  (ADR D72)** — the maintainer chose **clamping**: an author should not need to know each provider's
+  ceiling. Safe because both derive `hasMore` from the server's continuation token, so clamping only
+  means more requests. Original description: Both send the engine's 1000
+  default as `limit`/`pageSize`, but both providers cap at 100, so a
   source built with defaults fails its very first request until the author calls `.PageSize(100)`.
-  Loud, but the default configuration is non-functional. Clamping vs. failing with a clear message is
-  a product call.
 - ~~**API: `POST /reports/{name}/preview` is the one data-plane endpoint that doesn't scrub driver
   exceptions.**~~ **FIXED** (routes through `SchemaProblem` like its siblings). Original description: It catches only `ConfigurationException`, so a bad filter value surfaces the raw
   `SqlException`/`PostgresException` (host, port, database) as a 500 — its siblings all route through

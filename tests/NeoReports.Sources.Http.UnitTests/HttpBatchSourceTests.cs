@@ -46,13 +46,17 @@ public sealed class HttpBatchSourceTests
         new(status) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
 
     [Fact]
-    public async Task Page_strategy_pages_until_a_shorter_than_full_response()
+    public async Task Page_strategy_pages_until_an_empty_response()
     {
+        // Ends on an EMPTY page, not on a short one — page 3 is short but is no longer treated as the
+        // last (ADR D72), because a short page is exactly what a service that clamps the page size
+        // returns first, and stopping there truncated the report while reporting success.
         var responses = new Dictionary<int, string>
         {
             [1] = """{"items":[{"id":1,"name":"A"},{"id":2,"name":"B"}]}""",
             [2] = """{"items":[{"id":3,"name":"C"},{"id":4,"name":"D"}]}""",
             [3] = """{"items":[{"id":5,"name":"E"}]}""",
+            [4] = """{"items":[]}""",
         };
 
         HttpClient client = StubHttpMessageHandler.CreateClient(
@@ -66,7 +70,7 @@ public sealed class HttpBatchSourceTests
         List<Item> all = await CollectAsync(source, pageSize: 2);
 
         all.Select(i => i.Id).ShouldBe(new long[] { 1, 2, 3, 4, 5 });
-        handler.Requests.Count.ShouldBe(3);
+        handler.Requests.Count.ShouldBe(4); // the extra request is the empty page that ends the run
     }
 
     [Fact]
@@ -91,12 +95,13 @@ public sealed class HttpBatchSourceTests
     }
 
     [Fact]
-    public async Task Offset_strategy_advances_by_the_page_size()
+    public async Task Offset_strategy_advances_by_the_rows_received_until_an_empty_response()
     {
         var responses = new Dictionary<int, string>
         {
             [0] = """{"items":[{"id":1,"name":"A"},{"id":2,"name":"B"}]}""",
             [2] = """{"items":[{"id":3,"name":"C"}]}""",
+            [3] = """{"items":[]}""",
         };
 
         HttpClient client = StubHttpMessageHandler.CreateClient(
@@ -110,7 +115,36 @@ public sealed class HttpBatchSourceTests
         List<Item> all = await CollectAsync(source, pageSize: 2);
 
         all.Select(i => i.Id).ShouldBe(new long[] { 1, 2, 3 });
-        handler.Requests.Count.ShouldBe(2);
+        handler.Requests.Count.ShouldBe(3); // the extra request is the empty page that ends the run
+    }
+
+    [Fact]
+    public async Task Page_strategy_keeps_going_when_the_service_caps_the_page_below_what_was_asked()
+    {
+        // Dynamics, SAP Gateway and Business Central all clamp the page size, and many REST APIs
+        // silently reduce an over-max limit. Asking for 10 and getting 2 back used to read as "that
+        // was the last page": the run stopped after 2 of 5 rows and still reported Completed.
+        var responses = new Dictionary<int, string>
+        {
+            [1] = """{"items":[{"id":1,"name":"A"},{"id":2,"name":"B"}]}""",
+            [2] = """{"items":[{"id":3,"name":"C"},{"id":4,"name":"D"}]}""",
+            [3] = """{"items":[{"id":5,"name":"E"}]}""",
+            [4] = """{"items":[]}""",
+        };
+
+        HttpClient client = StubHttpMessageHandler.CreateClient(
+            request => JsonResponse(responses[HttpTestHelpers.ParseQueryInt(request.RequestUri!, "page")]),
+            out StubHttpMessageHandler _);
+
+        var source = Source.Http("http://api.test/items", client)
+            .Paginate(HttpPaginationStrategy.Page)
+            .RecordsAt("items")
+            .As<Item>();
+
+        // Page size 10 requested; the stub never returns more than 2.
+        List<Item> all = await CollectAsync(source, pageSize: 10);
+
+        all.Select(i => i.Id).ShouldBe(new long[] { 1, 2, 3, 4, 5 });
     }
 
     [Fact]

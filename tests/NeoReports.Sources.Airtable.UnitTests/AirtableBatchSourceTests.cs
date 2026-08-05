@@ -46,6 +46,23 @@ public sealed class AirtableBatchSourceTests
         new(status) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
 
     [Fact]
+    public async Task The_engines_default_page_size_is_clamped_to_what_Airtable_accepts()
+    {
+        // The engine defaults to 1000, Airtable rejects anything over 100. Sending the default made
+        // the very first request fail until the author happened to call .PageSize(100) — a default
+        // configuration that could not work. The maintainer chose clamping over failing (ADR D72).
+        HttpClient client = StubHttpMessageHandler.CreateClient(
+            _ => JsonResponse("""{"records":[{"id":"rec1","fields":{"name":"Alpha","done":false}}]}"""),
+            out StubHttpMessageHandler handler);
+
+        var source = Source.Airtable("appXXX", "Projects", "token123", client).As<Project>();
+
+        await source.ReadBatchAsync(new BatchContext(Exec(), 1000, null, 1), CancellationToken.None);
+
+        handler.Requests[0].RequestUri!.ToString().ShouldBe("https://api.airtable.com/v0/appXXX/Projects?pageSize=100");
+    }
+
+    [Fact]
     public async Task Paginates_via_offset_until_absent()
     {
         var call = 0;

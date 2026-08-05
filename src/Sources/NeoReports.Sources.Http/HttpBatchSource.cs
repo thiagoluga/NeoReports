@@ -97,8 +97,8 @@ internal sealed class HttpBatchSource<T> : IBatchSource<T>
             {
                 HttpPaginationStrategy.LinkHeader => BuildLinkHeaderResult(records, response, requestUri),
                 HttpPaginationStrategy.Cursor => BuildCursorResult(records, document.RootElement, state),
-                HttpPaginationStrategy.Page => BuildPageResult(records, state, context.PageSize),
-                HttpPaginationStrategy.Offset => BuildOffsetResult(records, state, context.PageSize),
+                HttpPaginationStrategy.Page => BuildPageResult(records, state),
+                HttpPaginationStrategy.Offset => BuildOffsetResult(records, state),
                 _ => throw new InvalidOperationException($"Unsupported pagination strategy '{_options.PaginationStrategy}'."),
             };
         }
@@ -211,8 +211,11 @@ internal sealed class HttpBatchSource<T> : IBatchSource<T>
         {
             foreach (string link in SplitLinkValues(headerValue))
             {
-                string[] parts = link.Split(';');
-                if (parts.Length < 2)
+                // Guarded on the way in rather than assigned then checked: a bare `var parts =
+                // link.Split(...)` as the loop's first statement reads to CodeQL as a map that should
+                // have been a .Select, which this loop cannot be — it has two guards and an early
+                // return (alert cs/linq/missed-select, opened by the Link-parsing fix in #262).
+                if (link.Split(';') is not { Length: >= 2 } parts)
                     continue;
 
                 string urlPart = parts[0].Trim();
@@ -269,18 +272,25 @@ internal sealed class HttpBatchSource<T> : IBatchSource<T>
         return new BatchResult<T>(records, cursor, hasMore);
     }
 
-    private BatchResult<T> BuildPageResult(List<T> records, HttpCursorState state, int pageSize)
+    // Page and Offset have no next-page token to follow, so "is there more?" can only be inferred.
+    // Inferring it from a FULL page is wrong whenever the service caps the page below what was asked
+    // for — Dynamics, SAP Gateway and Business Central all clamp, and many REST APIs silently reduce
+    // an over-max limit. The short first page then reads as the last one and the run reports
+    // Completed with a fraction of the data. Paging until a page comes back EMPTY costs one extra
+    // request at the end of a run and cannot truncate (ADR D72).
+    private BatchResult<T> BuildPageResult(List<T> records, HttpCursorState state)
     {
         int currentPage = state.Page ?? _options.StartPage;
-        bool hasMore = records.Count == pageSize;
+        bool hasMore = records.Count > 0;
         string? cursor = hasMore ? HttpPagination.Encode(new HttpCursorState(Page: currentPage + 1)) : null;
         return new BatchResult<T>(records, cursor, hasMore);
     }
 
-    private BatchResult<T> BuildOffsetResult(List<T> records, HttpCursorState state, int pageSize)
+    /// <inheritdoc cref="BuildPageResult"/>
+    private static BatchResult<T> BuildOffsetResult(List<T> records, HttpCursorState state)
     {
         int currentOffset = state.Offset ?? 0;
-        bool hasMore = records.Count == pageSize;
+        bool hasMore = records.Count > 0;
         string? cursor = hasMore ? HttpPagination.Encode(new HttpCursorState(Offset: currentOffset + records.Count)) : null;
         return new BatchResult<T>(records, cursor, hasMore);
     }
