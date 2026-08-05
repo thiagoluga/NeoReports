@@ -170,15 +170,17 @@ internal sealed class HttpBatchSource<T> : IBatchSource<T>
         var inAngle = false;
         var inQuotes = false;
 
-        for (var i = 0; i < headerValue.Length; i++)
+        var i = 0;
+        while (i < headerValue.Length)
         {
             char c = headerValue[i];
 
-            // A backslash escape is only meaningful inside a quoted-string (RFC 9110 quoted-pair);
-            // skipping the next char there keeps an escaped quote from ending the string early.
+            // Inside a quoted string a backslash escapes whatever follows it, so both characters are
+            // stepped over together — otherwise an escaped quote would look like the end of the
+            // string and every delimiter after it would be read in the wrong state.
             if (inQuotes && c == '\\')
             {
-                i++;
+                i += 2;
                 continue;
             }
 
@@ -193,6 +195,8 @@ internal sealed class HttpBatchSource<T> : IBatchSource<T>
                 yield return headerValue[start..i];
                 start = i + 1;
             }
+
+            i++;
         }
 
         yield return headerValue[start..];
