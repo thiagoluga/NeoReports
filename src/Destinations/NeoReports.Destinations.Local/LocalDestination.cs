@@ -64,6 +64,19 @@ public sealed class LocalDestination : IReportDestination
             // Atomic publish: overwrite any existing file in one move.
             File.Move(tempPath, fullPath, overwrite: true);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // A cancellation is not a destination failure: reporting it as one attributes the
+            // operator's (or the deadline's) stop to this destination and buries the real reason.
+            // The filter is on the caller's own token, exactly as ReportJobWorker does since #240 —
+            // an OperationCanceledException from anything else (an SDK's internal timeout, say) is
+            // still a genuine transport failure and is still reported as one. Rethrowing only when
+            // OUR token tripped also leaves the runner's multi-destination loop free to carry on
+            // reporting per-destination results (ADR D78).
+            if (tempPath.Length > 0)
+                TryDelete(tempPath);
+            throw;
+        }
         catch (Exception ex)
         {
             if (tempPath.Length > 0)

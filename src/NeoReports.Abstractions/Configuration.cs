@@ -114,7 +114,22 @@ public sealed record DestinationConfig(
 public sealed record AbortThresholdConfig(
     int? ConsecutiveFailures = null,
     int? TotalFailures = null,
-    double? FailureRate = null);
+    double? FailureRate = null)
+{
+    /// <summary>
+    /// How many batches must have been seen before <see cref="FailureRate"/> is evaluated at all
+    /// (default 10). A ratio over a handful of batches is not a rate — the very first batch failing
+    /// yields 1.0, which trips every threshold below 1, so `FailureRate` behaved as "abort on the
+    /// first failure" regardless of the value configured (ADR D78). Aborting early is what
+    /// <see cref="ConsecutiveFailures"/> and <see cref="TotalFailures"/> are for.
+    /// <para>
+    /// Declared as an init-only property rather than a fourth positional parameter on purpose:
+    /// this record is part of the frozen <c>Abstractions</c> ABI (rule 7), and adding a parameter
+    /// would change the primary constructor's signature. A new property is additive.
+    /// </para>
+    /// </summary>
+    public int FailureRateMinimumBatches { get; init; } = 10;
+}
 
 /// <summary>
 /// Optional resilience overrides for the dynamic path. Any omitted field keeps the engine's

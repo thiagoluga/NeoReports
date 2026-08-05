@@ -104,6 +104,17 @@ public sealed class S3Destination : IReportDestination
             var url = $"s3://{_bucket}/{key}";
             return UploadResult.Ok(url, key);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // A cancellation is not a destination failure: reporting it as one attributes the
+            // operator's (or the deadline's) stop to this destination and buries the real reason.
+            // The filter is on the caller's own token, exactly as ReportJobWorker does since #240 —
+            // an OperationCanceledException from anything else (an SDK's internal timeout, say) is
+            // still a genuine transport failure and is still reported as one. Rethrowing only when
+            // OUR token tripped also leaves the runner's multi-destination loop free to carry on
+            // reporting per-destination results (ADR D78).
+            throw;
+        }
         catch (Exception ex)
         {
             return UploadResult.Fail($"S3 upload to s3://{_bucket}/{key} failed: {ex.Message}");

@@ -20,6 +20,62 @@ public class LocalDestinationTests : IDisposable
         return new ReportFile(name, "text/csv", bytes.Length, () => new MemoryStream(bytes));
     }
 
+    /// <summary>A stream that throws on read, standing in for a cancelled or failed transfer.</summary>
+    private sealed class ThrowingStream : Stream
+    {
+        private readonly Func<Exception> _throw;
+
+        public ThrowingStream(Func<Exception> onRead) => _throw = onRead;
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => 0; set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => throw _throw();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    [Fact]
+    public async Task A_cancelled_upload_surfaces_as_cancellation_not_as_a_destination_error()
+    {
+        // catch (Exception) swallowed cancellation into UploadResult.Fail, so a deadline firing
+        // mid-write was attributed to the filesystem instead of to the deadline (ADR D78).
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var destination = new LocalDestination(Path.Join(_root, "{name}.{ext}"));
+        var file = new ReportFile(
+            "sales.csv", "text/csv", 10, () => new ThrowingStream(() => new OperationCanceledException(cts.Token)));
+
+        await Should.ThrowAsync<OperationCanceledException>(
+            () => destination.UploadAsync(file, Context(), cts.Token));
+
+        // The staging file must still be cleaned up on the way out — the cancellation path shares the
+        // failure path's cleanup, and skipping it would leave a temp file behind per cancelled run.
+        // The target DIRECTORY is created up front and legitimately survives; what must not survive
+        // is any file in it, published or temporary.
+        if (Directory.Exists(_root))
+            Directory.GetFiles(_root, "*", SearchOption.AllDirectories).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task A_cancellation_from_something_else_is_still_a_destination_error()
+    {
+        // The filter is on OUR token: an OperationCanceledException carrying someone else's token is
+        // a genuine failure and must keep being reported as one.
+        var destination = new LocalDestination(Path.Join(_root, "{name}.{ext}"));
+        var file = new ReportFile(
+            "sales.csv", "text/csv", 10, () => new ThrowingStream(() => new TaskCanceledException("Timed out.")));
+
+        UploadResult result = await destination.UploadAsync(file, Context(), CancellationToken.None);
+
+        result.Success.ShouldBeFalse();
+    }
+
     [Fact]
     public async Task Writes_file_to_resolved_path()
     {

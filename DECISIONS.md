@@ -1369,3 +1369,44 @@ correct either way. Recorded here rather than silently skipped.
 
 Pre-1900 dates remain unrepresentable: `DateTime.ToOADate` cannot express them, and that is inherent
 to the OADate serial Excel uses, not something this layer can decide around.
+
+## D78 — `FailureRate` needs a sample, and a cancelled upload is not a destination error (2026-08-05)
+
+Two §5 items that §5 called "semantics choices". Reading the code closely made the first one look
+less like a choice and more like a threshold that never worked.
+
+### `FailureRate` behaved as "abort on the first failure"
+
+`ReportRunner` increments `batches` **and** `totalFailures` before computing
+`totalFailures / (double)batches`, so a failure in the very first batch always yields exactly **1.0**
+— which trips every `FailureRate` below 1, whatever it was configured to. Later failures are just as
+unstable: the second batch failing gives 0.5. Three batches is not a rate.
+
+`FailureRate` now evaluates only once `FailureRateMinimumBatches` (default **10**) batches have been
+seen. Aborting early is what `ConsecutiveFailures` and `TotalFailures` are for, and both are
+unaffected — a run that should stop immediately still stops immediately, through the threshold that
+actually means that.
+
+**ABI note (rule 7):** `FailureRateMinimumBatches` is an **init-only property**, not a fourth
+positional parameter on `AbortThresholdConfig`. Adding a parameter would change the record's primary
+constructor signature, which is a binary break; a new property is additive. `ThresholdContext` gained
+the batch count the same way — an optional constructor parameter, sourced from `BatchFailureContext.PageNumber`,
+which the runner increments in lockstep with `batches`.
+
+One existing test (`FailureRate_threshold_aborts_when_the_ratio_is_reached`) encoded the old
+behaviour on a three-batch fixture. It now sets the minimum to 3 explicitly, so it keeps measuring
+the ratio arithmetic it was written to measure rather than the guard in front of it — that guard has
+its own tests. This is the third test in this sweep found asserting a defect as if it were the spec.
+
+### A cancelled upload was reported as a destination failure
+
+Both destinations' `catch (Exception)` swallowed `OperationCanceledException` into
+`UploadResult.Fail`, so a deadline firing mid-upload was attributed to S3 or the filesystem, with the
+real reason replaced by a provider-shaped message. The run ended `Failed` either way, so this is
+attribution accuracy — but attribution is the first thing an operator reads.
+
+Cancellation now rethrows, filtered on **the caller's own token**, exactly as `ReportJobWorker` has
+done since #240. An `OperationCanceledException` carrying someone else's token — an SDK's internal
+timeout, most commonly — remains a genuine transport failure and is still reported as one. Filtering
+on our token rather than rethrowing every OCE is also what leaves the runner's multi-destination loop
+free to carry on collecting per-destination results.

@@ -121,7 +121,7 @@ locally verifiable.
   (buffer each batch per output, commit all-or-nothing) is a write-path change that should be a
   recorded decision. Only exercised with ≥2 outputs and a real writer (the single-output
   `FakeWriterFactory` tests don't hit it).
-- **`FailureRate` threshold has no minimum-sample guard.** The ratio is `totalFailures / batchesSoFar`
+- ~~**`FailureRate` threshold has no minimum-sample guard.**~~ **FIXED (ADR D78)** — evaluated only after `FailureRateMinimumBatches` (default 10). The counters are both incremented before the ratio, so a first-batch failure always yielded 1.0: the threshold was effectively "abort on first failure" whatever it was set to. Original description: The ratio is `totalFailures / batchesSoFar`
   with the current failing batch already counted, so an early failure degenerates: the first failing
   batch yields `1/k` and any `FailureRate` below that aborts immediately (e.g. `FailureRate: 0.5`
   aborts if either of the first two batches fails). The arithmetic matches the documented definition,
@@ -173,7 +173,7 @@ need a decision.
   (reject `/` in substituted **values** while keeping it in template literals) would break anyone
   intentionally passing a hierarchy fragment as a parameter. **Recommended:** adopt that guard and
   note it as breaking, or document that S3 key templates must not interpolate untrusted parameters.
-- **Upload swallows `OperationCanceledException` into a `Fail` result (deferred — semantics).** Both
+- ~~**Upload swallows `OperationCanceledException` into a `Fail` result.**~~ **FIXED (ADR D78)** — rethrown when the caller's own token is cancelled, matching `ReportJobWorker` since #240; an OCE from anything else stays a transport failure, so the multi-destination loop is unaffected. Original description: Both
   destinations' `catch (Exception)` also catch a cancellation, so a deadline firing mid-upload is
   reported as a destination error rather than a cancellation. The run still ends Failed, so this is
   attribution accuracy; rethrowing would also change multi-destination behaviour (today the loop
