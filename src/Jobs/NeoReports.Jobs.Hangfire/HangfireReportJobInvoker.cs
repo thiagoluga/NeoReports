@@ -1,3 +1,4 @@
+using Hangfire;
 using NeoReports.Abstractions;
 using NeoReports.Jobs;
 
@@ -9,6 +10,23 @@ namespace NeoReports.Jobs.Hangfire;
 /// that is tripped on server shutdown or when the background job is aborted/deleted — which is how
 /// cooperative cancellation reaches the pipeline.
 /// </summary>
+/// <remarks>
+/// <para>
+/// <see cref="AutomaticRetryAttribute"/> pins <c>Attempts = 0</c>: Hangfire's default is to re-run a
+/// failed job <b>10</b> times. A report job fails deterministically far more often than transiently
+/// — bad credentials, an unreachable source, a report whose SQL no longer matches the schema — and
+/// each of those retries re-reads the entire dataset and flaps the stored status through
+/// Failed → Running → Failed, so an operator watching <c>GET /jobs</c> sees ten failures for one
+/// problem. Retrying a transient fault is already the pipeline's own job: Polly retries a batch in
+/// isolation from its cursor (D6), which is a far cheaper and more precise unit than the whole run.
+/// </para>
+/// <para>
+/// This also makes rule 6 true in practice rather than only on paper: "a job is an atomic unit; if
+/// it crashes it restarts from zero." A host that genuinely wants job-level retries can still add
+/// them through its own <c>GlobalJobFilters</c> or by re-enqueuing (ADR D74).
+/// </para>
+/// </remarks>
+[AutomaticRetry(Attempts = 0)]
 public sealed class HangfireReportJobInvoker
 {
     private readonly ReportJobWorker _worker;

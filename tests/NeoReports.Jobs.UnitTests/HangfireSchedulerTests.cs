@@ -60,6 +60,26 @@ public class HangfireSchedulerTests
     }
 
     [Fact]
+    public void The_invoker_is_pinned_to_a_single_attempt()
+    {
+        // Hangfire's default is to re-run a failed job 10 times. Report jobs fail deterministically
+        // far more often than transiently, and each retry re-reads the whole dataset and flaps the
+        // stored status Failed -> Running -> Failed, so one problem reads as ten failures. Retrying a
+        // transient fault is the pipeline's own job: Polly retries a batch from its cursor (D6),
+        // which is a far cheaper unit than the whole run. ADR D74.
+        //
+        // Asserted through the attribute because that is the whole mechanism — Hangfire reads it off
+        // the type when the job is created, and there is no code path of ours to exercise instead.
+        var attribute = typeof(HangfireReportJobInvoker)
+            .GetCustomAttributes(typeof(global::Hangfire.AutomaticRetryAttribute), inherit: false)
+            .Cast<global::Hangfire.AutomaticRetryAttribute>()
+            .SingleOrDefault();
+
+        attribute.ShouldNotBeNull("the invoker must pin its retry count; without it Hangfire applies its default of 10");
+        attribute.Attempts.ShouldBe(0);
+    }
+
+    [Fact]
     public async Task Invoker_runs_the_worker_to_completion()
     {
         var source = new ControllableSource(totalRows: 20, pageSize: 10, perPageDelay: TimeSpan.Zero);

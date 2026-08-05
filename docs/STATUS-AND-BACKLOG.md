@@ -168,7 +168,7 @@ need a decision.
   reported as a destination error rather than a cancellation. The run still ends Failed, so this is
   attribution accuracy; rethrowing would also change multi-destination behaviour (today the loop
   continues and reports per-destination results).
-- **Hangfire applies its default 10-attempt `AutomaticRetry` (deferred — decision).** The invoker
+- ~~**Hangfire applies its default 10-attempt `AutomaticRetry`.**~~ **DECIDED AND FIXED (ADR D74)** — the invoker pins `Attempts = 0`; transient retries stay with Polly at the batch level (D6), where they cost one page rather than the whole dataset. Original description: The invoker
   carries no `[AutomaticRetry(Attempts = 0)]` and nothing configures `GlobalJobFilters`, so a
   deterministically failing job (bad credentials, unreachable source) is re-run up to 10× — re-reading
   the whole dataset each time and flapping the stored status Failed→Running→Failed. Output integrity
