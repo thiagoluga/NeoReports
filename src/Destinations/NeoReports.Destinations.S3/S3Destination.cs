@@ -57,12 +57,30 @@ public sealed class S3Destination : IReportDestination
         ArgumentNullException.ThrowIfNull(context);
 
         var extension = Path.GetExtension(file.FileName).TrimStart('.');
-        var key = PathTemplate.Expand(
-            _keyTemplate,
-            context.Execution.ReportName,
-            extension,
-            context.Execution.StartedAt,
-            context.Execution.Parameters);
+
+        string key;
+        try
+        {
+            key = PathTemplate.Expand(
+                _keyTemplate,
+                context.Execution.ReportName,
+                extension,
+                context.Execution.StartedAt,
+                context.Execution.Parameters,
+                // The key template may contain '/' freely — that is how a hierarchy is written. What a
+                // substituted VALUE may not do is add hierarchy of its own: run-time parameters come
+                // from the run request, so `reports/{tenant}/...` with a caller-supplied tenant would
+                // otherwise steer the object into another prefix (ADR D73).
+                S3KeySegment.EnsureSafe);
+        }
+        catch (ArgumentException ex)
+        {
+            // A rejected substitution is a caller or configuration error, not a transport failure, but
+            // it is still a delivery failure — reported as one so the run fails cleanly through the
+            // same path as any other upload problem, which is also what LocalDestination does with its
+            // own guard. Letting it escape would break the IReportDestination contract instead.
+            return UploadResult.Fail(ex.Message);
+        }
 
         try
         {

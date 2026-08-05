@@ -152,7 +152,7 @@ need a decision.
   `EffectiveSchedule.Resolve` (override/tombstone/fallback), `ScheduleReconciliationHostedService`
   (add/update/remove, no duplicate), `CronValidation` (UTC, Cronos, no off-by-one), and the whole
   Local/S3 upload path for stream position, disposal, failure mapping and atomicity.
-- **⚠️ S3 key templating does not guard caller-controlled parameters (highest open security item).**
+- ~~**⚠️ S3 key templating does not guard caller-controlled parameters.**~~ **DECIDED AND FIXED (ADR D73)** — substituted values may no longer contain `/`; template literals are untouched. Breaking, recorded in `CHANGELOG.md`. Original description:
   `LocalDestination` passes `LocalPathSegment.EnsureSafe` to `PathTemplate.Expand` (the WP2 guard);
   `S3Destination` passes **none** — deliberately, since `/` is a legitimate key separator. But that
   reasoning covers the author's template, not `{param}` values, which come from the run request body.
