@@ -51,8 +51,18 @@ internal static class XlsxRowReader
     public static IEnumerable<object?[]> ReadRows(
         Stream stream, string? sheetName, CancellationToken cancellationToken)
     {
+        // Validated here rather than inside the iterator below: a method containing `yield` does not
+        // execute any of its body until the first MoveNext, so this check used to fire from inside
+        // the enumeration — with a stack that no longer points at the call that passed the null.
         ArgumentNullException.ThrowIfNull(stream);
 
+        return Enumerate(stream, sheetName, cancellationToken);
+    }
+
+    /// <summary>The iterator half of <see cref="ReadRows"/>; arguments are already validated.</summary>
+    private static IEnumerable<object?[]> Enumerate(
+        Stream stream, string? sheetName, CancellationToken cancellationToken)
+    {
         using var document = SpreadsheetDocument.Open(stream, isEditable: false);
         var workbookPart = document.WorkbookPart
             ?? throw new InvalidOperationException("The XLSX package has no workbook part.");
