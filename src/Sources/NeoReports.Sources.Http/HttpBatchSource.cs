@@ -207,35 +207,39 @@ internal sealed class HttpBatchSource<T> : IBatchSource<T>
         if (!response.Headers.TryGetValues("Link", out IEnumerable<string>? values))
             return null;
 
-        foreach (string headerValue in values)
+        // Parsing one link-value is a separate concern from picking the one we want, so it lives in
+        // its own method and this reads as what it is: the first rel="next" target, if any.
+        return values
+            .SelectMany(SplitLinkValues)
+            .Select(ParseLinkValue)
+            .FirstOrDefault(parsed => parsed.IsNext)
+            .Target;
+    }
+
+    /// <summary>
+    /// Parses one RFC 8288 link-value into its target URI and whether it is the <c>next</c> relation.
+    /// A value that does not match the grammar yields <c>(null, false)</c> rather than throwing —
+    /// a <c>Link</c> header may legitimately carry relations this source does not understand.
+    /// </summary>
+    private static (string? Target, bool IsNext) ParseLinkValue(string link)
+    {
+        string[] parts = link.Split(';');
+        if (parts.Length < 2)
+            return (null, false);
+
+        string urlPart = parts[0].Trim();
+        if (urlPart.Length < 2 || urlPart[0] != '<' || urlPart[^1] != '>')
+            return (null, false);
+
+        bool isNext = parts.Skip(1).Any(p =>
         {
-            foreach (string link in SplitLinkValues(headerValue))
-            {
-                // Guarded on the way in rather than assigned then checked: a bare `var parts =
-                // link.Split(...)` as the loop's first statement reads to CodeQL as a map that should
-                // have been a .Select, which this loop cannot be — it has two guards and an early
-                // return (alert cs/linq/missed-select, opened by the Link-parsing fix in #262).
-                if (link.Split(';') is not { Length: >= 2 } parts)
-                    continue;
+            string[] kv = p.Trim().Split('=', 2);
+            return kv.Length == 2
+                && kv[0].Trim().Equals("rel", StringComparison.OrdinalIgnoreCase)
+                && kv[1].Trim().Trim('"').Equals("next", StringComparison.OrdinalIgnoreCase);
+        });
 
-                string urlPart = parts[0].Trim();
-                if (urlPart.Length < 2 || urlPart[0] != '<' || urlPart[^1] != '>')
-                    continue;
-
-                bool isNext = parts.Skip(1).Any(p =>
-                {
-                    string[] kv = p.Trim().Split('=', 2);
-                    return kv.Length == 2
-                        && kv[0].Trim().Equals("rel", StringComparison.OrdinalIgnoreCase)
-                        && kv[1].Trim().Trim('"').Equals("next", StringComparison.OrdinalIgnoreCase);
-                });
-
-                if (isNext)
-                    return urlPart[1..^1];
-            }
-        }
-
-        return null;
+        return (urlPart[1..^1], isNext);
     }
 
     private BatchResult<T> BuildCursorResult(List<T> records, JsonElement responseRoot, HttpCursorState state)

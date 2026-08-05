@@ -187,6 +187,16 @@ public static class NeoReportsEndpointRouteBuilderExtensions
 
         IReadOnlyDictionary<string, object?>? parameters = NormalizeJsonValues(body?.Parameters);
 
+        if (FirstComplexParameter(parameters) is { } complexParameter)
+        {
+            return Results.BadRequest(new
+            {
+                error = $"Parameter '{complexParameter}' is an array or object. Run parameters must be " +
+                        "scalars (string, number, boolean, null) — v1 has no way to bind a structured " +
+                        "value to a source.",
+            });
+        }
+
         if (string.Equals(mode, "sync", StringComparison.OrdinalIgnoreCase))
         {
             // Sync streams a single file in the response; multi-output cannot be streamed (CA-10).
@@ -1271,6 +1281,36 @@ public static class NeoReportsEndpointRouteBuilderExtensions
     // 'connectionString' property", the value being a JsonElement rather than a string.
     private static readonly JsonSerializerOptions ValueBagJson =
         new(JsonSerializerDefaults.Web) { Converters = { new PrimitiveObjectConverter() } };
+
+    /// <summary>
+    /// Returns the name of the first parameter whose value is an array or object, or
+    /// <see langword="null"/> when every value is a scalar.
+    /// <para>
+    /// Structured parameter values are out of scope for v1, but nothing rejected them, and what
+    /// happened next depended on the backend: the sync and in-memory paths handed the source a
+    /// <see cref="JsonElement"/> — the very thing an ADO provider cannot bind — while Hangfire
+    /// round-tripped it and handed over raw JSON text. Either way the caller learned about it as a
+    /// driver error partway through a run, attributed to the source rather than to the request.
+    /// Rejecting at the boundary makes the limit explicit and identical on every backend.
+    /// </para>
+    /// <para>
+    /// Run before <see cref="NormalizeJsonValues"/>'s output is used, and only for run parameters —
+    /// source property bags travel the same shape but are a provider's own configuration surface, so
+    /// they are left alone here.
+    /// </para>
+    /// </summary>
+    /// <para>
+    /// <see cref="PrimitiveObjectConverter"/> turns every scalar into a CLR primitive and leaves
+    /// exactly the structured values as a <see cref="JsonElement"/>, so the value-kind check below is
+    /// the whole test. <c>FirstOrDefault</c> over a <see cref="KeyValuePair{TKey,TValue}"/> yields a
+    /// default pair — <c>Key</c> null — when nothing matches, which is the "no complex parameter"
+    /// answer.
+    /// </para>
+    /// <param name="parameters">The normalized parameter bag.</param>
+    private static string? FirstComplexParameter(IReadOnlyDictionary<string, object?>? parameters) =>
+        parameters?
+            .FirstOrDefault(pair => pair.Value is JsonElement { ValueKind: JsonValueKind.Array or JsonValueKind.Object })
+            .Key;
 
     private static IReadOnlyDictionary<string, object?>? NormalizeJsonValues(
         IReadOnlyDictionary<string, object?>? parameters)
