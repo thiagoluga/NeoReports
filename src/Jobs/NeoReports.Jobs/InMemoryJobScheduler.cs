@@ -21,6 +21,13 @@ public sealed class InMemoryJobScheduler : IReportJobScheduler, IRecurringReport
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _running = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, Task> _tasks = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, (string Cron, CancellationTokenSource Cts, Task Loop)> _recurring = new(StringComparer.Ordinal);
+    // Registering a schedule is remove-then-add, which a ConcurrentDictionary cannot make atomic:
+    // two concurrent registrations for one report both removed, both started a loop, and both
+    // assigned — so the loser's entry was overwritten without its CTS ever being cancelled and its
+    // loop kept firing, untracked, for the process lifetime. Reachable by racing two schedule
+    // updates, or one against startup reconciliation. Both methods are synchronous (they return
+    // Task.CompletedTask and never await), so a plain lock is the right tool here.
+    private readonly object _recurringGate = new();
 
     /// <summary>Creates the scheduler.</summary>
     /// <param name="store">Store used to create and track jobs.</param>
@@ -97,18 +104,24 @@ public sealed class InMemoryJobScheduler : IReportJobScheduler, IRecurringReport
         ArgumentException.ThrowIfNullOrWhiteSpace(reportName);
         CronExpression expression = CronValidation.Validate(cron);
 
-        RemoveRecurringEntry(reportName);
+        lock (_recurringGate)
+        {
+            RemoveRecurringEntry(reportName);
 
-        var cts = new CancellationTokenSource();
-        Task loop = RunRecurringLoopAsync(reportName, expression, cts);
-        _recurring[reportName] = (cron, cts, loop);
+            var cts = new CancellationTokenSource();
+            Task loop = RunRecurringLoopAsync(reportName, expression, cts);
+            _recurring[reportName] = (cron, cts, loop);
+        }
+
         return Task.CompletedTask;
     }
 
     /// <inheritdoc />
     public Task RemoveRecurringAsync(string reportName, CancellationToken cancellationToken)
     {
-        RemoveRecurringEntry(reportName);
+        lock (_recurringGate)
+            RemoveRecurringEntry(reportName);
+
         return Task.CompletedTask;
     }
 
@@ -165,8 +178,8 @@ public sealed class InMemoryJobScheduler : IReportJobScheduler, IRecurringReport
                     if (cts.Token.IsCancellationRequested)
                         return;
 
-                    // Overlapping firings run concurrently (ADR D41) — no skip-if-running check;
-                    // the engine already isolates concurrent job runs.
+                    // Overlapping firings run concurrently (ADR D41) — there is deliberately no
+                    // skip-if-running check, because the engine already isolates concurrent runs.
                     await EnqueueAsync(new ReportJobRequest(reportName), CancellationToken.None).ConfigureAwait(false);
                 }
             }
@@ -180,16 +193,21 @@ public sealed class InMemoryJobScheduler : IReportJobScheduler, IRecurringReport
     /// <summary>Cancels all running jobs and recurring loops, and waits for them to unwind.</summary>
     public async ValueTask DisposeAsync()
     {
+        // CancelAsync rather than Cancel: cancellation callbacks otherwise run synchronously on the
+        // thread disposing the scheduler, so one slow continuation would stall shutdown for the rest.
+        // A source already disposed by its own loop is the normal race here — that loop owns its CTS
+        // and disposes it on every exit path — so ObjectDisposedException means "already stopped",
+        // which is exactly the state this method is trying to reach.
         foreach (var cts in _running.Values)
         {
-            try { cts.Cancel(); }
-            catch (ObjectDisposedException) { }
+            try { await cts.CancelAsync().ConfigureAwait(false); }
+            catch (ObjectDisposedException) { /* already stopped and disposed itself */ }
         }
 
         foreach (var entry in _recurring.Values)
         {
-            try { entry.Cts.Cancel(); }
-            catch (ObjectDisposedException) { }
+            try { await entry.Cts.CancelAsync().ConfigureAwait(false); }
+            catch (ObjectDisposedException) { /* already stopped and disposed itself */ }
         }
 
         try
