@@ -7,7 +7,8 @@
 //   starting that UI; everything else (running "wide-transactions", watching progress,
 //   downloading the file) happens by clicking through it.
 //
-// No manual setup: Aspire pulls the postgres:17 image, starts the container, and injects the
+// No manual setup: Aspire pulls the PostgreSQL image it defaults to (the tag moves with the Aspire
+// version — it is 18.x on 13.4), starts the container, and injects the
 // connection string into the web host via WithReference — the same "docker compose up, but typed
 // and orchestrated from C#" experience Aspire is built for.
 
