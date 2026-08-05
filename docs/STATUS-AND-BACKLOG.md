@@ -179,14 +179,14 @@ need a decision.
   lock is the right tool). Original description: Two concurrent registrations for one report can both
   start a loop; the loser is overwritten in the dictionary without its CTS being cancelled, so it
   keeps firing untracked for the process lifetime.
-- ~~**The in-memory recurring loop has no catch-all.**~~ **FIXED** — an unexpected failure is now
-  logged and the loop computes the next occurrence as usual, with a 30s back-off so a persistent
-  failure cannot spin hot. Original description: Any non-cancellation throw faults the fire-and-forget
-  loop and the schedule silently stops for the process lifetime, unlogged.
-  **Note on coverage:** the loop is real-time and fire-and-forget (Cronos granularity is one minute),
-  so the recovery path has no automated test — a CI test that waits a wall-clock minute would be worse
-  than none. The new tests cover the risk the lock introduces instead. Driving this loop
-  deterministically needs a clock abstraction (`TimeProvider`), which is a separate change.
+- **The in-memory recurring loop has no catch-all (deferred — blocked on testability).** Any
+  non-cancellation throw faults the fire-and-forget loop and the schedule silently stops for the
+  process lifetime, unlogged. The fix itself is two lines (log, back off, keep looping) and was
+  written — but it cannot be covered: the loop is real-time and Cronos granularity is one minute, so
+  a test would have to burn a wall-clock minute of CI, and SonarCloud's new-code coverage gate
+  correctly refused the uncovered branch. **Unblocking it means injecting `TimeProvider`** (BCL, so no
+  production dependency) and driving the loop from a fake clock — `Microsoft.Extensions.TimeProvider.Testing`
+  would be a new CPM test dependency, which is the maintainer's call.
 - **`CompletedPartial` surfaces as a `Completed` job (by design, flagged).** A run that skipped
   batches maps to `ReportJobStatus.Completed`; the skip is visible only in `Stats.SkippedBatches`.
   There is no `Partial` job status. Worth confirming this is still the intent, since silent partial

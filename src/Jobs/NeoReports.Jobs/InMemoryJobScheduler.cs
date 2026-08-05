@@ -1,7 +1,5 @@
 using System.Collections.Concurrent;
 using Cronos;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using NeoReports.Abstractions;
 using NeoReports.Core.Scheduling;
 
@@ -23,8 +21,6 @@ public sealed class InMemoryJobScheduler : IReportJobScheduler, IRecurringReport
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _running = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, Task> _tasks = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, (string Cron, CancellationTokenSource Cts, Task Loop)> _recurring = new(StringComparer.Ordinal);
-    private readonly ILogger _logger;
-
     // Registering a schedule is remove-then-add, which a ConcurrentDictionary cannot make atomic:
     // two concurrent registrations for one report both removed, both started a loop, and both
     // assigned — so the loser's entry was overwritten without its CTS ever being cancelled and its
@@ -33,18 +29,13 @@ public sealed class InMemoryJobScheduler : IReportJobScheduler, IRecurringReport
     // Task.CompletedTask and never await), so a plain lock is the right tool here.
     private readonly object _recurringGate = new();
 
-    /// <summary>How long the recurring loop waits after an unexpected error before trying again.</summary>
-    private static readonly TimeSpan RecurringErrorBackoff = TimeSpan.FromSeconds(30);
-
     /// <summary>Creates the scheduler.</summary>
     /// <param name="store">Store used to create and track jobs.</param>
     /// <param name="worker">Worker that executes each job.</param>
-    /// <param name="logger">Optional logger; recurring-loop failures are reported through it.</param>
-    public InMemoryJobScheduler(IJobStore store, ReportJobWorker worker, ILogger<InMemoryJobScheduler>? logger = null)
+    public InMemoryJobScheduler(IJobStore store, ReportJobWorker worker)
     {
         _store = store;
         _worker = worker;
-        _logger = logger ?? (ILogger)NullLogger<InMemoryJobScheduler>.Instance;
     }
 
     /// <inheritdoc />
@@ -166,9 +157,9 @@ public sealed class InMemoryJobScheduler : IReportJobScheduler, IRecurringReport
     {
         using (cts)
         {
-            while (!cts.Token.IsCancellationRequested)
+            try
             {
-                try
+                while (!cts.Token.IsCancellationRequested)
                 {
                     DateTime? next = expression.GetNextOccurrence(DateTime.UtcNow);
                     if (next is null)
@@ -191,33 +182,10 @@ public sealed class InMemoryJobScheduler : IReportJobScheduler, IRecurringReport
                     // the engine already isolates concurrent job runs.
                     await EnqueueAsync(new ReportJobRequest(reportName), CancellationToken.None).ConfigureAwait(false);
                 }
-                catch (OperationCanceledException)
-                {
-                    // Removed/disposed — stop the loop.
-                    return;
-                }
-                catch (Exception ex)
-                {
-                    // This loop is fire-and-forget: nothing awaits it, so an escaping exception used
-                    // to fault the task and stop the schedule permanently, with no log line and no
-                    // change in what the API reports — the report simply never fired again for the
-                    // life of the process. One bad firing (the store rejecting a write, say) must not
-                    // be the end of the schedule, so the failure is logged and the next occurrence is
-                    // computed as usual. The back-off keeps a persistent failure from spinning hot.
-                    _logger.LogError(
-                        ex,
-                        "The recurring schedule for report {Report} failed to fire; retrying in {Backoff}.",
-                        reportName, RecurringErrorBackoff);
-
-                    try
-                    {
-                        await Task.Delay(RecurringErrorBackoff, cts.Token).ConfigureAwait(false);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        return;
-                    }
-                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Removed/disposed — stop the loop.
             }
         }
     }
