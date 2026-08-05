@@ -1,4 +1,5 @@
 using NeoReports.Abstractions;
+using NeoReports.Core.Pipeline;
 
 namespace NeoReports.Jobs.UnitTests;
 
@@ -156,6 +157,84 @@ public sealed class FailOnBatchWriterFactory : IWriterFactory
 
     public IReportWriter Create(IReadOnlyDictionary<string, object?> options, IServiceProvider services) =>
         new FailOnBatchWriter(_failOnBatch);
+}
+
+/// <summary>
+/// Wraps <see cref="InMemoryJobStore"/> to count firings and, optionally, make one throw. The
+/// recurring loop reaches the store through <c>EnqueueAsync</c> -> <c>CreateAsync</c>, so this is
+/// where a failed firing is injected.
+/// </summary>
+public sealed class RecordingJobStore : IJobStore
+{
+    private readonly InMemoryJobStore _inner = new();
+    private readonly Func<Task>? _onRun;
+    private int _attempts;
+    private int _created;
+
+    public RecordingJobStore(Func<Task>? onRun = null) => _onRun = onRun;
+
+    /// <summary>Firings that reached the store, including ones that threw.</summary>
+    public int Attempts => Volatile.Read(ref _attempts);
+
+    /// <summary>Firings that produced a job record.</summary>
+    public int Created => Volatile.Read(ref _created);
+
+    public async Task<ReportJob> CreateAsync(ReportJobRequest request, CancellationToken cancellationToken)
+    {
+        Interlocked.Increment(ref _attempts);
+        if (_onRun is not null)
+            await _onRun().ConfigureAwait(false);
+
+        ReportJob job = await _inner.CreateAsync(request, cancellationToken).ConfigureAwait(false);
+        Interlocked.Increment(ref _created);
+        return job;
+    }
+
+    public Task<ReportJob?> GetAsync(string jobId, CancellationToken cancellationToken) =>
+        _inner.GetAsync(jobId, cancellationToken);
+
+    public Task UpdateStatusAsync(string jobId, ReportJobStatus status, string? error, CancellationToken cancellationToken) =>
+        _inner.UpdateStatusAsync(jobId, status, error, cancellationToken);
+
+    public Task UpdateStatsAsync(string jobId, JobStats stats, CancellationToken cancellationToken) =>
+        _inner.UpdateStatsAsync(jobId, stats, cancellationToken);
+
+    public Task<IReadOnlyList<ReportJob>> ListAsync(JobQuery query, CancellationToken cancellationToken) =>
+        _inner.ListAsync(query, cancellationToken);
+
+    /// <summary>
+    /// Waits for a count to be reached. The fake clock makes the loop's *waiting* deterministic, but
+    /// the firing it releases still runs on the thread pool, so the assertion has to wait for it —
+    /// polling with a ceiling, never an unbounded wait.
+    /// </summary>
+    public Task WaitForCreationsAsync(int count) => WaitForAsync(() => Created >= count, $"{count} creation(s)");
+
+    /// <inheritdoc cref="WaitForCreationsAsync"/>
+    public Task WaitForAttemptsAsync(int count) => WaitForAsync(() => Attempts >= count, $"{count} attempt(s)");
+
+    private static async Task WaitForAsync(Func<bool> condition, string what)
+    {
+        for (var i = 0; i < 100; i++)
+        {
+            if (condition())
+                return;
+            await Task.Delay(20).ConfigureAwait(false);
+        }
+
+        throw new Xunit.Sdk.XunitException($"Timed out waiting for {what}.");
+    }
+}
+
+/// <summary>Runner that reports a clean run without touching a pipeline.</summary>
+public sealed class NoOpRunner : IReportRunner
+{
+    public Task<ReportRunResult> RunAsync(
+        string reportName,
+        IReadOnlyDictionary<string, object?>? parameters = null,
+        string? jobId = null,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new ReportRunResult(
+            ReportRunStatus.Completed, new JobStats(), 0, null, Array.Empty<UploadResult>()));
 }
 
 /// <summary>Destination that records the names of every file it received.</summary>

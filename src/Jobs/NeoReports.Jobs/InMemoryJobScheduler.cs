@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using Cronos;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NeoReports.Abstractions;
 using NeoReports.Core.Scheduling;
 
@@ -29,13 +31,33 @@ public sealed class InMemoryJobScheduler : IReportJobScheduler, IRecurringReport
     // Task.CompletedTask and never await), so a plain lock is the right tool here.
     private readonly object _recurringGate = new();
 
+    // Injected so tests can drive the recurring loop from a fake clock. TimeProvider is BCL (.NET 8),
+    // so this costs the shipped package nothing; only the test project takes a dependency, on
+    // Microsoft.Extensions.TimeProvider.Testing. Without it the loop is untestable in practice —
+    // Cronos granularity is one minute, so every assertion about firing would burn a wall-clock
+    // minute of CI, which is why the catch-all below shipped uncovered and had to be reverted (D76).
+    private readonly TimeProvider _timeProvider;
+
+    /// <summary>How long the recurring loop waits after an unexpected error before trying again.</summary>
+    private static readonly TimeSpan RecurringErrorBackoff = TimeSpan.FromSeconds(30);
+
+    private readonly ILogger _logger;
+
     /// <summary>Creates the scheduler.</summary>
     /// <param name="store">Store used to create and track jobs.</param>
     /// <param name="worker">Worker that executes each job.</param>
-    public InMemoryJobScheduler(IJobStore store, ReportJobWorker worker)
+    /// <param name="logger">Optional logger; recurring-loop failures are reported through it.</param>
+    /// <param name="timeProvider">Optional clock; defaults to the system clock. Tests substitute a fake.</param>
+    public InMemoryJobScheduler(
+        IJobStore store,
+        ReportJobWorker worker,
+        ILogger<InMemoryJobScheduler>? logger = null,
+        TimeProvider? timeProvider = null)
     {
         _store = store;
         _worker = worker;
+        _logger = logger ?? (ILogger)NullLogger<InMemoryJobScheduler>.Instance;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     /// <inheritdoc />
@@ -157,36 +179,81 @@ public sealed class InMemoryJobScheduler : IReportJobScheduler, IRecurringReport
     {
         using (cts)
         {
-            try
+            while (!cts.Token.IsCancellationRequested)
             {
-                while (!cts.Token.IsCancellationRequested)
+                try
                 {
-                    DateTime? next = expression.GetNextOccurrence(DateTime.UtcNow);
-                    if (next is null)
-                        return;
-
-                    TimeSpan remaining = next.Value - DateTime.UtcNow;
-                    while (remaining > TimeSpan.Zero)
-                    {
-                        TimeSpan chunk = remaining < MaxWait ? remaining : MaxWait;
-                        using var timer = new PeriodicTimer(chunk);
-                        if (!await timer.WaitForNextTickAsync(cts.Token).ConfigureAwait(false))
-                            return;
-                        remaining = next.Value - DateTime.UtcNow;
-                    }
-
-                    if (cts.Token.IsCancellationRequested)
+                    if (!await WaitForNextOccurrenceAsync(expression, cts.Token).ConfigureAwait(false))
                         return;
 
                     // Overlapping firings run concurrently (ADR D41) — there is deliberately no
                     // skip-if-running check, because the engine already isolates concurrent runs.
                     await EnqueueAsync(new ReportJobRequest(reportName), CancellationToken.None).ConfigureAwait(false);
                 }
+                catch (OperationCanceledException)
+                {
+                    // Removed/disposed — stop the loop.
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    if (!await HandleFiringFailureAsync(reportName, ex, cts.Token).ConfigureAwait(false))
+                        return;
+                }
             }
-            catch (OperationCanceledException)
-            {
-                // Removed/disposed — stop the loop.
-            }
+        }
+    }
+
+    /// <summary>
+    /// Sleeps until the next cron occurrence. Returns <see langword="false"/> when the schedule has no
+    /// further occurrence or the loop was cancelled while waiting.
+    /// </summary>
+    private async Task<bool> WaitForNextOccurrenceAsync(CronExpression expression, CancellationToken token)
+    {
+        DateTime? next = expression.GetNextOccurrence(_timeProvider.GetUtcNow().UtcDateTime);
+        if (next is null)
+            return false;
+
+        // Waited in chunks rather than one long sleep so cancellation is observed promptly even for a
+        // schedule whose next occurrence is hours away.
+        TimeSpan remaining = next.Value - _timeProvider.GetUtcNow().UtcDateTime;
+        while (remaining > TimeSpan.Zero)
+        {
+            TimeSpan chunk = remaining < MaxWait ? remaining : MaxWait;
+            using var timer = new PeriodicTimer(chunk, _timeProvider);
+            if (!await timer.WaitForNextTickAsync(token).ConfigureAwait(false))
+                return false;
+            remaining = next.Value - _timeProvider.GetUtcNow().UtcDateTime;
+        }
+
+        return !token.IsCancellationRequested;
+    }
+
+    /// <summary>
+    /// Handles an unexpected failure of one firing. Returns <see langword="true"/> to keep looping.
+    /// <para>
+    /// This loop is fire-and-forget: nothing awaits it, so an escaping exception used to fault the
+    /// task and stop the schedule permanently — no log line, no change in what the API reports, the
+    /// report simply never fired again for the life of the process. One bad firing (the store
+    /// rejecting a write, say) must not end the schedule, so the failure is logged and the next
+    /// occurrence is computed as usual. The back-off keeps a persistent failure from spinning hot.
+    /// </para>
+    /// </summary>
+    private async Task<bool> HandleFiringFailureAsync(string reportName, Exception ex, CancellationToken token)
+    {
+        _logger.LogError(
+            ex,
+            "The recurring schedule for report {Report} failed to fire; retrying in {Backoff}.",
+            reportName, RecurringErrorBackoff);
+
+        try
+        {
+            await Task.Delay(RecurringErrorBackoff, _timeProvider, token).ConfigureAwait(false);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
         }
     }
 

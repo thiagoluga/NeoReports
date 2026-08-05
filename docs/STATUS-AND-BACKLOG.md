@@ -190,14 +190,11 @@ need a decision.
   lock is the right tool). Original description: Two concurrent registrations for one report can both
   start a loop; the loser is overwritten in the dictionary without its CTS being cancelled, so it
   keeps firing untracked for the process lifetime.
-- **The in-memory recurring loop has no catch-all (deferred — blocked on testability).** Any
-  non-cancellation throw faults the fire-and-forget loop and the schedule silently stops for the
-  process lifetime, unlogged. The fix itself is two lines (log, back off, keep looping) and was
-  written — but it cannot be covered: the loop is real-time and Cronos granularity is one minute, so
-  a test would have to burn a wall-clock minute of CI, and SonarCloud's new-code coverage gate
-  correctly refused the uncovered branch. **Unblocking it means injecting `TimeProvider`** (BCL, so no
-  production dependency) and driving the loop from a fake clock — `Microsoft.Extensions.TimeProvider.Testing`
-  would be a new CPM test dependency, which is the maintainer's call.
+- ~~**The in-memory recurring loop has no catch-all.**~~ **FIXED (ADR D76)** — the scheduler now takes
+  a `TimeProvider` (BCL, so no production dependency) and `Microsoft.Extensions.TimeProvider.Testing`
+  is in CPM test-only, so the loop is driven by a fake clock. The catch-all is back with a test that
+  fails without it, plus real coverage of firing and removal. The D41 "verified manually via the live
+  sample" caveat is retired.
 - ~~**`CompletedPartial` surfaces as a `Completed` job.**~~ **DECIDED AND FIXED (ADR D75)** — new `ReportJobStatus.Partial`, appended at the end of the enum. Note the original entry below was **wrong**: `SkippedBatches` is on `ReportRunResult`, not `JobStats`, so the skip never reached the job record at all and the status was the only possible channel. Original description: A run that skipped
   batches maps to `ReportJobStatus.Completed`; the skip is visible only in `Stats.SkippedBatches`.
   There is no `Partial` job status. Worth confirming this is still the intent, since silent partial

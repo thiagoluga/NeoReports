@@ -1,4 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using NeoReports.Abstractions;
 using NeoReports.Core.Building;
 using NeoReports.Core.DependencyInjection;
@@ -11,9 +13,11 @@ namespace NeoReports.Jobs.UnitTests;
 
 /// <summary>
 /// ADR D41: <see cref="InMemoryJobScheduler"/>'s <see cref="IRecurringReportScheduler"/> facet —
-/// registration bookkeeping, next-occurrence computation, and removal. The actual "fires within a
-/// minute" behavior (real-time PeriodicTimer loop against wall-clock cron boundaries) is verified
-/// manually via the live sample, the same way other epics validated real-time UI behavior.
+/// registration bookkeeping, next-occurrence computation, and removal — plus, since D76, the firing
+/// loop itself. That loop used to be untestable in practice (Cronos granularity is one minute, so
+/// every assertion would have cost a wall-clock minute of CI) and carried a "verified manually via
+/// the live sample" caveat; the scheduler now takes a <c>TimeProvider</c>, so a fake clock drives it
+/// deterministically instead.
 /// </summary>
 public class RecurringSchedulingTests
 {
@@ -168,5 +172,99 @@ public class RecurringSchedulingTests
         // state, an exception, or a hang.
         IReadOnlyList<string> names = await scheduler.ListRegisteredNamesAsync(CancellationToken.None);
         names.Count.ShouldBeLessThanOrEqualTo(1);
+    }
+
+    /// <summary>
+    /// Builds a scheduler on a fake clock. The clock starts at a whole minute so a "* * * * *"
+    /// schedule's next occurrence is exactly 60s away, which keeps the advances below unambiguous.
+    /// </summary>
+    private static (InMemoryJobScheduler Scheduler, FakeTimeProvider Clock, RecordingJobStore Store) BuildOnFakeClock(
+        Func<Task>? onRun = null)
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero));
+        var store = new RecordingJobStore(onRun);
+        var worker = new ReportJobWorker(
+            new NoOpRunner(), store, NullLogger<ReportJobWorker>.Instance, jobEvents: null);
+
+        return (new InMemoryJobScheduler(store, worker, logger: null, timeProvider: clock), clock, store);
+    }
+
+    /// <summary>
+    /// Advances the fake clock in steps until <paramref name="condition"/> holds, yielding between
+    /// steps. The clock makes the loop's *waiting* deterministic, but the loop still runs on the
+    /// thread pool: advancing in one jump can land before the loop has reached its next wait, and the
+    /// time would then be consumed by nothing. Stepping tolerates that without an unbounded wait.
+    /// </summary>
+    private static async Task AdvanceUntilAsync(FakeTimeProvider clock, Func<bool> condition, string what)
+    {
+        for (var i = 0; i < 60; i++)
+        {
+            if (condition())
+                return;
+
+            clock.Advance(TimeSpan.FromSeconds(10));
+            await Task.Delay(20);
+        }
+
+        throw new Xunit.Sdk.XunitException($"Timed out waiting for {what} while advancing the clock.");
+    }
+
+    [Fact]
+    public async Task The_loop_fires_when_the_clock_reaches_the_next_occurrence()
+    {
+        (InMemoryJobScheduler scheduler, FakeTimeProvider clock, RecordingJobStore store) = BuildOnFakeClock();
+        await using var _ = scheduler;
+
+        await scheduler.RegisterRecurringAsync("sales", "* * * * *", CancellationToken.None);
+
+        store.Created.ShouldBe(0, "nothing is due yet");
+
+        await AdvanceUntilAsync(clock, () => store.Created >= 1, "the first firing");
+
+        store.Created.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task A_firing_that_throws_does_not_end_the_schedule()
+    {
+        // The whole point of D76's catch-all: before it, one bad firing faulted the fire-and-forget
+        // task and the report never fired again for the life of the process — silently, with the API
+        // still reporting the schedule as registered.
+        var failNext = true;
+        (InMemoryJobScheduler scheduler, FakeTimeProvider clock, RecordingJobStore store) = BuildOnFakeClock(
+            onRun: () =>
+            {
+                if (!failNext)
+                    return Task.CompletedTask;
+
+                failNext = false;
+                throw new InvalidOperationException("Simulated store failure on the first firing.");
+            });
+        await using var _ = scheduler;
+
+        await scheduler.RegisterRecurringAsync("sales", "* * * * *", CancellationToken.None);
+
+        // First occurrence throws...
+        await AdvanceUntilAsync(clock, () => store.Attempts >= 1, "the first (failing) firing");
+
+        // ...and the loop must come back: the back-off elapses, the next occurrence fires normally.
+        await AdvanceUntilAsync(clock, () => store.Created >= 1, "a firing after the failure");
+
+        store.Created.ShouldBe(1, "the schedule survived the failed firing and fired again");
+    }
+
+    [Fact]
+    public async Task Removing_a_schedule_stops_it_firing()
+    {
+        (InMemoryJobScheduler scheduler, FakeTimeProvider clock, RecordingJobStore store) = BuildOnFakeClock();
+        await using var _ = scheduler;
+
+        await scheduler.RegisterRecurringAsync("sales", "* * * * *", CancellationToken.None);
+        await scheduler.RemoveRecurringAsync("sales", CancellationToken.None);
+
+        clock.Advance(TimeSpan.FromMinutes(5));
+        await Task.Delay(100);
+
+        store.Created.ShouldBe(0);
     }
 }
