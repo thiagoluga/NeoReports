@@ -46,6 +46,23 @@ public sealed class HubSpotBatchSourceTests
         new(status) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
 
     [Fact]
+    public async Task The_engines_default_page_size_is_clamped_to_what_HubSpot_accepts()
+    {
+        // The engine defaults to 1000, HubSpot rejects anything over 100. Sending the default made the
+        // very first request fail until the author happened to call .PageSize(100) — a default
+        // configuration that could not work. The maintainer chose clamping over failing (ADR D72).
+        HttpClient client = StubHttpMessageHandler.CreateClient(
+            _ => JsonResponse("""{"results":[{"id":"1","properties":{"firstname":"Ada","lastname":"Lovelace"}}]}"""),
+            out StubHttpMessageHandler handler);
+
+        var source = Source.HubSpot("contacts", "token123", client).As<Contact>();
+
+        await source.ReadBatchAsync(new BatchContext(Exec(), 1000, null, 1), CancellationToken.None);
+
+        handler.Requests[0].RequestUri!.ToString().ShouldBe("https://api.hubapi.com/crm/v3/objects/contacts?limit=100");
+    }
+
+    [Fact]
     public async Task Paginates_via_paging_next_after_until_absent()
     {
         var call = 0;

@@ -97,7 +97,7 @@ internal sealed class ODataBatchSource<T> : IBatchSource<T>, ISourceRowCounter
             return _options.PaginationStrategy switch
             {
                 ODataPaginationStrategy.NextLink => BuildNextLinkResult(records, root, requestUri),
-                ODataPaginationStrategy.Skip => BuildSkipResult(records, state, context.PageSize),
+                ODataPaginationStrategy.Skip => BuildSkipResult(records, state),
                 _ => throw new InvalidOperationException($"Unsupported pagination strategy '{_options.PaginationStrategy}'."),
             };
         }
@@ -156,11 +156,15 @@ internal sealed class ODataBatchSource<T> : IBatchSource<T>, ISourceRowCounter
         return new BatchResult<T>(records, cursor, hasMore);
     }
 
-    private BatchResult<T> BuildSkipResult(List<T> records, ODataCursorState state, int pageSize)
+    // Skip has no server token to follow, so "is there more?" can only be inferred. Inferring it
+    // from a page that filled $top is wrong whenever the service caps the page below what was asked
+    // for — Dynamics, SAP Gateway and Business Central all clamp $top — because the short first page
+    // then reads as the last one and the run reports Completed with a fraction of the data. Paging
+    // until a page comes back EMPTY costs one extra request at the end and cannot truncate (D72).
+    private static BatchResult<T> BuildSkipResult(List<T> records, ODataCursorState state)
     {
         int currentSkip = state.Skip ?? 0;
-        int top = _options.TopValue ?? pageSize;
-        bool hasMore = records.Count == top;
+        bool hasMore = records.Count > 0;
         string? cursor = hasMore ? ODataPagination.Encode(new ODataCursorState(Skip: currentSkip + records.Count)) : null;
         return new BatchResult<T>(records, cursor, hasMore);
     }

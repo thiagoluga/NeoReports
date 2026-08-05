@@ -53,6 +53,49 @@ public sealed class ElasticsearchBatchSourceTests
         Source.Elasticsearch("http://es.test", "orders", client).Sort(SortDsl);
 
     [Fact]
+    public async Task A_timed_out_search_fails_instead_of_delivering_the_hits_it_managed_to_gather()
+    {
+        // Elasticsearch answers a partial search with HTTP 200 and fewer hits. Read as an ordinary
+        // short page, that ended pagination and the report shipped as Completed with rows missing —
+        // and nothing downstream could tell it apart from a genuinely complete run (ADR D72).
+        HttpClient client = StubHttpMessageHandler.CreateClient((_, _) =>
+            JsonResponse("""{"timed_out":true,"hits":{"hits":[{"_source":{"id":1,"name":"A"},"sort":[1]}]}}"""), out _);
+
+        var source = Builder(client).As<Item>();
+
+        HttpSourceException ex = await Should.ThrowAsync<HttpSourceException>(
+            () => source.ReadBatchAsync(new BatchContext(Exec(), 10, null, 1), CancellationToken.None));
+        ex.Message.ShouldContain("timed_out");
+    }
+
+    [Fact]
+    public async Task A_search_with_failed_shards_fails_instead_of_reporting_a_partial_index()
+    {
+        HttpClient client = StubHttpMessageHandler.CreateClient((_, _) =>
+            JsonResponse("""{"_shards":{"total":5,"successful":3,"failed":2},"hits":{"hits":[{"_source":{"id":1,"name":"A"},"sort":[1]}]}}"""), out _);
+
+        var source = Builder(client).As<Item>();
+
+        HttpSourceException ex = await Should.ThrowAsync<HttpSourceException>(
+            () => source.ReadBatchAsync(new BatchContext(Exec(), 10, null, 1), CancellationToken.None));
+        ex.Message.ShouldContain("2 of 5");
+    }
+
+    [Fact]
+    public async Task A_healthy_response_reporting_zero_failed_shards_is_not_refused()
+    {
+        // The guard keys on failed > 0, so the _shards block every real response carries must pass.
+        HttpClient client = StubHttpMessageHandler.CreateClient((_, _) =>
+            JsonResponse("""{"timed_out":false,"_shards":{"total":5,"successful":5,"failed":0},"hits":{"hits":[{"_source":{"id":1,"name":"A"},"sort":[1]}]}}"""), out _);
+
+        var source = Builder(client).As<Item>();
+
+        BatchResult<Item> result = await source.ReadBatchAsync(
+            new BatchContext(Exec(), 10, null, 1), CancellationToken.None);
+        result.Records.Count.ShouldBe(1);
+    }
+
+    [Fact]
     public async Task Paginates_via_search_after_until_a_short_page()
     {
         var call = 0;

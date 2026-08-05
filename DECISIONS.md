@@ -1149,3 +1149,38 @@ special cases.
 the stuck-source tests, and reverting *only* the adapter (keeping the guard) fails the streaming
 test. The echoing fake throws past 50 reads on purpose — without the guard it loops forever, and a
 hanging test is worse than a failing one, both for CI and for anyone bisecting later.
+
+### D72, continued — the source-level half: never truncate quietly
+
+The runner's guard bounds a source that makes no progress. It cannot help with the opposite failure
+direction, which the §6 audit found in four places: a source that **stops early** and reports the
+run as `Completed` with rows missing. Nothing downstream can tell that apart from a genuinely
+complete run — no exception, no partial-artifact capture, no warning — so it is the worst outcome
+the pipeline can produce. All four are resolved the same way: fail, or keep going, but never
+silently deliver less than was asked for.
+
+**Elasticsearch partial searches now fail.** A partial search is HTTP **200** with fewer hits than
+the shards hold: the cluster sets `timed_out`, or reports failed shards under `_shards`, and returns
+what the responsive shards had. Neither field was inspected, so the short page ended pagination.
+This matches what GraphQL (D63) already does with a 200 carrying `errors`, and this source's own
+"full page with no sort values" guard. It does turn a previously-silent success into a hard failure
+— that is the point; a report missing an unknown number of rows is not a success.
+
+**`records.Count == pageSize` is no longer how "is there more?" is decided.** OData's `Skip` and the
+HTTP source's `Page`/`Offset` strategies have no server token to follow, so it can only be inferred
+— but inferring it from a *full* page is wrong whenever the service caps the page below what was
+requested. Dynamics, SAP Gateway and Business Central all clamp `$top`/`limit`, and many REST APIs
+silently reduce an over-max value; against any of them the **first** page comes back short and the
+run stopped there. These now page until a response comes back **empty**. The cost is one extra
+request at the end of a run; the benefit is that this class of truncation is structurally impossible
+rather than merely unlikely. (`NextLink` and the cursor strategies are unaffected — they follow a
+real token.)
+
+**HubSpot and Airtable clamp the page size instead of failing.** Both cap at 100 while the engine
+defaults to 1000, so a source built with defaults failed its very first request until the author
+happened to call `.PageSize(100)` — a default configuration that could not work.
+**Decision (maintainer, 2026-08-05): clamp.** A report author should not have to know each
+provider's ceiling, and a page size is a throughput hint, not a promise about how many rows arrive
+at once. Both derive `hasMore` from the server's own continuation token, so clamping only means more
+requests — it cannot truncate. (Had they inferred it from a full page, clamping alone would have
+been unsafe; that is precisely the bug fixed in the paragraph above.)

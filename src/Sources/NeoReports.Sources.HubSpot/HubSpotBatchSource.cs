@@ -78,9 +78,19 @@ internal sealed class HubSpotBatchSource<T> : IBatchSource<T>
         return new BatchResult<T>(records, cursor, hasMore);
     }
 
+    /// <summary>
+    /// The largest page HubSpot accepts. The engine's own default is 1000, and sending that made the
+    /// very first request fail until the author happened to call <c>.PageSize(100)</c> — a default
+    /// configuration that could not work. The maintainer chose clamping over failing (ADR D72): a
+    /// report author should not have to know each provider's ceiling, and a page size is a
+    /// throughput hint, not a promise about how many rows arrive at once.
+    /// </summary>
+    private const int MaxPageSize = 100;
+
     private Uri BuildRequestUri(HubSpotCursorState state, int pageSize)
     {
-        var queryParams = new List<(string Key, string Value)> { ("limit", pageSize.ToString(CultureInfo.InvariantCulture)) };
+        int effectivePageSize = Math.Min(pageSize, MaxPageSize);
+        var queryParams = new List<(string Key, string Value)> { ("limit", effectivePageSize.ToString(CultureInfo.InvariantCulture)) };
 
         if (state.After is { Length: > 0 } after)
             queryParams.Add(("after", after));

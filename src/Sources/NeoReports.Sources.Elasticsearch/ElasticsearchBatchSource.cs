@@ -83,6 +83,8 @@ internal sealed class ElasticsearchBatchSource<T> : IBatchSource<T>, ISourceRowC
         {
             using JsonDocument document = await JsonDocument.ParseAsync(responseBody, cancellationToken: cancellationToken).ConfigureAwait(false);
 
+            EnsureSearchWasComplete(document.RootElement);
+
             JsonElement hits = JsonRecords.GetArray(document.RootElement, "hits.hits");
             var records = new List<T>(context.PageSize);
             JsonElement? lastHit = null;
@@ -153,5 +155,44 @@ internal sealed class ElasticsearchBatchSource<T> : IBatchSource<T>, ISourceRowC
         }
 
         return stream.ToArray();
+    }
+
+    /// <summary>
+    /// Rejects a search that Elasticsearch answered only partially.
+    /// <para>
+    /// A partial search is <b>HTTP 200</b> with fewer hits than the shards actually hold: the cluster
+    /// sets <c>timed_out</c>, or reports failed shards under <c>_shards</c>, and returns whatever the
+    /// responsive shards had. Read as an ordinary short page, that ends pagination and the report is
+    /// delivered as <c>Completed</c> while silently missing rows — the worst outcome available, since
+    /// nothing downstream can tell it apart from a genuinely complete run.
+    /// </para>
+    /// <para>
+    /// This is the same posture GraphQL (D63) already takes toward a 200 carrying <c>errors</c>, and
+    /// the same direction as this source's own "full page with no sort values" guard: fail loudly
+    /// rather than truncate quietly (ADR D72).
+    /// </para>
+    /// </summary>
+    private static void EnsureSearchWasComplete(JsonElement root)
+    {
+        if (JsonRecords.TryGetField(root, "timed_out", out JsonElement timedOut)
+            && timedOut.ValueKind == JsonValueKind.True)
+        {
+            throw new HttpSourceException(null, null,
+                "Elasticsearch reported 'timed_out': the search returned only the hits it had gathered " +
+                "before the timeout, so the report would silently be missing rows. Raise the search " +
+                "timeout, or narrow the query.");
+        }
+
+        if (JsonRecords.TryGetField(root, "_shards.failed", out JsonElement failed)
+            && failed.ValueKind == JsonValueKind.Number
+            && failed.TryGetInt32(out int failedShards)
+            && failedShards > 0)
+        {
+            JsonRecords.TryGetField(root, "_shards.total", out JsonElement total);
+            string totalText = total.ValueKind == JsonValueKind.Number ? total.GetRawText() : "?";
+            throw new HttpSourceException(null, null,
+                $"Elasticsearch reported {failedShards} of {totalText} shards failed, so the response " +
+                "covers only part of the index and the report would silently be missing rows.");
+        }
     }
 }
