@@ -75,6 +75,19 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         configure?.Invoke(options);
 
         var group = endpoints.MapGroup(prefix);
+
+        // A handler that returns a Location must point back at the prefix this group was actually
+        // mapped under; hardcoding "/api" makes the 202's Location a 404 under MapNeoReports("/v2").
+        // The handlers are static method groups with no closure over `prefix`, so the mapped prefix
+        // rides along on the request instead. Trailing '/' is trimmed so MapNeoReports("/") does not
+        // produce a protocol-relative "//jobs/..." URL.
+        string mappedPrefix = prefix.TrimEnd('/');
+        group.AddEndpointFilter(async (context, next) =>
+        {
+            context.HttpContext.Items[MappedPrefixKey] = mappedPrefix;
+            return await next(context).ConfigureAwait(false);
+        });
+
         if (options.RequireAuthorization)
         {
             if (string.IsNullOrEmpty(options.AuthorizationPolicy))
@@ -172,7 +185,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
             });
         }
 
-        IReadOnlyDictionary<string, object?>? parameters = NormalizeParameters(body?.Parameters);
+        IReadOnlyDictionary<string, object?>? parameters = NormalizeJsonValues(body?.Parameters);
 
         if (string.Equals(mode, "sync", StringComparison.OrdinalIgnoreCase))
         {
@@ -217,7 +230,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         var enqueuedId = await scheduler.EnqueueAsync(
             new ReportJobRequest(name, parameters), cancellationToken).ConfigureAwait(false);
         return Results.Accepted(
-            $"{http.Request.PathBase}/api/jobs/{enqueuedId}",
+            ApiUrl(http, $"/jobs/{enqueuedId}"),
             new RunAcceptedResponse(enqueuedId, ReportJobStatus.Queued));
     }
 
@@ -457,7 +470,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
 
         var columns = compiled.Schema.Columns.Select(c => c.Name).ToArray();
         return Results.Created(
-            $"{http.Request.PathBase}/api/reports/{config.Name}", new ReportCreatedResponse(config.Name, columns));
+            ApiUrl(http, $"/reports/{config.Name}"), new ReportCreatedResponse(config.Name, columns));
     }
 
     private static async Task<IResult> ValidateReportAsync(
@@ -549,6 +562,47 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         return Results.Ok(new CapabilitiesResponse(sources, formats, destinations, scheduling));
     }
 
+    /// <summary><see cref="HttpContext.Items"/> key carrying the prefix this group was mapped at.</summary>
+    private const string MappedPrefixKey = "NeoReports.MappedPrefix";
+
+    /// <summary>
+    /// Builds a URL for another endpoint of this API, honouring both the host's path base and the
+    /// prefix <see cref="MapNeoReports"/> was called with. Falls back to the documented default only
+    /// if the filter that stashes the prefix somehow did not run.
+    /// </summary>
+    /// <param name="http">The current request.</param>
+    /// <param name="relativePath">Path below the prefix, starting with <c>/</c>.</param>
+    private static string ApiUrl(HttpContext http, string relativePath)
+    {
+        string prefix = http.Items.TryGetValue(MappedPrefixKey, out object? mapped) && mapped is string s
+            ? s
+            : "/api";
+        return $"{http.Request.PathBase}{prefix}{relativePath}";
+    }
+
+    /// <summary>
+    /// Rejects a schedule write for a report whose name an override store cannot key.
+    /// <para>
+    /// A schedule override is stored by report name, and a store persists it as a file name, so it
+    /// only accepts <see cref="DynamicReportName.Pattern"/>. A <b>code-first</b> report is under no
+    /// such constraint — <c>sales.daily</c> is perfectly legal — so a legitimately registered report
+    /// can reach the store with a name it refuses, which surfaced as an <see cref="ArgumentException"/>
+    /// and a <b>500</b>. The read path (<c>ResolveScheduleAsync</c>) already skips the lookup for such
+    /// a name, which is what makes the missing guard here an oversight rather than a design.
+    /// </para>
+    /// </summary>
+    /// <param name="name">The report name from the route.</param>
+    /// <returns><see langword="null"/> when the name is storable; otherwise the response to return.</returns>
+    private static IResult? ScheduleOverridesUnsupportedFor(string name) =>
+        DynamicReportName.IsValid(name)
+            ? null
+            : Results.Conflict(new
+            {
+                error = $"The schedule for '{name}' cannot be changed over HTTP: overrides are stored " +
+                        $"by report name, and a name must match {DynamicReportName.Pattern}. Declare " +
+                        "this report's schedule in code, or rename it.",
+            });
+
     private static async Task<IResult> SetScheduleAsync(
         string name, SetScheduleRequest? body, HttpContext http,
         [FromServices] IReportRegistry registry, CancellationToken cancellationToken)
@@ -569,6 +623,9 @@ public static class NeoReportsEndpointRouteBuilderExtensions
                         "(e.g. AddNeoReportsInMemoryJobs/AddNeoReportsHangfireJobs) and AddScheduling to use schedules.",
             });
         }
+
+        if (ScheduleOverridesUnsupportedFor(name) is { } unsupported)
+            return unsupported;
 
         try
         {
@@ -599,6 +656,9 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         IScheduleOverrideStore? overrides = http.RequestServices.GetService<IScheduleOverrideStore>();
         if (scheduler is null || overrides is null)
             return Results.Conflict(new { error = "No recurring scheduler is registered on this host." });
+
+        if (ScheduleOverridesUnsupportedFor(name) is { } unsupported)
+            return unsupported;
 
         // A declared schedule needs an explicit "unscheduled" tombstone — merely removing any prior
         // override would let the declaration re-apply on the next reconciliation. A report with no
@@ -955,8 +1015,8 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         if (await registry.GetAsync(body!.Name, cancellationToken).ConfigureAwait(false) is not null)
             return Results.Conflict(new { error = $"A source named '{body.Name}' already exists." });
 
-        await registry.SaveAsync(new SourceDefinition(body.Name, body.Type, body.Properties, body.Description), cancellationToken).ConfigureAwait(false);
-        return Results.Created($"{http.Request.PathBase}/api/sources/{body.Name}", ToSourceView(
+        await registry.SaveAsync(new SourceDefinition(body.Name, body.Type, NormalizeJsonValues(body.Properties), body.Description), cancellationToken).ConfigureAwait(false);
+        return Results.Created(ApiUrl(http, $"/sources/{body.Name}"), ToSourceView(
             new SourceDefinition(body.Name, body.Type, Description: body.Description), reportRegistry: http.RequestServices.GetRequiredService<IReportRegistry>(), healthCache: null));
     }
 
@@ -974,7 +1034,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         if (await registry.GetAsync(name, cancellationToken).ConfigureAwait(false) is null)
             return Results.NotFound(new { error = $"No source named '{name}' is registered." });
 
-        await registry.SaveAsync(new SourceDefinition(name, body!.Type, body.Properties, body.Description), cancellationToken).ConfigureAwait(false);
+        await registry.SaveAsync(new SourceDefinition(name, body!.Type, NormalizeJsonValues(body.Properties), body.Description), cancellationToken).ConfigureAwait(false);
         IReportRegistry reportRegistry = http.RequestServices.GetRequiredService<IReportRegistry>();
         ISourceHealthCache? healthCache = http.RequestServices.GetService<ISourceHealthCache>();
         return Results.Ok(ToSourceView(new SourceDefinition(name, body.Type, Description: body.Description), reportRegistry, healthCache));
@@ -1195,26 +1255,31 @@ public static class NeoReportsEndpointRouteBuilderExtensions
             statusCode: StatusCodes.Status502BadGateway);
     }
 
-    // The run request types its parameter values as `object?`, so System.Text.Json materializes each
-    // one as a JsonElement. Nothing downstream can use that: an ADO provider rejects it outright
+    // Two request types carry a caller-supplied bag of `object?` values — a run's `Parameters` and a
+    // source's `Properties` — so System.Text.Json materializes each value as a JsonElement. Nothing
+    // downstream can use that: an ADO provider rejects it outright
     // ("No mapping exists from object type System.Text.Json.JsonElement"), so every parameterized
     // report failed on the sync and in-memory-job paths — while the Hangfire path happened to work,
     // because it round-trips parameters through JobParameters, which converts them. Convert here
     // instead, at the one boundary where they enter, so every backend behaves the same. Round-tripping
     // through PrimitiveObjectConverter reuses the repo's single definition of "JSON value → CLR
     // primitive" (string/long/double/bool/ISO-8601 DateTime, nested objects left as JsonElement)
-    // rather than restating it; parameter bags are a handful of scalars, so the cost is irrelevant.
-    private static readonly JsonSerializerOptions ParameterJson =
+    // rather than restating it; these bags are a handful of scalars, so the cost is irrelevant.
+    // Source properties had the identical split: FileSourceRegistryStore launders the bag through JSON
+    // on write and read, but InMemorySourceRegistryStore keeps it as given — so under
+    // AddInMemorySourceRegistry() a source created over HTTP failed later with "requires a non-empty
+    // 'connectionString' property", the value being a JsonElement rather than a string.
+    private static readonly JsonSerializerOptions ValueBagJson =
         new(JsonSerializerDefaults.Web) { Converters = { new PrimitiveObjectConverter() } };
 
-    private static IReadOnlyDictionary<string, object?>? NormalizeParameters(
+    private static IReadOnlyDictionary<string, object?>? NormalizeJsonValues(
         IReadOnlyDictionary<string, object?>? parameters)
     {
         if (parameters is null || parameters.Count == 0)
             return parameters;
 
-        string json = JsonSerializer.Serialize(parameters, ParameterJson);
-        return JsonSerializer.Deserialize<Dictionary<string, object?>>(json, ParameterJson);
+        string json = JsonSerializer.Serialize(parameters, ValueBagJson);
+        return JsonSerializer.Deserialize<Dictionary<string, object?>>(json, ValueBagJson);
     }
 
     // A failed health check's raw Error is the underlying driver/IO exception message, which can echo

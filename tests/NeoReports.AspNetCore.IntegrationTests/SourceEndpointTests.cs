@@ -24,6 +24,55 @@ public class SourceEndpointTests
         services.AddSingleton<ISourceHealthCheck, FakeSourceHealthCheck>();
     }
 
+    /// <summary>
+    /// A source's <c>properties</c> bag is typed <c>object?</c>, so System.Text.Json hands each value
+    /// over as a <c>JsonElement</c>. <c>FileSourceRegistryStore</c> launders that away by serializing,
+    /// but <c>InMemorySourceRegistryStore</c> keeps what it is given — so a source created over HTTP
+    /// used to fail at read time with "requires a non-empty 'connectionString' property", the value
+    /// being a JsonElement rather than a string. The stored bag is asserted directly because the
+    /// source view deliberately never echoes properties back (they hold secrets).
+    /// </summary>
+    [Theory]
+    [InlineData("post")]
+    [InlineData("put")]
+    public async Task Source_properties_are_stored_as_CLR_values_not_JsonElements(string verb)
+    {
+        using var host = await TestApp.StartAsync(AddSourceRegistryHost);
+        var client = host.GetTestClient();
+
+        var body = new
+        {
+            name = "sales-db",
+            type = "fake",
+            properties = new Dictionary<string, object?>
+            {
+                ["connectionString"] = "Server=localhost;Database=sales",
+                ["commandTimeout"] = 30,
+                ["pooling"] = true,
+            },
+        };
+
+        if (verb == "put")
+        {
+            // PUT updates in place and 404s on an unknown name, so the source has to exist first.
+            (await client.PostAsJsonAsync("/api/sources", new { name = "sales-db", type = "fake" }, Json))
+                .IsSuccessStatusCode.ShouldBeTrue();
+        }
+
+        HttpResponseMessage response = verb == "post"
+            ? await client.PostAsJsonAsync("/api/sources", body, Json)
+            : await client.PutAsJsonAsync("/api/sources/sales-db", body, Json);
+        response.IsSuccessStatusCode.ShouldBeTrue(await response.Content.ReadAsStringAsync());
+
+        var registry = host.Services.GetRequiredService<ISourceRegistry>();
+        SourceDefinition stored = (await registry.GetAsync("sales-db", CancellationToken.None)).ShouldNotBeNull();
+        IReadOnlyDictionary<string, object?> properties = stored.Properties.ShouldNotBeNull();
+
+        properties["connectionString"].ShouldBeOfType<string>().ShouldBe("Server=localhost;Database=sales");
+        properties["commandTimeout"].ShouldBeOfType<long>().ShouldBe(30L);
+        properties["pooling"].ShouldBeOfType<bool>().ShouldBeTrue();
+    }
+
     [Fact]
     public async Task List_returns_an_empty_array_when_no_registry_is_configured()
     {

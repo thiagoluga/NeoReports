@@ -54,7 +54,7 @@ public class DynamicReportEndpointsTests : IDisposable
             services.AddSingleton<IConfigSourceProvider>(new FakeConfigSourceProvider(
                 new[] { new object?[] { 1L, "Acme" }, new object?[] { 2L, "Globex" } }));
             services.AddSingleton<IWriterFactory>(new CsvWriterFactory(new CsvOptions()));
-        }, testName);
+        }, testName: testName);
 
     private static async Task<HttpResponseMessage> PostJsonAsync(HttpClient client, string url, string json)
     {

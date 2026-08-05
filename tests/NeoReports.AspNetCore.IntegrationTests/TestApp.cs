@@ -83,7 +83,15 @@ public sealed class CountingInMemorySource : IBatchSource<Sale>, NeoReports.Core
 /// <summary>Builds a TestServer host wired with NeoReports endpoints, in-memory jobs, and artifacts.</summary>
 public static class TestApp
 {
-    public static async Task<IHost> StartAsync(Action<IServiceCollection>? configureReports = null, [CallerMemberName] string testName = "")
+    /// <summary>Starts a test host with the NeoReports endpoints mapped.</summary>
+    /// <param name="configureReports">Replaces the default report registration.</param>
+    /// <param name="prefix">Prefix to map the endpoints under, so a test can prove the API does not
+    /// assume the default one.</param>
+    /// <param name="testName">Supplied by the compiler; scopes the artifacts directory.</param>
+    public static async Task<IHost> StartAsync(
+        Action<IServiceCollection>? configureReports = null,
+        string prefix = "/api",
+        [CallerMemberName] string testName = "")
     {
         var artifactsRoot = Path.Combine(Path.GetTempPath(), "nr-api-tests", testName + "-" + Guid.NewGuid().ToString("N"));
 
@@ -115,7 +123,7 @@ public static class TestApp
                 web.Configure(app =>
                 {
                     app.UseRouting();
-                    app.UseEndpoints(e => e.MapNeoReports("/api"));
+                    app.UseEndpoints(e => e.MapNeoReports(prefix));
                 });
             })
             .StartAsync();
