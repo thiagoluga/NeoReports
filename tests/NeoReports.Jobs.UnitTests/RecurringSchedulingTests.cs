@@ -121,4 +121,52 @@ public class RecurringSchedulingTests
         await scheduler.RegisterRecurringAsync("sales", "* * * * *", CancellationToken.None);
         (await scheduler.ListRegisteredNamesAsync(CancellationToken.None)).ShouldBe(new[] { "sales" });
     }
+
+    /// <summary>
+    /// Registering is remove-then-add, which a <c>ConcurrentDictionary</c> cannot make atomic, so it
+    /// is now serialized by a lock. This hammers that path from many threads: it guards the risk the
+    /// lock itself introduces (a deadlock, or a corrupted final state) and pins that concurrent
+    /// registration converges on exactly one live registration.
+    /// <para>
+    /// It cannot observe the leak the lock fixes — the loser's loop keeps running untracked, and
+    /// nothing public exposes it. Making that assertable needs a clock abstraction so the real-time
+    /// loop can be driven deterministically; see the PR for why that is a separate change.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Concurrent_registrations_for_one_report_converge_on_a_single_registration()
+    {
+        await using var provider = BuildProvider();
+        var scheduler = provider.GetRequiredService<IRecurringReportScheduler>();
+
+        await Task.WhenAll(Enumerable.Range(0, 32).Select(i => Task.Run(() =>
+            scheduler.RegisterRecurringAsync("sales", i % 2 == 0 ? "* * * * *" : "*/5 * * * *", CancellationToken.None))));
+
+        (await scheduler.ListRegisteredNamesAsync(CancellationToken.None)).ShouldBe(new[] { "sales" });
+
+        // Removal must still work afterwards — a lock held by a faulted registration would show up
+        // here as a hang rather than a failure, which the test framework's own timeout catches.
+        await scheduler.RemoveRecurringAsync("sales", CancellationToken.None);
+        (await scheduler.ListRegisteredNamesAsync(CancellationToken.None)).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Interleaved_registration_and_removal_leave_a_consistent_state()
+    {
+        await using var provider = BuildProvider();
+        var scheduler = provider.GetRequiredService<IRecurringReportScheduler>();
+
+        await Task.WhenAll(Enumerable.Range(0, 32).Select(i => Task.Run(async () =>
+        {
+            if (i % 2 == 0)
+                await scheduler.RegisterRecurringAsync("sales", "* * * * *", CancellationToken.None);
+            else
+                await scheduler.RemoveRecurringAsync("sales", CancellationToken.None);
+        })));
+
+        // Either outcome is legitimate depending on who ran last; what must not happen is a torn
+        // state, an exception, or a hang.
+        IReadOnlyList<string> names = await scheduler.ListRegisteredNamesAsync(CancellationToken.None);
+        names.Count.ShouldBeLessThanOrEqualTo(1);
+    }
 }

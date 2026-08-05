@@ -174,13 +174,19 @@ need a decision.
   the whole dataset each time and flapping the stored status Failed→Running→Failed. Output integrity
   holds (temp-dir staging is idempotent), but it contradicts the "a job is atomic, one attempt"
   model (rule 6). Decide whether NeoReports should pin `Attempts = 0` or leave retries to the host.
-- **`InMemoryJobScheduler.RegisterRecurringAsync` remove-then-add isn't atomic (deferred — narrow).**
-  Two concurrent registrations for one report can both start a loop; the loser is overwritten in the
-  dictionary without its CTS being cancelled, so it keeps firing untracked for the process lifetime.
-  Reachable only by racing two schedule updates (or one against startup reconciliation); the Hangfire
-  path is safe (`AddOrUpdate` is idempotent). A lock around register/remove would fix it.
-- **The in-memory recurring loop has no catch-all (deferred — narrow).** Any non-cancellation throw
-  faults the fire-and-forget loop and the schedule silently stops for the process lifetime, unlogged.
+- ~~**`InMemoryJobScheduler.RegisterRecurringAsync` remove-then-add isn't atomic.**~~ **FIXED** —
+  register and remove are now serialized by a lock (both are synchronous and never await, so a plain
+  lock is the right tool). Original description: Two concurrent registrations for one report can both
+  start a loop; the loser is overwritten in the dictionary without its CTS being cancelled, so it
+  keeps firing untracked for the process lifetime.
+- ~~**The in-memory recurring loop has no catch-all.**~~ **FIXED** — an unexpected failure is now
+  logged and the loop computes the next occurrence as usual, with a 30s back-off so a persistent
+  failure cannot spin hot. Original description: Any non-cancellation throw faults the fire-and-forget
+  loop and the schedule silently stops for the process lifetime, unlogged.
+  **Note on coverage:** the loop is real-time and fire-and-forget (Cronos granularity is one minute),
+  so the recovery path has no automated test — a CI test that waits a wall-clock minute would be worse
+  than none. The new tests cover the risk the lock introduces instead. Driving this loop
+  deterministically needs a clock abstraction (`TimeProvider`), which is a separate change.
 - **`CompletedPartial` surfaces as a `Completed` job (by design, flagged).** A run that skipped
   batches maps to `ReportJobStatus.Completed`; the skip is visible only in `Stats.SkippedBatches`.
   There is no `Partial` job status. Worth confirming this is still the intent, since silent partial
