@@ -77,8 +77,8 @@ public class GenerateReportTests
         // The run is asynchronous. Let it finish before opening the Jobs screen: that page loads its
         // list once on init, so navigating straight after the click would render an empty list and the
         // assertion below would be timing, not behaviour.
-        using var client = new HttpClient();
-        JobDto job = await WaitForCompletedJobAsync(client, name);
+        using var api = new ReportApi(_fixture.App);
+        ReportApi.Job job = await api.WaitForReportCompletionAsync(name);
 
         await using var jobs = await UiPage.OpenAsync(_fixture, "/jobs");
         await jobs.WaitForTextAsync(name);
@@ -91,9 +91,7 @@ public class GenerateReportTests
 
         await jobs.AssertNoCircuitErrorAsync();
 
-        byte[] artifact = await client.GetByteArrayAsync(
-            $"{_fixture.App.BaseUrl}/api/jobs/{job.Id}/download");
-        artifact.Length.ShouldBeGreaterThan(0);
+        (await api.DownloadAsync(job.Id)).Length.ShouldBeGreaterThan(0);
     }
 
     [SkippableFact]
@@ -128,31 +126,11 @@ public class GenerateReportTests
         await using var ui = await UiPage.OpenAsync(_fixture, "/reports");
         await RunFromReportsPageAsync(ui, name);
 
-        using var client = new HttpClient();
-        JobDto job = await WaitForCompletedJobAsync(client, name);
+        using var api = new ReportApi(_fixture.App);
+        ReportApi.Job job = await api.WaitForReportCompletionAsync(name);
 
-        var artifacts = await client.GetFromJsonAsync<List<ArtifactDto>>(
-            $"{_fixture.App.BaseUrl}/api/jobs/{job.Id}/artifacts");
-        artifacts!.Select(a => Path.GetExtension(a.FileName)).ShouldBe(new[] { ".csv", ".xlsx" }, ignoreOrder: true);
+        (await api.ArtifactsAsync(job.Id)).Select(a => Path.GetExtension(a.FileName))
+            .ShouldBe(new[] { ".csv", ".xlsx" }, ignoreOrder: true);
     }
 
-    private async Task<JobDto> WaitForCompletedJobAsync(HttpClient client, string reportName)
-    {
-        for (var attempt = 0; attempt < 60; attempt++)
-        {
-            var jobs = await client.GetFromJsonAsync<List<JobDto>>(_fixture.App.BaseUrl + "/api/jobs?limit=50");
-            JobDto? job = jobs!.FirstOrDefault(j => j.ReportName == reportName);
-            if (job is { Status: "Completed" })
-                return job;
-            if (job is { Status: "Failed" })
-                throw new Xunit.Sdk.XunitException($"Report '{reportName}' failed: {job.Error}");
-            await Task.Delay(500);
-        }
-
-        throw new Xunit.Sdk.XunitException($"Report '{reportName}' did not complete within 30s.");
-    }
-
-    private sealed record JobDto(string Id, string ReportName, string Status, string? Error);
-
-    private sealed record ArtifactDto(string FileName);
 }

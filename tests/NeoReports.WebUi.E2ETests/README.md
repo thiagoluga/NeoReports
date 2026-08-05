@@ -46,14 +46,23 @@ suite while the build stayed green. Same stance, same reasoning, as `tests/Share
   screen shows it in that report's own row, and the artifact endpoint serves non-empty bytes.
 - **Multi-format delivery** — a report declaring `csv` + `xlsx` produces both artifacts.
 - **Report detail** — clicking through shows the declared columns.
-- **Builder wizard** — the source picker is populated from the live engine, steps advance, and state
+- **Builder wizard, end to end** — a report is **created through the wizard itself** (source → name and
+  columns → formats → destination → Save), then verified against the engine's API and *run*, producing
+  a downloadable file. Also: the source picker is populated from the live engine, and wizard state
   survives Back navigation (the D69 regression, exercised over a real circuit).
+- **Report shapes** — each asserting the bytes that came out, not just that the job completed:
+  every column type round-trips into the CSV; a 250-row report at 10 rows per page delivers all 250
+  with no duplicates (25 real batches through the pagination loop); a zero-row report still yields a
+  well-formed header-only file; an `.xlsx` opens as a valid package with a worksheet part; a report
+  with no destination still produces a downloadable artifact; and a `csv`+`xlsx` report downloads as a
+  zip whose two files agree on the row count.
 
 Every test asserts Blazor's error overlay is **not** showing: a faulted circuit still returns HTTP 200
 for the shell, so without that check a broken screen looks green.
 
-## Known gap
+## Scope note
 
-The wizard is driven up to the Configure step; saving a brand-new report *through the wizard* (rather
-than through the API) is not covered yet — each remaining step needs source-specific input. Report
-creation itself is covered by the API-seeded flows above.
+Scenarios that only need a particular *report shape* register it through the engine's API and then
+assert the delivered bytes — the UI is not the thing under test there, and driving the wizard five
+steps deep for each shape would trade real coverage for a slower, more brittle suite. The wizard
+itself has its own end-to-end test that creates and saves a report entirely through the browser.
