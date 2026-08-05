@@ -32,7 +32,12 @@ internal static class XlsxCells
         byte or sbyte or short or ushort or int or uint or long or ulong or float or double or decimal =>
             NumericCell(value, reference, numberStyleIndex),
         DateTime dt => DateCell(dt, reference, dateStyleIndex),
-        DateTimeOffset dto => DateCell(dto.DateTime, reference, dateStyleIndex),
+        // UtcDateTime, not DateTime: the latter is the wall-clock part with the offset thrown away, so
+        // a value carrying a non-zero offset was written as an INSTANT that is wrong by that offset —
+        // and the CSV writer, which formats via Convert.ToString, keeps the offset, so the same report
+        // exported both ways disagreed by up to 14 hours. The cell model has no time zone either way;
+        // storing the UTC instant is the reading that is at least correct (ADR D77).
+        DateTimeOffset dto => DateCell(dto.UtcDateTime, reference, dateStyleIndex),
         DateOnly d => DateCell(d.ToDateTime(TimeOnly.MinValue), reference, dateStyleIndex),
         // Excel has no dedicated time-of-day type separate from a styled number; emit an invariant
         // round-trippable string so the value doesn't shift with the server's culture.
@@ -69,14 +74,52 @@ internal static class XlsxCells
         return new string(buffer[position..]);
     }
 
+    /// <summary>The largest integer an IEEE-754 double represents exactly (2^53).</summary>
+    private const long MaxExactInteger = 9_007_199_254_740_992L;
+
     private static Cell NumericCell(object value, string reference, int styleIndex)
     {
+        // Excel stores every number as an IEEE-754 double, so a value that does not fit exactly is
+        // silently rounded on the way in: a bigint key past 2^53, or a decimal past double's ~15-17
+        // significant digits. Writing such a value as text keeps its exact digits, at the cost of
+        // Excel's numeric sorting and formatting for that cell. That trade is only worth making when
+        // the number would otherwise be WRONG, which is why it is decided per value rather than per
+        // column — the overwhelmingly common case still gets a real number cell (ADR D77).
+        if (!IsExactAsDouble(value))
+            return InlineStringCell(Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty, reference);
+
         double number = Convert.ToDouble(value, CultureInfo.InvariantCulture);
         // NaN/Infinity have no valid number-cell representation — Excel rejects a <v> that isn't a
         // finite number and refuses to open the sheet — so emit them as text to keep the file usable.
         return double.IsFinite(number)
             ? NumberCell(number, reference, styleIndex)
             : InlineStringCell(number.ToString(CultureInfo.InvariantCulture), reference);
+    }
+
+    /// <summary>Whether <paramref name="value"/> survives a round trip through <see cref="double"/>.</summary>
+    private static bool IsExactAsDouble(object value) => value switch
+    {
+        // Compared against the bound rather than via Math.Abs: Math.Abs(long.MinValue) overflows,
+        // and long.MinValue is exactly the kind of value this check exists to catch.
+        long l => l is >= -MaxExactInteger and <= MaxExactInteger,
+        ulong u => u <= MaxExactInteger,
+        decimal d => IsDecimalExactAsDouble(d),
+        // Every remaining numeric type is narrower than 2^53, or is already a float/double.
+        _ => true,
+    };
+
+    private static bool IsDecimalExactAsDouble(decimal value)
+    {
+        try
+        {
+            return (decimal)(double)value == value;
+        }
+        catch (OverflowException)
+        {
+            // Near decimal.MaxValue the double can round above the decimal range, so the comparison
+            // itself throws. A value that cannot even be compared certainly is not exact.
+            return false;
+        }
     }
 
     private static Cell NumberCell(double value, string reference, int styleIndex)

@@ -34,6 +34,97 @@ public class XlsxWriterTests
         return new XLWorkbook(stream);
     }
 
+    private static ReportSchema OneColumn(string name, ColumnType type) =>
+        new(new[] { new ReportColumn(name, type, DisplayName: name) });
+
+    [Fact]
+    public async Task A_DateTimeOffset_is_written_as_its_UTC_instant()
+    {
+        // dto.DateTime is the wall-clock part with the offset discarded, so this value used to be
+        // written as 08:00 — three hours off as an instant, while the CSV writer kept the offset.
+        // The cell model has no time zone; storing the UTC instant is the reading that is correct.
+        var value = new DateTimeOffset(2026, 3, 14, 8, 30, 0, TimeSpan.FromHours(-3));
+
+        using XLWorkbook workbook = await WriteAndReopen(
+            new XlsxOptions(), OneColumn("At", ColumnType.DateTime), new object?[][] { new object?[] { value } });
+
+        DateTime written = workbook.Worksheet(1).Cell(2, 1).GetDateTime();
+        written.ShouldBe(value.UtcDateTime);
+        written.Hour.ShouldBe(11, "08:30-03:00 is 11:30 UTC");
+    }
+
+    [Fact]
+    public async Task A_bigint_beyond_double_precision_keeps_its_exact_digits()
+    {
+        // 2^53 + 1 is the first integer a double cannot represent: it rounds to 2^53, so an id like
+        // this came out of Excel as a DIFFERENT id. Written as text, the digits survive.
+        const long value = 9_007_199_254_740_993L;
+
+        using XLWorkbook workbook = await WriteAndReopen(
+            new XlsxOptions(), OneColumn("Id", ColumnType.Integer), new object?[][] { new object?[] { value } });
+
+        workbook.Worksheet(1).Cell(2, 1).GetString().ShouldBe("9007199254740993");
+    }
+
+    [Fact]
+    public async Task A_decimal_beyond_double_precision_keeps_its_exact_digits()
+    {
+        // 29 significant digits: double holds ~15-17, so this silently rounded.
+        const decimal value = 1.2345678901234567890123456789m;
+
+        using XLWorkbook workbook = await WriteAndReopen(
+            new XlsxOptions(), OneColumn("Amount", ColumnType.Decimal), new object?[][] { new object?[] { value } });
+
+        workbook.Worksheet(1).Cell(2, 1).GetString().ShouldBe("1.2345678901234567890123456789");
+    }
+
+    [Fact]
+    public async Task An_unsigned_bigint_beyond_double_precision_keeps_its_exact_digits()
+    {
+        // ulong has the same 2^53 ceiling as long but cannot reuse its bound check, so it is its own
+        // branch — and therefore its own test.
+        const ulong value = 9_007_199_254_740_993UL;
+
+        using XLWorkbook workbook = await WriteAndReopen(
+            new XlsxOptions(), OneColumn("Id", ColumnType.Integer), new object?[][] { new object?[] { value } });
+
+        workbook.Worksheet(1).Cell(2, 1).GetString().ShouldBe("9007199254740993");
+    }
+
+    [Fact]
+    public async Task A_decimal_whose_round_trip_check_itself_overflows_is_still_written()
+    {
+        // decimal.MaxValue converts to a double that rounds ABOVE the decimal range, so converting
+        // back throws OverflowException — the losslessness check has to survive being asked about the
+        // largest decimal there is, rather than taking the writer down with it.
+        const decimal value = decimal.MaxValue;
+
+        using XLWorkbook workbook = await WriteAndReopen(
+            new XlsxOptions(), OneColumn("Amount", ColumnType.Decimal), new object?[][] { new object?[] { value } });
+
+        workbook.Worksheet(1).Cell(2, 1).GetString().ShouldBe("79228162514264337593543950335");
+    }
+
+    [Theory]
+    [InlineData(long.MaxValue, false)]
+    [InlineData(long.MinValue, false)]
+    [InlineData(9_007_199_254_740_992L, true)]
+    [InlineData(-9_007_199_254_740_992L, true)]
+    [InlineData(42L, true)]
+    public async Task Only_values_that_would_round_fall_back_to_text(long value, bool expectNumber)
+    {
+        // The fallback is per value, so ordinary numbers must keep a real number cell — otherwise
+        // every integer column would lose Excel's sorting and formatting for the sake of the rare one.
+        // long.MinValue is included because Math.Abs on it overflows, which is exactly the bound this
+        // check must not be written with.
+        using XLWorkbook workbook = await WriteAndReopen(
+            new XlsxOptions(), OneColumn("Id", ColumnType.Integer), new object?[][] { new object?[] { value } });
+
+        IXLCell cell = workbook.Worksheet(1).Cell(2, 1);
+        (cell.DataType == XLDataType.Number).ShouldBe(expectNumber);
+        cell.GetString().Replace(",", "").ShouldContain(value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
     [Fact]
     public async Task Writes_named_sheet_with_header_and_native_types()
     {

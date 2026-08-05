@@ -1324,3 +1324,48 @@ firing it releases still runs on the thread pool. Advancing the clock in one jum
 loop has reached its next wait, and the time is then consumed by nothing — the first draft of the
 failure test hung on exactly that. The tests advance in steps until the condition holds, with a
 ceiling, rather than jumping and hoping.
+
+## D77 — XLSX value fidelity: the UTC instant, and numbers that would round (2026-08-05)
+
+Two items §5 recorded as "representation tradeoffs, deferred". Re-reading the code showed the first
+is not a tradeoff at all, and the second only is for the values it actually affects. Both live in
+`XlsxCells`, shared by the MIT writer and the Pro workbook writer, so one fix covers both.
+
+### `DateTimeOffset` was written as the wrong instant
+
+`DateCell(dto.DateTime, …)` takes the wall-clock part and **discards the offset**, so
+`2026-03-14T08:30:00-03:00` was written as `08:30`. Read back as a plain timestamp that is not "the
+offset was lost" — it is an instant three hours wrong. Worse, the **CSV writer keeps the offset**
+(it formats through `Convert.ToString`), so the same report exported both ways disagreed by up to
+14 hours.
+
+Now `dto.UtcDateTime`. The cell model still has no time zone, but the value it holds is at least
+correct, and the two writers now agree on the instant.
+
+### Numbers are checked per value, not assumed
+
+Everything numeric went through `Convert.ToDouble`, so a `long` past 2^53 (a bigint key) or a
+`decimal` past double's ~15–17 significant digits was **silently rounded** — an id that came out of
+Excel as a different id.
+
+The framing in §5 was "exact value requires text, which loses Excel's numeric sorting/formatting —
+a product decision". True, but only for the values that would actually round. Losslessness is
+decidable at write time, so the fallback is now per value: a real number cell whenever the double
+holds the value exactly (the overwhelmingly common case, Excel semantics intact), text only when it
+would otherwise be wrong.
+
+Two bounds worth stating because they are easy to get wrong: the `long` check compares against
+±2^53 rather than using `Math.Abs`, which **overflows on `long.MinValue`** — precisely a value this
+check exists to catch — and the `decimal` round-trip is wrapped, because near `decimal.MaxValue` the
+intermediate double can round above the decimal range and the comparison itself throws.
+
+### Considered and dropped
+
+A one-time warning when a value falls back to text. `XlsxCells` is a static helper called per cell;
+threading a logger through it for a diagnostic costs more than it returns, and the written value is
+correct either way. Recorded here rather than silently skipped.
+
+### Still deferred
+
+Pre-1900 dates remain unrepresentable: `DateTime.ToOADate` cannot express them, and that is inherent
+to the OADate serial Excel uses, not something this layer can decide around.
