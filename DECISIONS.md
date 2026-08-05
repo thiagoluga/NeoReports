@@ -1410,3 +1410,32 @@ done since #240. An `OperationCanceledException` carrying someone else's token �
 timeout, most commonly — remains a genuine transport failure and is still reported as one. Filtering
 on our token rather than rethrowing every OCE is also what leaves the runner's multi-destination loop
 free to carry on collecting per-destination results.
+
+## D79 — `SkipBatchAndLog` is refused with more than one output (2026-08-05)
+
+§5 recorded that multi-output batch writes are not atomic and that this contradicts D11. The runner
+writes each batch to every output in a sequential loop with no per-batch buffer, so when output *k*
+throws, output *k-1* has already appended: a batch the strategy calls "skipped" is **physically
+present in one delivered file and missing from another**, and the run's own stats match neither.
+
+§5 proposed "buffer each batch per output, commit all-or-nothing". That cannot be built generally.
+Rolling back an appended batch means truncating the output stream to a recorded offset — fine for
+CSV, impossible for the XLSX/OpenXML writer, which is a zip package being assembled. A fix that works
+for one writer family and silently does not for another is worse than no fix.
+
+**Decision: refuse the combination.** `SkipBatchAndLog` with more than one output throws
+`ConfigurationException` at `Build()`. Skipping stays available with a single output, where there is
+nothing to disagree with, and multi-output stays available with `AbortReport`. D11's batch-atomicity
+promise is kept by never entering the state that would break it.
+
+### A guard I wrote and then deleted
+
+The first cut had two layers: this one, plus a runtime check in `ReportRunner` for a custom
+`IFailureStrategy` or the dynamic config path. Auditing reachability before shipping showed the
+runtime layer is **dead code**: `CompiledReport`'s constructor is `internal`, so the only way to get
+one is `ReportBuilder.Build()`, and the config compiler goes through that same builder. There is no
+injection point for a custom strategy today.
+
+Deleted rather than kept "for the future" — an unreachable guard is indistinguishable from a working
+one until the day it is needed, and P7c already cost this repo a fully-built, fully-tested
+`ISourceRowCounter` that nothing could reach.

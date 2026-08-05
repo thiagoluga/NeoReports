@@ -65,6 +65,55 @@ public class ResilienceTests
     }
 
     [Fact]
+    public void Skip_with_more_than_one_output_is_refused_at_build_time()
+    {
+        // Batches are written to each output in sequence with no per-batch buffer, so a "skipped"
+        // batch is physically present in whichever output was written before the failure and absent
+        // from the rest — the delivered files disagree, and the stats match neither. D11 promises
+        // batch atomicity and there is no way to keep it: an XLSX/OpenXML stream cannot be truncated
+        // back to a recorded offset the way a CSV can. So the combination is refused (D79).
+        var builder = new ReportBuilder<Sale>("r")
+            .From(new FakeBatchSource<Sale>(new[] { Page(1) }))
+            .WithPageSize(10)
+            .Column(v => v.Id, "Id")
+            .To(new OutputSpec(new FakeWriterFactory("csv", "csv")))
+            .To(new OutputSpec(new FakeWriterFactory("xlsx", "xlsx")))
+            .OnFailure(f => f.SkipBatchAndLog());
+
+        ConfigurationException ex = Should.Throw<ConfigurationException>(() => builder.Build());
+        ex.Message.ShouldContain("SkipBatchAndLog");
+    }
+
+    [Fact]
+    public void Skip_with_a_single_output_is_still_allowed()
+    {
+        // The guard must not outlaw skipping outright — one output has nothing to disagree with.
+        var builder = new ReportBuilder<Sale>("r")
+            .From(new FakeBatchSource<Sale>(new[] { Page(1) }))
+            .WithPageSize(10)
+            .Column(v => v.Id, "Id")
+            .To(new OutputSpec(new FakeWriterFactory()))
+            .OnFailure(f => f.SkipBatchAndLog());
+
+        Should.NotThrow(() => builder.Build());
+    }
+
+    [Fact]
+    public void Abort_with_several_outputs_is_unaffected()
+    {
+        // Multi-output is perfectly fine as long as nothing skips.
+        var builder = new ReportBuilder<Sale>("r")
+            .From(new FakeBatchSource<Sale>(new[] { Page(1) }))
+            .WithPageSize(10)
+            .Column(v => v.Id, "Id")
+            .To(new OutputSpec(new FakeWriterFactory("csv", "csv")))
+            .To(new OutputSpec(new FakeWriterFactory("xlsx", "xlsx")))
+            .OnFailure(f => f.AbortReport());
+
+        Should.NotThrow(() => builder.Build());
+    }
+
+    [Fact]
     public async Task FailureRate_does_not_abort_on_an_early_failure()
     {
         // Both counters are incremented before the ratio is computed, so a first-batch failure always
