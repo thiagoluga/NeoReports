@@ -208,19 +208,25 @@ rather than decided:
   `timed_out: true` / `_shards.failed > 0` and fewer hits; neither field is inspected, so the report
   silently ends early as `Completed`. GraphQL already fails loudly on 200-with-`errors`; the ES
   equivalent would be consistent, but it turns today's silent success into a hard failure.
-- **HTTP `Cursor` strategy has no non-advancing-cursor guard.** If an API echoes the requested cursor
+- ~~**HTTP `Cursor` strategy has no non-advancing-cursor guard.**~~ **FIXED** — an unchanged token
+  now throws with a message naming the configured cursor path, matching GraphQL (D63) and
+  Elasticsearch. Original description: If an API echoes the requested cursor
   on the last page (Facebook Graph's `paging.cursors.after`, among others), `hasMore` stays true with
-  an identical token → the same request repeats **forever**. GraphQL (D63) and Elasticsearch both
-  guard this explicitly; the generic HTTP source — the most exposed, since the cursor path is
-  author-configured — does not.
-- **`Link`-header parsing breaks on a comma inside the URL.** `HttpBatchSource` splits the header on
+  an identical token → the same request repeats **forever**.
+- ~~**`Link`-header parsing breaks on a comma inside the URL.**~~ **FIXED** — the header is now split
+  by a scanner that tracks `<...>` and quoted strings, so a comma inside either no longer ends the
+  link-value. Original description: `HttpBatchSource` splits the header on
   `,` unconditionally, but RFC 8288 permits commas in the target URI and in quoted parameters. A base
   URL like `?fields=id,name` echoed into the next-page link makes `rel="next"` unparseable → paging
   stops silently after page 1.
-- **A relative next-page URL throws.** Both `HttpBatchSource` and `ODataBatchSource` call
-  `new Uri(nextUrl)` (absolute-only) on a server-supplied link; RFC 8288 and OData both permit a
-  relative one. Fails loudly (`UriFormatException`, opaque message) rather than silently. Salesforce
-  is the only package that resolves this correctly.
+- ~~**A relative next-page URL throws.**~~ **FIXED** — a shared `HttpNextPage.Resolve` (Http.Common)
+  performs RFC 3986 resolution against the URL the response came from, and both sources store the
+  resolved `AbsoluteUri` in the cursor, so the same-origin guard still inspects the real target. Note
+  this is deliberately *not* the concatenation `HttpHealthProbe` needs: a health path is a sub-path to
+  append, a next-page link is a URI reference to resolve — the same-looking call with a different
+  contract, which is why the two must not be unified. Original description: Both `HttpBatchSource` and
+  `ODataBatchSource` call `new Uri(nextUrl)` (absolute-only) on a server-supplied link; RFC 8288 and
+  OData both permit a relative one.
 - ~~**`HttpHealthProbe.CombineUrl` still has the relative-`Uri` bug — the 5th sighting of this class.**~~
   **FIXED** — the shared helper now concatenates under the base path (absolute `http(s)` paths still
   used as given), matching the four leaf packages; covered by `HttpHealthProbeUrlTests`, verified to
@@ -231,9 +237,13 @@ rather than decided:
   and `HttpSourceHealthCheck` + `ODataSourceHealthCheck` still call it: a health check can probe the
   wrong URL and report a healthy source unhealthy (or vice-versa). **Fixing the shared helper by
   concatenation, as the four leaf packages already do, is the cheapest win in this list.**
-- **Google Sheets: three data-fidelity bugs.** (a) is **FIXED** — header cells are now decoded exactly
-  like data cells, so a numeric/boolean header indexes its column (covered by a test verified to fail
-  against the old code). (b) and (c) remain. Original description: (a) header cells that aren't JSON strings are dropped,
+- ~~**Google Sheets: three data-fidelity bugs.**~~ **ALL THREE FIXED.** (a) header cells are decoded
+  exactly like data cells, so a numeric/boolean header indexes its column. (b) a header row that names
+  no columns now throws instead of yielding N rows of type defaults reported as success. (c) an
+  interior blank row (`[]`) is no longer materialized as a phantom record — and, importantly,
+  `hasMore` was moved onto *rows the API returned* rather than records kept, so dropping them narrows
+  D66's blank-run gap instead of widening it (a window of only blank rows would otherwise have looked
+  like exhaustion). Original description: (a) header cells that aren't JSON strings are dropped,
   so a year-numbered column (`2024`) never binds and every row's value for it is null/zero — the
   requests use `UNFORMATTED_VALUE`, which returns numeric headers as JSON numbers, while the data path
   already decodes all kinds; (b) a header range that comes back without `values` caches an **empty**

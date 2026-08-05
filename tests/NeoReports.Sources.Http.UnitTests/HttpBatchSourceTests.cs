@@ -195,6 +195,103 @@ public sealed class HttpBatchSourceTests
     }
 
     [Fact]
+    public async Task LinkHeader_strategy_survives_a_comma_inside_the_target_url()
+    {
+        // RFC 8288 allows a comma inside the target URI, and a base URL carrying a list parameter
+        // (?fields=id,name) is echoed straight into the next-page link. Splitting the header on every
+        // comma left two fragments that parse as neither a URI nor a rel parameter, so paging stopped
+        // silently after page 1 and the report completed with a third of its rows.
+        var call = 0;
+        HttpClient client = StubHttpMessageHandler.CreateClient(_ =>
+        {
+            call++;
+            HttpResponseMessage response = call switch
+            {
+                1 => JsonResponse("""{"items":[{"id":1,"name":"A"}]}"""),
+                2 => JsonResponse("""{"items":[{"id":2,"name":"B"}]}"""),
+                _ => JsonResponse("""{"items":[{"id":3,"name":"C"}]}"""),
+            };
+
+            if (call < 3)
+            {
+                response.Headers.TryAddWithoutValidation(
+                    "Link",
+                    $"<http://api.test/items?fields=id,name&page={call + 1}>; rel=\"next\", " +
+                    "<http://api.test/items?fields=id,name&page=1>; rel=\"first\"");
+            }
+
+            return response;
+        }, out StubHttpMessageHandler handler);
+
+        var source = Source.Http("http://api.test/items", client)
+            .Paginate(HttpPaginationStrategy.LinkHeader)
+            .RecordsAt("items")
+            .As<Item>();
+
+        List<Item> all = await CollectAsync(source, pageSize: 10);
+
+        all.Select(i => i.Id).ShouldBe(new long[] { 1, 2, 3 });
+        handler.Requests[1].RequestUri!.ToString().ShouldBe("http://api.test/items?fields=id,name&page=2");
+    }
+
+    [Fact]
+    public async Task LinkHeader_strategy_resolves_a_relative_next_url()
+    {
+        // RFC 8288 defines the target as a URI *reference*, so a relative one is conformant; feeding
+        // it to `new Uri(string)` (absolute-only) failed the run with an opaque UriFormatException.
+        var call = 0;
+        HttpClient client = StubHttpMessageHandler.CreateClient(_ =>
+        {
+            call++;
+            HttpResponseMessage response = call == 1
+                ? JsonResponse("""{"items":[{"id":1,"name":"A"}]}""")
+                : JsonResponse("""{"items":[{"id":2,"name":"B"}]}""");
+
+            if (call == 1)
+                response.Headers.Add("Link", "</v2/items?page=2>; rel=\"next\"");
+
+            return response;
+        }, out StubHttpMessageHandler handler);
+
+        var source = Source.Http("http://api.test/v2/items", client)
+            .Paginate(HttpPaginationStrategy.LinkHeader)
+            .RecordsAt("items")
+            .As<Item>();
+
+        List<Item> all = await CollectAsync(source, pageSize: 10);
+
+        all.Select(i => i.Id).ShouldBe(new long[] { 1, 2 });
+        handler.Requests[1].RequestUri!.ToString().ShouldBe("http://api.test/v2/items?page=2");
+    }
+
+    [Fact]
+    public async Task Cursor_strategy_fails_loudly_when_the_api_echoes_the_requested_cursor()
+    {
+        // Facebook Graph's paging.cursors.after does this on the last page. The runner's page loop is
+        // driven purely by HasMore and has no cap, so an unchanged token means the identical request
+        // repeats forever — a hang, not a failure. GraphQL (D63) and Elasticsearch already refuse it.
+        HttpClient client = StubHttpMessageHandler.CreateClient(
+            _ => JsonResponse("""{"items":[{"id":1,"name":"A"}],"nextCursor":"tok1"}"""),
+            out StubHttpMessageHandler _);
+
+        var source = Source.Http("http://api.test/items", client)
+            .Paginate(HttpPaginationStrategy.Cursor)
+            .RecordsAt("items")
+            .CursorField("nextCursor", "cursor")
+            .As<Item>();
+
+        // First page is fine — nothing has been requested yet, so "tok1" is genuinely new.
+        BatchResult<Item> first = await source.ReadBatchAsync(
+            new BatchContext(Exec(), 10, null, 1), CancellationToken.None);
+        first.HasMore.ShouldBeTrue();
+
+        // The second page comes back with the very token just sent, which is the loop.
+        HttpSourceException ex = await Should.ThrowAsync<HttpSourceException>(() =>
+            source.ReadBatchAsync(new BatchContext(Exec(), 10, first.NextCursor, 2), CancellationToken.None));
+        ex.Message.ShouldContain("unchanged");
+    }
+
+    [Fact]
     public async Task LinkHeader_strategy_refuses_to_send_credentials_to_a_different_host()
     {
         HttpClient client = StubHttpMessageHandler.CreateClient(request =>

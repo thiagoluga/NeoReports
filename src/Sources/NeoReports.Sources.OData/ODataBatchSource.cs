@@ -96,7 +96,7 @@ internal sealed class ODataBatchSource<T> : IBatchSource<T>, ISourceRowCounter
 
             return _options.PaginationStrategy switch
             {
-                ODataPaginationStrategy.NextLink => BuildNextLinkResult(records, root),
+                ODataPaginationStrategy.NextLink => BuildNextLinkResult(records, root, requestUri),
                 ODataPaginationStrategy.Skip => BuildSkipResult(records, state, context.PageSize),
                 _ => throw new InvalidOperationException($"Unsupported pagination strategy '{_options.PaginationStrategy}'."),
             };
@@ -133,7 +133,7 @@ internal sealed class ODataBatchSource<T> : IBatchSource<T>, ISourceRowCounter
         return queryParams.Count == 0 ? new Uri(_resourceUrl) : QueryStrings.AddQuery(_resourceUrl, queryParams.ToArray());
     }
 
-    private static BatchResult<T> BuildNextLinkResult(List<T> records, JsonElement responseRoot)
+    private static BatchResult<T> BuildNextLinkResult(List<T> records, JsonElement responseRoot, Uri requestUri)
     {
         // Read the property directly, not via JsonRecords.TryGetField's dotted-path traversal —
         // "@odata.nextLink" is one flat property name containing a literal '.', not a nested
@@ -145,8 +145,14 @@ internal sealed class ODataBatchSource<T> : IBatchSource<T>, ISourceRowCounter
                 ? text
                 : null;
 
-        bool hasMore = nextUrl is not null;
-        string? cursor = hasMore ? ODataPagination.Encode(new ODataCursorState(NextUrl: nextUrl)) : null;
+        // OData permits @odata.nextLink to be a relative URL; resolving it here keeps the cursor
+        // carrying an absolute one, which is what the same-origin check in ReadBatchAsync inspects.
+        // `new Uri(string)` in BuildRequestUri accepted absolute only, so a conformant relative link
+        // failed the run with an opaque UriFormatException.
+        string? absoluteNextUrl = nextUrl is null ? null : HttpNextPage.Resolve(nextUrl, requestUri).AbsoluteUri;
+
+        bool hasMore = absoluteNextUrl is not null;
+        string? cursor = hasMore ? ODataPagination.Encode(new ODataCursorState(NextUrl: absoluteNextUrl)) : null;
         return new BatchResult<T>(records, cursor, hasMore);
     }
 

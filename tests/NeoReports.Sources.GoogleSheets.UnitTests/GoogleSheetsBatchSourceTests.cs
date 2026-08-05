@@ -56,6 +56,73 @@ public sealed class GoogleSheetsBatchSourceTests
     private const string Header = """{"values":[["Name","Amount","Created"]]}""";
 
     [Fact]
+    public async Task A_blank_row_inside_the_range_is_not_materialized_as_a_phantom_record()
+    {
+        // The API returns an interior blank row as `[]`. Materializing it produced a record of type
+        // defaults that is indistinguishable downstream from a genuine row whose cells are all empty.
+        var call = 0;
+        HttpClient client = StubHttpMessageHandler.CreateClient(_ =>
+        {
+            call++;
+            return call switch
+            {
+                1 => JsonResponse($$"""{"valueRanges":[{{Header}},{"values":[["Ada",100,1],[],["Alan",200,2]]}]}"""),
+                2 => JsonResponse("""{"valueRanges":[{"values":[]}]}"""),
+                _ => throw new InvalidOperationException("Unexpected extra request."),
+            };
+        }, out StubHttpMessageHandler _);
+
+        var source = Source.GoogleSheets("sheet123", "Sheet1", "key123", client).Columns("A", "C").As<Person>();
+
+        List<Person> all = await CollectAsync(source, pageSize: 3);
+
+        all.Select(p => p.Name).ShouldBe(new[] { "Ada", "Alan" });
+    }
+
+    [Fact]
+    public async Task A_window_of_only_blank_rows_keeps_paging_rather_than_reporting_exhaustion()
+    {
+        // Pagination is decided by rows the API returned, not records kept — otherwise dropping the
+        // phantom rows above would make a run of blank rows look like the end of the sheet and
+        // silently truncate everything after it.
+        var call = 0;
+        HttpClient client = StubHttpMessageHandler.CreateClient(_ =>
+        {
+            call++;
+            return call switch
+            {
+                1 => JsonResponse($$"""{"valueRanges":[{{Header}},{"values":[["Ada",100,1],["Alan",200,2]]}]}"""),
+                2 => JsonResponse("""{"valueRanges":[{"values":[[],[]]}]}"""),
+                3 => JsonResponse("""{"valueRanges":[{"values":[["Grace",300,3],["Edsger",400,4]]}]}"""),
+                4 => JsonResponse("""{"valueRanges":[{"values":[]}]}"""),
+                _ => throw new InvalidOperationException("Unexpected extra request."),
+            };
+        }, out StubHttpMessageHandler _);
+
+        var source = Source.GoogleSheets("sheet123", "Sheet1", "key123", client).Columns("A", "C").As<Person>();
+
+        List<Person> all = await CollectAsync(source, pageSize: 2);
+
+        all.Select(p => p.Name).ShouldBe(new[] { "Ada", "Alan", "Grace", "Edsger" });
+    }
+
+    [Fact]
+    public async Task A_header_row_that_names_no_columns_fails_instead_of_reporting_empty_rows()
+    {
+        // A headerRow past the end of the sheet (or holding only blank cells) indexed nothing, so
+        // every row bound the type default and the run "succeeded" with N rows of empty values.
+        HttpClient client = StubHttpMessageHandler.CreateClient(
+            _ => JsonResponse("""{"valueRanges":[{},{"values":[["Ada",100,1]]}]}"""),
+            out StubHttpMessageHandler _);
+
+        var source = Source.GoogleSheets("sheet123", "Sheet1", "key123", client).Columns("A", "C").As<Person>();
+
+        HttpSourceException ex = await Should.ThrowAsync<HttpSourceException>(
+            () => ReadOnePageAsync(source, pageSize: 10));
+        ex.Message.ShouldContain("no column names");
+    }
+
+    [Fact]
     public async Task Paginates_via_fixed_window_until_an_empty_response()
     {
         // The header is fetched (and cached) only on page 1 — see D66's header-caching fix — so page

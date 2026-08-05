@@ -95,8 +95,8 @@ internal sealed class HttpBatchSource<T> : IBatchSource<T>
 
             return _options.PaginationStrategy switch
             {
-                HttpPaginationStrategy.LinkHeader => BuildLinkHeaderResult(records, response),
-                HttpPaginationStrategy.Cursor => BuildCursorResult(records, document.RootElement),
+                HttpPaginationStrategy.LinkHeader => BuildLinkHeaderResult(records, response, requestUri),
+                HttpPaginationStrategy.Cursor => BuildCursorResult(records, document.RootElement, state),
                 HttpPaginationStrategy.Page => BuildPageResult(records, state, context.PageSize),
                 HttpPaginationStrategy.Offset => BuildOffsetResult(records, state, context.PageSize),
                 _ => throw new InvalidOperationException($"Unsupported pagination strategy '{_options.PaginationStrategy}'."),
@@ -139,12 +139,63 @@ internal sealed class HttpBatchSource<T> : IBatchSource<T>
         }
     }
 
-    private static BatchResult<T> BuildLinkHeaderResult(List<T> records, HttpResponseMessage response)
+    private static BatchResult<T> BuildLinkHeaderResult(List<T> records, HttpResponseMessage response, Uri requestUri)
     {
         string? nextUrl = ParseLinkHeaderNext(response);
-        bool hasMore = nextUrl is not null;
-        string? cursor = hasMore ? HttpPagination.Encode(new HttpCursorState(NextUrl: nextUrl)) : null;
+
+        // Resolved here rather than at request time so the cursor keeps carrying an absolute URL, as
+        // HttpCursorState documents — and so the same-origin check in ReadBatchAsync still sees the
+        // real target. RFC 8288 permits a relative reference; `new Uri(string)` rejected one outright.
+        // AbsoluteUri, not ToString(): this string is parsed back into a Uri on the next page, and
+        // ToString() hands back a partially unescaped display form.
+        string? absoluteNextUrl = nextUrl is null
+            ? null
+            : HttpNextPage.Resolve(nextUrl, requestUri).AbsoluteUri;
+
+        bool hasMore = absoluteNextUrl is not null;
+        string? cursor = hasMore ? HttpPagination.Encode(new HttpCursorState(NextUrl: absoluteNextUrl)) : null;
         return new BatchResult<T>(records, cursor, hasMore);
+    }
+
+    /// <summary>
+    /// Splits a <c>Link</c> header into its link-values, honouring the two places RFC 8288 allows a
+    /// comma to appear inside one: within the <c>&lt;target-URI&gt;</c> and within a quoted parameter
+    /// value. A plain <c>Split(',')</c> mangles both — a base URL carrying <c>?fields=id,name</c> is
+    /// echoed into the next-page link, whose halves then parse as neither a URI nor a
+    /// <c>rel</c> parameter, so paging stopped silently after page 1.
+    /// </summary>
+    private static IEnumerable<string> SplitLinkValues(string headerValue)
+    {
+        var start = 0;
+        var inAngle = false;
+        var inQuotes = false;
+
+        for (var i = 0; i < headerValue.Length; i++)
+        {
+            char c = headerValue[i];
+
+            // A backslash escape is only meaningful inside a quoted-string (RFC 9110 quoted-pair);
+            // skipping the next char there keeps an escaped quote from ending the string early.
+            if (inQuotes && c == '\\')
+            {
+                i++;
+                continue;
+            }
+
+            if (c == '"')
+                inQuotes = !inQuotes;
+            else if (!inQuotes && c == '<')
+                inAngle = true;
+            else if (!inQuotes && c == '>')
+                inAngle = false;
+            else if (c == ',' && !inAngle && !inQuotes)
+            {
+                yield return headerValue[start..i];
+                start = i + 1;
+            }
+        }
+
+        yield return headerValue[start..];
     }
 
     private static string? ParseLinkHeaderNext(HttpResponseMessage response)
@@ -154,7 +205,7 @@ internal sealed class HttpBatchSource<T> : IBatchSource<T>
 
         foreach (string headerValue in values)
         {
-            foreach (string link in headerValue.Split(','))
+            foreach (string link in SplitLinkValues(headerValue))
             {
                 string[] parts = link.Split(';');
                 if (parts.Length < 2)
@@ -180,7 +231,7 @@ internal sealed class HttpBatchSource<T> : IBatchSource<T>
         return null;
     }
 
-    private BatchResult<T> BuildCursorResult(List<T> records, JsonElement responseRoot)
+    private BatchResult<T> BuildCursorResult(List<T> records, JsonElement responseRoot, HttpCursorState state)
     {
         string? token = null;
         if (JsonRecords.TryGetField(responseRoot, _options.CursorResponsePath, out JsonElement value))
@@ -194,6 +245,19 @@ internal sealed class HttpBatchSource<T> : IBatchSource<T>
                 JsonValueKind.Number => value.GetRawText(),
                 _ => null,
             };
+        }
+
+        // An API that echoes the requested cursor on its last page (Facebook Graph's
+        // paging.cursors.after does exactly this) leaves hasMore true with an identical token, so the
+        // very same request repeats forever — the runner's page loop is driven purely by HasMore and
+        // has no cap of its own. GraphQL (D63) and Elasticsearch already refuse this; the generic
+        // HTTP source is the most exposed of the three, since the cursor path is author-configured.
+        if (token is not null && string.Equals(token, state.Token, StringComparison.Ordinal))
+        {
+            throw new HttpSourceException(null, null,
+                $"The response's cursor at '{_options.CursorResponsePath}' is unchanged from the one just " +
+                "requested, so the next page would repeat this request forever. If this is the last page, " +
+                "the API should omit the cursor instead of echoing it.");
         }
 
         bool hasMore = token is not null;

@@ -86,24 +86,56 @@ internal sealed class GoogleSheetsBatchSource<T> : IBatchSource<T>
         }
 
         if (needsHeader)
-            _cachedHeaderIndex = BuildHeaderIndex(valueRanges[0]);
+        {
+            Dictionary<string, int> headerIndex = BuildHeaderIndex(valueRanges[0]);
+
+            // An empty index means the configured headerRow named no columns at all — a header range
+            // past the end of the sheet, or one holding only blank cells. Every subsequent row would
+            // then bind nothing and materialize as type defaults, so the run "succeeded" with N rows
+            // of empty values. That is a configuration mistake, not data, and reporting it as success
+            // is the worst of the available answers.
+            if (headerIndex.Count == 0)
+            {
+                throw new HttpSourceException(null, null,
+                    $"Row {_options.HeaderRowValue} of '{_sheet}' produced no column names, so no column could be " +
+                    "bound. Check the sheet name and the configured headerRow.");
+            }
+
+            _cachedHeaderIndex = headerIndex;
+        }
 
         JsonElement dataValueRange = needsHeader ? valueRanges[1] : valueRanges[0];
         IReadOnlyDictionary<string, int> ordinalByName = _cachedHeaderIndex!;
 
         var records = new List<T>(context.PageSize);
+        var rowsInWindow = 0;
         if (JsonRecords.TryGetField(dataValueRange, "values", out JsonElement dataRows) && dataRows.ValueKind == JsonValueKind.Array)
         {
             foreach (JsonElement row in dataRows.EnumerateArray())
-                records.Add(_materialize(ordinalByName, row.EnumerateArray().ToArray()));
+            {
+                rowsInWindow++;
+
+                // A blank row *inside* the range comes back as `[]`. Materializing that produced a
+                // phantom record of type defaults — indistinguishable, downstream, from a real row
+                // whose every cell happened to be empty. It is counted for pagination but not
+                // emitted: deriving hasMore from records.Count instead would make a window of blank
+                // rows look like exhaustion and truncate the report.
+                JsonElement[] cells = row.EnumerateArray().ToArray();
+                if (cells.Length == 0)
+                    continue;
+
+                records.Add(_materialize(ordinalByName, cells));
+            }
         }
 
         // Advances by the fixed page size regardless of how many rows this window actually returned
         // (blank trailing rows within a window are omitted by the API, so a short-but-non-empty
         // window does not mean "no more data") — only a window with zero rows means exhausted. See
         // D66's documented gap: a page-size-or-larger fully blank run in the middle of a sparse sheet
-        // is indistinguishable from genuine exhaustion and ends pagination early.
-        bool hasMore = records.Count > 0;
+        // is indistinguishable from genuine exhaustion and ends pagination early. Rows the API
+        // returned, not records kept, is what decides this — so skipping blank rows above narrows
+        // that gap rather than widening it.
+        bool hasMore = rowsInWindow > 0;
         string? cursor = hasMore ? GoogleSheetsPagination.Encode(new GoogleSheetsCursorState(state.Offset + context.PageSize)) : null;
         return new BatchResult<T>(records, cursor, hasMore);
     }
