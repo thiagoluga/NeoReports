@@ -33,6 +33,25 @@ public class EndpointsTests
     }
 
     [Fact]
+    public async Task The_202s_Location_points_at_the_prefix_the_endpoints_were_mapped_under()
+    {
+        using var host = await TestApp.StartAsync(prefix: "/v2");
+        var client = host.GetTestClient();
+
+        var run = await client.PostAsJsonAsync("/v2/reports/sales/run", new { parameters = (object?)null }, Json);
+        run.StatusCode.ShouldBe(HttpStatusCode.Accepted);
+
+        // The point of a Location is that a client can follow it. Asserting only the string would
+        // still pass on a header that is well-formed and wrong, which is what "/api" hardcoded under
+        // a "/v2" mapping was — a 404 for every caller that did follow it.
+        Uri location = run.Headers.Location.ShouldNotBeNull();
+        location.OriginalString.ShouldBe($"/v2/jobs/{(await run.Content.ReadFromJsonAsync<JsonElement>(Json)).GetProperty("jobId").GetString()}");
+
+        HttpResponseMessage followed = await client.GetAsync(location.OriginalString);
+        followed.StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
     public async Task Async_run_goes_queued_to_completed_and_downloads()
     {
         using var host = await TestApp.StartAsync();

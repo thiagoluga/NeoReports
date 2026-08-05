@@ -249,15 +249,20 @@ rather than decided:
   exceptions.**~~ **FIXED** (routes through `SchemaProblem` like its siblings). Original description: It catches only `ConfigurationException`, so a bad filter value surfaces the raw
   `SqlException`/`PostgresException` (host, port, database) as a 500 — its siblings all route through
   `SchemaProblem`. Should be a 400 (bad filter) or the scrubbed 502 the others return.
-- **API: schedule/preview write paths reach a name-validating store without the guard.** The
-  **preview** half is **FIXED** (a name no config store can hold is now treated as not-dynamic, so the
-  endpoint returns its intended 400). `SetScheduleAsync`/`ClearScheduleAsync` still 500 — original
-  description:
+- ~~**API: schedule/preview write paths reach a name-validating store without the guard.**~~
+  **FIXED** — the preview half first (a name no config store can hold is treated as not-dynamic, so
+  the endpoint returns its intended 400), and now `SetScheduleAsync`/`ClearScheduleAsync` too: both
+  answer **409 Conflict** naming the pattern, matching the "this host cannot do that" response
+  already next to them, instead of an `ArgumentException` 500. Original description:
   `SetScheduleAsync`, `ClearScheduleAsync` and `ReportPreviewRunner`'s config-store probe pass the
   report name straight through, so a legitimate **code-first** report whose name is outside
   `^[a-zA-Z][a-zA-Z0-9_-]{0,99}$` (e.g. `sales.daily`) gets a **500** from `ArgumentException`. The
   read paths already guard, which shows it is an oversight.
-- **API: `GET /jobs/{id}` returns raw destination-exception text** (server paths, S3 bucket + key, AWS
+- ~~**API: `GET /jobs/{id}` returns raw destination-exception text**~~ **FIXED** — the runner now
+  persists (and emits as the `UploadFailed` event) only the file name and destination type, keeping the
+  destination's own wording in the log. Scrubbing at the runner rather than in each destination is what
+  also covers third-party `IDestination` implementations. `GET /jobs/{id}/events` was a second route
+  out for the same string and is covered too. Original description: (server paths, S3 bucket + key, AWS
   error strings). The read- and write-failure paths in the same method scrub; the **upload** path does
   not — and the sync endpoint deliberately suppresses the very same string, so one route hides what
   the other returns verbatim.
@@ -267,20 +272,24 @@ rather than decided:
   `Outputs`, so a report with one plain and one sectioned output passes the guard, the runner writes
   two artifacts, and the caller silently receives **one** — which one decided by directory-enumeration
   order. The same undercount makes `GET /reports` under-report a sectioned report's formats.
-- **API: `Location`/`Content-Location` headers hardcode `/api`**, ignoring `MapNeoReports`'s
-  configurable prefix — under `MapNeoReports("/v2")` the 202's `Location` is a 404 for any client that
-  follows it.
+- ~~**API: `Location`/`Content-Location` headers hardcode `/api`**~~ **FIXED** — a group-level
+  endpoint filter puts the mapped prefix on the request, and the three `Created`/`Accepted` sites build
+  their URL from it. The test follows the returned `Location` under `MapNeoReports("/v2")` rather than
+  string-matching it, so a well-formed-but-wrong header still fails. Original description: ignoring
+  `MapNeoReports`'s configurable prefix — under `MapNeoReports("/v2")` the 202's `Location` is a 404
+  for any client that follows it.
 - **Array/object run parameters still diverge by backend.** Complex parameter values are documented
   out of scope for v1, but nothing rejects them: sync/in-memory hand the source a `JsonElement` (the
   very thing an ADO provider can't bind) while Hangfire hands it the raw JSON text. Either reject them
   at the boundary with a 400, or agree one representation — the current silence produces a driver
   error at read time.
-- **`POST/PUT /sources` property bags are not normalized.** `SourceRequest.Properties` is the same
+- ~~**`POST/PUT /sources` property bags are not normalized.**~~ **FIXED** — both handlers now run the
+  bag through the same normalizer the run endpoint uses (renamed `NormalizeJsonValues`, since it serves
+  two request shapes). Original description: `SourceRequest.Properties` is the same
   caller-supplied `object?` bag as run parameters. `FileSourceRegistryStore` launders it on write and
   read, but `InMemorySourceRegistryStore` stores it as-is — so with `AddInMemorySourceRegistry()` a
   source created over HTTP fails later with *"requires a non-empty 'connectionString' property"*
-  because the value is a `JsonElement`, not a `string`. Pre-existing; the same one-line normalization
-  the run endpoint now does would close it.
+  because the value is a `JsonElement`, not a `string`.
 
 Verified correct in the same pass (worth not re-auditing): artifact download path handling (no
 caller-supplied filename reaches disk; no zip-slip; `0600` temp), job-id handling, SQL-injection

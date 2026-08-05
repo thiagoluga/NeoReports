@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using NeoReports.Abstractions;
 using NeoReports.AspNetCore.DependencyInjection;
 using NeoReports.Core.Building;
+using NeoReports.Core.Configuration;
 using NeoReports.Core.DependencyInjection;
 using NeoReports.Core.Scheduling;
 using NeoReports.Formats.Csv;
@@ -43,6 +44,48 @@ public class ScheduleEndpointTests
             .To(Csv()));
         services.AddNeoReportsInMemoryJobs();
         services.AddInMemoryScheduling();
+    }
+
+    /// <summary>
+    /// A code-first report is under no naming constraint, so a dot is legal — but an override store
+    /// keys by name and only accepts <c>DynamicReportName.Pattern</c>. This is the combination that
+    /// used to reach the store unguarded.
+    /// </summary>
+    private static void AddCodeFirstReportWithAnUnstorableName(IServiceCollection services)
+    {
+        services.AddReport<Sale>("sales.daily", b => b
+            .From(new InMemorySource(rows: 10, pageSize: 10))
+            .Column(v => v.Id, "ID")
+            .To(Csv()));
+        services.AddNeoReportsInMemoryJobs();
+        services.AddInMemoryScheduling();
+    }
+
+    [Fact]
+    public async Task Setting_a_schedule_for_a_name_no_override_store_can_key_is_refused_not_a_500()
+    {
+        using var host = await TestApp.StartAsync(AddCodeFirstReportWithAnUnstorableName);
+        var client = host.GetTestClient();
+
+        HttpResponseMessage response = await client.PutAsJsonAsync(
+            "/api/reports/sales.daily/schedule", new { cron = "0 6 * * 1" }, Json);
+
+        // The report exists and the host has a scheduler; what cannot be done is persisting an
+        // override under this name. That is the resource's state, not a malformed request — and it
+        // must not be the ArgumentException-turned-500 it used to be.
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await response.Content.ReadAsStringAsync()).ShouldContain(DynamicReportName.Pattern);
+    }
+
+    [Fact]
+    public async Task Clearing_a_schedule_for_a_name_no_override_store_can_key_is_refused_not_a_500()
+    {
+        using var host = await TestApp.StartAsync(AddCodeFirstReportWithAnUnstorableName);
+        var client = host.GetTestClient();
+
+        HttpResponseMessage response = await client.DeleteAsync("/api/reports/sales.daily/schedule");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
     }
 
     [Fact]

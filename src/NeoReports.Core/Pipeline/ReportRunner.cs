@@ -468,13 +468,25 @@ public sealed class ReportRunner : IReportRunner
                             // the run fails and says which destination/file did not land, instead of
                             // completing green with the file still on the box (delivery-integrity).
                             uploadFailed = true;
-                            uploadError ??= $"Upload of '{finished.FileName}' to destination " +
-                                $"'{destSpec.Factory.Type}' failed: {uploadResult.ErrorMessage}";
+
+                            // The destination's own message is NOT persisted or emitted: it is built by
+                            // the destination and routinely embeds infrastructure detail — S3Destination
+                            // interpolates `s3://{bucket}/{key}` plus the AWS SDK's text, LocalDestination
+                            // an IOException carrying the full server path — and both `GET /jobs/{id}` and
+                            // `GET /jobs/{id}/events` return these verbatim to any API caller. The read
+                            // failure path above already reduces a non-NeoReports exception to its type
+                            // name for exactly this reason, and the sync endpoint suppresses this same
+                            // string. Scrubbing here (rather than in each destination) is what also covers
+                            // third-party IDestination implementations, whose messages we do not control.
+                            // The full reason stays in the log below, which is not caller-visible.
+                            string safeUploadError = $"Upload of '{finished.FileName}' to destination " +
+                                $"'{destSpec.Factory.Type}' failed. See the server logs for the reason.";
+                            uploadError ??= safeUploadError;
                             execution.Logger.LogError(
                                 "Report {Report} (job {JobId}) failed to upload '{FileName}' to destination '{DestinationType}': {Reason}",
                                 report.Name, execution.JobId, finished.FileName, destSpec.Factory.Type, uploadResult.ErrorMessage);
 
-                            await events.EmitAsync(JobEventTypes.UploadFailed, uploadResult.ErrorMessage, new Dictionary<string, string>
+                            await events.EmitAsync(JobEventTypes.UploadFailed, safeUploadError, new Dictionary<string, string>
                             {
                                 ["destinationType"] = destSpec.Factory.Type,
                                 [FileNameKey] = finished.FileName,
