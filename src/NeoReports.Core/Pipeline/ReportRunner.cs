@@ -159,20 +159,18 @@ public sealed class ReportRunner : IReportRunner
         // all-or-nothing publish guarantee), only in a dedicated partial-artifact store, and only
         // when one is registered. A capture failure (writer refuses to finalize mid-failure, store
         // I/O error, ...) must never change the run's own outcome.
-        async Task CaptureOnePartialAsync(
-            Func<CancellationToken, Task> finalize, Func<ValueTask> disposeWriter, FileStream stream,
-            Action markClosed, string path, string fileName, string mimeType, IPartialArtifactStore partialStore)
+        async Task CaptureOnePartialAsync(PendingPartial partial, IPartialArtifactStore partialStore)
         {
             try
             {
-                await finalize(CancellationToken.None).ConfigureAwait(false);
-                await disposeWriter().ConfigureAwait(false);
-                await stream.FlushAsync(CancellationToken.None).ConfigureAwait(false);
-                await stream.DisposeAsync().ConfigureAwait(false);
-                markClosed();
+                await partial.Finalize(CancellationToken.None).ConfigureAwait(false);
+                await partial.DisposeWriter().ConfigureAwait(false);
+                await partial.Stream.FlushAsync(CancellationToken.None).ConfigureAwait(false);
+                await partial.Stream.DisposeAsync().ConfigureAwait(false);
+                partial.MarkClosed();
 
-                var partialName = Path.GetFileNameWithoutExtension(fileName) + ".partial" + Path.GetExtension(fileName);
-                await partialStore.SaveAsync(execution.JobId, path, partialName, mimeType, CancellationToken.None).ConfigureAwait(false);
+                var partialName = Path.GetFileNameWithoutExtension(partial.FileName) + ".partial" + Path.GetExtension(partial.FileName);
+                await partialStore.SaveAsync(execution.JobId, partial.Path, partialName, partial.MimeType, CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception)
             {
@@ -189,16 +187,20 @@ public sealed class ReportRunner : IReportRunner
             foreach (RunningOutput output in outputs)
             {
                 await CaptureOnePartialAsync(
-                    output.Writer.FinalizeAsync, output.Writer.DisposeAsync, output.WriteStream,
-                    () => output.Closed = true, output.Path, output.FileName, output.MimeType, partialStore)
+                    new PendingPartial(
+                        output.Writer.FinalizeAsync, output.Writer.DisposeAsync, output.WriteStream,
+                        () => output.Closed = true, output.Path, output.FileName, output.MimeType),
+                    partialStore)
                     .ConfigureAwait(false);
             }
 
             foreach (RunningSectioned output in sectioned)
             {
                 await CaptureOnePartialAsync(
-                    output.Writer.FinalizeAsync, output.Writer.DisposeAsync, output.WriteStream,
-                    () => output.Closed = true, output.Path, output.FileName, output.MimeType, partialStore)
+                    new PendingPartial(
+                        output.Writer.FinalizeAsync, output.Writer.DisposeAsync, output.WriteStream,
+                        () => output.Closed = true, output.Path, output.FileName, output.MimeType),
+                    partialStore)
                     .ConfigureAwait(false);
             }
         }
@@ -559,8 +561,8 @@ public sealed class ReportRunner : IReportRunner
             }
             else
             {
-                // status == Failed (from either a read failure or a write failure escalated to
-                // abort) — CompletedPartial runs legitimately publish above and never reach here;
+                // Reached only by a genuine failure, from either a read failure or a write failure
+                // escalated to abort. A partial run legitimately publishes above and never lands here;
                 // only a genuine failure captures partials (D11's batch-atomicity: the partial file
                 // contains exactly the fully-written batches).
                 await CapturePartialArtifactsAsync().ConfigureAwait(false);
@@ -638,6 +640,20 @@ public sealed class ReportRunner : IReportRunner
             // Disposal failures during cleanup are non-fatal.
         }
     }
+
+    /// <summary>
+    /// One output's closing handles, grouped so partial capture takes a subject and a store rather
+    /// than eight positional arguments — the regular and sectioned call sites pass exactly the same
+    /// shape, so the grouping is the one that already existed implicitly.
+    /// </summary>
+    private readonly record struct PendingPartial(
+        Func<CancellationToken, Task> Finalize,
+        Func<ValueTask> DisposeWriter,
+        FileStream Stream,
+        Action MarkClosed,
+        string Path,
+        string FileName,
+        string MimeType);
 
     /// <summary>A finished output file (regular or sectioned) for upload and artifact retention.</summary>
     private interface IFinishedFile
