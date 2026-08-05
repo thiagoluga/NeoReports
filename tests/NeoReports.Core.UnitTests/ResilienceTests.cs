@@ -65,6 +65,49 @@ public class ResilienceTests
     }
 
     [Fact]
+    public async Task FailureRate_does_not_abort_on_an_early_failure()
+    {
+        // Both counters are incremented before the ratio is computed, so a first-batch failure always
+        // yields 1.0 — which tripped ANY FailureRate below 1, making the threshold behave as "abort on
+        // the first failure" whatever it was configured to. Three batches with one failure is 0.33,
+        // well under 0.5, but it never got that far (ADR D78).
+        var source = new FakeBatchSource<Sale>(new[] { Page(1), Page(2), Page(3) });
+        var writer = new FakeWriterFactory(1);
+
+        var report = Build(source, writer, b => b
+            .OnFailure(f => f.SkipBatchAndLog().AbortIf(new AbortThresholdConfig(FailureRate: 0.5))));
+        var result = await Run(report);
+
+        result.Status.ShouldBe(ReportRunStatus.CompletedPartial, "one failure in three batches is not a 50% rate");
+        result.SkippedBatches.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task FailureRate_still_aborts_once_enough_batches_have_been_seen()
+    {
+        // The guard delays the judgement, it does not remove it: with the minimum lowered to 2, the
+        // same shape aborts as soon as the ratio is meaningful and actually exceeded.
+        var source = new FakeBatchSource<Sale>(new[] { Page(1), Page(2), Page(3), Page(4) });
+        var writer = new FakeWriterFactory(1, 2);
+
+        var report = Build(source, writer, b => b
+            .OnFailure(f => f.SkipBatchAndLog().AbortIf(
+                new AbortThresholdConfig(FailureRate: 0.5) { FailureRateMinimumBatches = 2 })));
+        var result = await Run(report);
+
+        result.Status.ShouldBe(ReportRunStatus.Failed);
+    }
+
+    [Fact]
+    public void FailureRateMinimumBatches_defaults_to_ten()
+    {
+        // Pinned because the default is the whole behaviour for anyone who never sets it, and because
+        // it is an init property rather than a constructor parameter — a positional argument would
+        // have changed the primary constructor of a frozen-ABI record.
+        new AbortThresholdConfig(FailureRate: 0.5).FailureRateMinimumBatches.ShouldBe(10);
+    }
+
+    [Fact]
     public async Task Skip_strategy_skips_failed_batch_and_marks_partial()
     {
         var source = new FakeBatchSource<Sale>(new[] { Page(1), Page(2), Page(3) });
@@ -140,10 +183,16 @@ public class ResilienceTests
     {
         // Page 1 succeeds, 2 and 3 fail: ratios are 0, 0.5, then 2/3 ≈ 0.667. A 0.6 threshold trips on
         // page 3. Neither the consecutive (max 2) nor total (2) count would abort, so this isolates rate.
+        //
+        // FailureRateMinimumBatches is set to 3 rather than left at its default of 10: this fixture is
+        // three batches long, which the default deliberately treats as too small a sample to call a
+        // rate (ADR D78). Lowering it here keeps the test measuring what it was written to measure —
+        // the ratio arithmetic — instead of the guard in front of it, which has its own tests.
         var source = new FakeBatchSource<Sale>(new[] { Page(1), Page(2), Page(3) });
         var writer = new FakeWriterFactory(2, 3);
         var report = Build(source, writer, b => b
-            .OnFailure(f => f.SkipBatchAndLog().AbortIf(new AbortThresholdConfig(FailureRate: 0.6))));
+            .OnFailure(f => f.SkipBatchAndLog().AbortIf(
+                new AbortThresholdConfig(FailureRate: 0.6) { FailureRateMinimumBatches = 3 })));
 
         var result = await Run(report);
 

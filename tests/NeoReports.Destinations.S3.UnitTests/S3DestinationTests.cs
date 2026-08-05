@@ -89,6 +89,46 @@ public class S3DestinationTests
     }
 
     [Fact]
+    public async Task A_cancelled_upload_surfaces_as_cancellation_not_as_a_destination_error()
+    {
+        // catch (Exception) swallowed cancellation into UploadResult.Fail, so a deadline firing
+        // mid-upload was attributed to S3 rather than to the deadline, and the real reason was
+        // replaced by an AWS-shaped message. The run ended Failed either way, so this is attribution
+        // accuracy — but attribution is what an operator reads first (ADR D78).
+        using var cts = new CancellationTokenSource();
+        var client = Substitute.For<IAmazonS3>();
+        client.PutObjectAsync(Arg.Any<PutObjectRequest>(), Arg.Any<CancellationToken>())
+            .Returns<PutObjectResponse>(_ =>
+            {
+                cts.Cancel();
+                throw new OperationCanceledException(cts.Token);
+            });
+
+        var destination = new S3Destination(client, "my-bucket", "reports/{name}.{ext}");
+
+        await Should.ThrowAsync<OperationCanceledException>(
+            () => destination.UploadAsync(FileOf("sales.csv", "a,b\n1,2\n"), Context(), cts.Token));
+    }
+
+    [Fact]
+    public async Task A_cancellation_from_something_else_is_still_a_destination_error()
+    {
+        // The filter is on OUR token: an OperationCanceledException carrying someone else's token —
+        // an SDK's internal timeout, most commonly — is a genuine transport failure and must keep
+        // being reported as one, rather than masquerading as an operator-initiated stop.
+        var client = Substitute.For<IAmazonS3>();
+        client.PutObjectAsync(Arg.Any<PutObjectRequest>(), Arg.Any<CancellationToken>())
+            .Returns<PutObjectResponse>(_ => throw new TaskCanceledException("The request timed out."));
+
+        var destination = new S3Destination(client, "my-bucket", "reports/{name}.{ext}");
+
+        UploadResult result = await destination.UploadAsync(
+            FileOf("sales.csv", "a,b\n1,2\n"), Context(), CancellationToken.None);
+
+        result.Success.ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task Uploads_to_resolved_bucket_and_key()
     {
         var client = Substitute.For<IAmazonS3>();

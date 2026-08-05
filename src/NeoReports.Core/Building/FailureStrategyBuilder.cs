@@ -82,8 +82,16 @@ public sealed class FailureStrategyBuilder
             return true;
         if (thresholds.TotalFailures is int total && context.TotalFailures(total))
             return true;
-        if (thresholds.FailureRate is double rate && context.FailureRatio(rate))
+        // The ratio is only meaningful once there is a run to take a ratio OF. Both counters are
+        // incremented before it is computed, so a first-batch failure always yields 1.0 and trips any
+        // threshold below 1 — which made FailureRate behave as "abort on the first failure" whatever
+        // it was set to. Early aborts are ConsecutiveFailures/TotalFailures' job (ADR D78).
+        if (thresholds.FailureRate is double rate
+            && context.BatchesSeen(thresholds.FailureRateMinimumBatches)
+            && context.FailureRatio(rate))
+        {
             return true;
+        }
 
         return false;
     }
