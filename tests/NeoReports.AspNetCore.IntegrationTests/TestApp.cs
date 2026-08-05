@@ -83,6 +83,7 @@ public sealed class CountingInMemorySource : IBatchSource<Sale>, NeoReports.Core
 /// <summary>Builds a TestServer host wired with NeoReports endpoints, in-memory jobs, and artifacts.</summary>
 public static class TestApp
 {
+    /// <summary>Starts a test host with the NeoReports endpoints mapped.</summary>
     /// <param name="configureReports">Replaces the default report registration.</param>
     /// <param name="prefix">Prefix to map the endpoints under, so a test can prove the API does not
     /// assume the default one.</param>

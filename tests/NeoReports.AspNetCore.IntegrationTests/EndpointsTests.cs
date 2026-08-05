@@ -38,7 +38,9 @@ public class EndpointsTests
         using var host = await TestApp.StartAsync(prefix: "/v2");
         var client = host.GetTestClient();
 
-        var run = await client.PostAsJsonAsync("/v2/reports/sales/run", new { parameters = (object?)null }, Json);
+        // The report takes no parameters, so an empty body is all this needs — and it keeps the test
+        // free of the `(object?)null` cast an anonymous type would otherwise require.
+        var run = await client.PostAsJsonAsync("/v2/reports/sales/run", new { }, Json);
         run.StatusCode.ShouldBe(HttpStatusCode.Accepted);
 
         // The point of a Location is that a client can follow it. Asserting only the string would
