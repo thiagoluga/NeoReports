@@ -1201,3 +1201,30 @@ parameter is a normal thing to send.
 The guard is deliberately **not** applied to source property bags, which travel the same
 `object?`-valued shape: those are a provider's own configuration surface rather than a value bound
 into a query, and nothing in the audit showed them failing this way.
+
+## D73 — S3 key templates: a substituted value may not introduce hierarchy (breaking, 2026-08-05)
+
+`LocalDestination` passes `LocalPathSegment.EnsureSafe` to `PathTemplate.Expand` (the WP2 guard);
+`S3Destination` passed **none** — deliberately, since `/` is a legitimate S3 key separator. But that
+reasoning covers the author's *template*, not the `{param}` *values*, which arrive in the body of a
+report-run request. With a key template like `reports/{tenant}/{name}.{ext}`, a caller posting a
+`tenant` containing `/` steers the object into a prefix the template never described: a
+**cross-tenant write** anywhere a shared bucket relies on prefix isolation. Harmless in a
+single-tenant bucket, which is why it went unnoticed.
+
+**Decision (maintainer, 2026-08-05): reject `/` in substituted values, keep it in template
+literals.** The author's hierarchy is untouched; only the values filling tokens are constrained.
+
+**This is breaking** for anyone deliberately passing a hierarchy fragment as a run parameter — that
+now fails the upload instead of silently relocating the object. The remedy is to move the hierarchy
+into the template, which is where it was always meant to live. Recorded in `CHANGELOG.md`.
+
+The guard is deliberately **narrower than the Local one**. S3 keys are literal: `..` is not
+collapsed, and there is no drive-letter or alternate-data-stream syntax, so none of that is a
+traversal risk and none of it is rejected — `acme..corp` stays a perfectly good tenant name. The only
+thing a value must not do is add separators.
+
+A rejected substitution returns a failed `UploadResult` rather than throwing, so the run fails
+through the same path as any other delivery problem — matching `LocalDestination`, and keeping the
+`IReportDestination` contract intact. The guard's message names the token and the offending value;
+since D72 the runner keeps that detail in the log rather than in the API response.

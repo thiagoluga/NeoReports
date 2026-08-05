@@ -8,6 +8,18 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 
 ## [Unreleased]
 
+### Changed (breaking, S3 destination)
+- **An S3 key template's substituted values may no longer contain `/` (ADR D73).** The template
+  itself is unchanged and may still contain `/` freely — that is how a key hierarchy is written. What
+  is now rejected is a `/` inside a value filling a `{name}`/`{ext}`/`{paramName}` token. Run-time
+  parameters arrive in the body of a report-run request, so with a template such as
+  `reports/{tenant}/{name}.{ext}` a caller could previously post a `tenant` containing `/` and place
+  the object under a prefix the template never described — a cross-tenant write wherever a shared
+  bucket relies on prefix isolation.
+  **If you deliberately pass a hierarchy fragment as a run parameter**, that upload now fails with a
+  message naming the token and value. Move the hierarchy into the template instead. The guard is
+  narrower than the Local destination's: `..` and `:` remain legal in S3 keys and are not rejected.
+
 ### Removed (breaking, Abstractions ABI — next major)
 - **Removed the never-thrown exception types `BatchFailedException`, `SourceFailedException` and
   `ThresholdExceededException` from `NeoReports.Abstractions`.** They described a batch/source/
