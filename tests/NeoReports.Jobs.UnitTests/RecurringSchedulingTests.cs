@@ -254,6 +254,43 @@ public class RecurringSchedulingTests
     }
 
     [Fact]
+    public async Task A_schedule_that_can_never_occur_again_ends_its_loop()
+    {
+        // 30 February is syntactically valid and never happens, so Cronos returns no next occurrence.
+        // The loop must end rather than spin computing a date that will not come.
+        (InMemoryJobScheduler scheduler, FakeTimeProvider clock, RecordingJobStore store) = BuildOnFakeClock();
+        await using var _ = scheduler;
+
+        await scheduler.RegisterRecurringAsync("sales", "0 0 30 2 *", CancellationToken.None);
+
+        clock.Advance(TimeSpan.FromDays(400));
+        await Task.Delay(100);
+
+        store.Attempts.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task Removing_a_schedule_while_it_is_backing_off_after_a_failure_stops_it()
+    {
+        // The back-off is a wait like any other, so removal has to interrupt it — otherwise a failing
+        // schedule keeps a loop alive for up to the back-off after the operator removed it.
+        (InMemoryJobScheduler scheduler, FakeTimeProvider clock, RecordingJobStore store) = BuildOnFakeClock(
+            onRun: () => throw new InvalidOperationException("Simulated store failure on every firing."));
+        await using var _ = scheduler;
+
+        await scheduler.RegisterRecurringAsync("sales", "* * * * *", CancellationToken.None);
+        await AdvanceUntilAsync(clock, () => store.Attempts >= 1, "the first (failing) firing");
+
+        await scheduler.RemoveRecurringAsync("sales", CancellationToken.None);
+        int attemptsAtRemoval = store.Attempts;
+
+        clock.Advance(TimeSpan.FromMinutes(10));
+        await Task.Delay(100);
+
+        store.Attempts.ShouldBe(attemptsAtRemoval, "the loop stopped instead of firing again after the back-off");
+    }
+
+    [Fact]
     public async Task Removing_a_schedule_stops_it_firing()
     {
         (InMemoryJobScheduler scheduler, FakeTimeProvider clock, RecordingJobStore store) = BuildOnFakeClock();
