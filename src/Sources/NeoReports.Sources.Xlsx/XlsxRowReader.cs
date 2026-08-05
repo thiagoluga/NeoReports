@@ -207,7 +207,7 @@ internal static class XlsxRowReader
         // Workbook became nullable in DocumentFormat.OpenXml 3.5 (it is populated lazily and a
         // malformed package can genuinely lack it), so it is checked rather than assumed — the
         // existing "no worksheets" message covers that case correctly either way.
-        var sheets = workbookPart.Workbook?.Sheets?.Elements<Sheet>().ToArray();
+        Sheet[]? sheets = workbookPart.Workbook?.Sheets?.Elements<Sheet>().ToArray();
         if (sheets is null || sheets.Length == 0)
             throw new InvalidOperationException("The XLSX workbook contains no worksheets.");
 
