@@ -78,6 +78,33 @@ public class XlsxWriterTests
         workbook.Worksheet(1).Cell(2, 1).GetString().ShouldBe("1.2345678901234567890123456789");
     }
 
+    [Fact]
+    public async Task An_unsigned_bigint_beyond_double_precision_keeps_its_exact_digits()
+    {
+        // ulong has the same 2^53 ceiling as long but cannot reuse its bound check, so it is its own
+        // branch — and therefore its own test.
+        const ulong value = 9_007_199_254_740_993UL;
+
+        using XLWorkbook workbook = await WriteAndReopen(
+            new XlsxOptions(), OneColumn("Id", ColumnType.Integer), new object?[][] { new object?[] { value } });
+
+        workbook.Worksheet(1).Cell(2, 1).GetString().ShouldBe("9007199254740993");
+    }
+
+    [Fact]
+    public async Task A_decimal_whose_round_trip_check_itself_overflows_is_still_written()
+    {
+        // decimal.MaxValue converts to a double that rounds ABOVE the decimal range, so converting
+        // back throws OverflowException — the losslessness check has to survive being asked about the
+        // largest decimal there is, rather than taking the writer down with it.
+        const decimal value = decimal.MaxValue;
+
+        using XLWorkbook workbook = await WriteAndReopen(
+            new XlsxOptions(), OneColumn("Amount", ColumnType.Decimal), new object?[][] { new object?[] { value } });
+
+        workbook.Worksheet(1).Cell(2, 1).GetString().ShouldBe("79228162514264337593543950335");
+    }
+
     [Theory]
     [InlineData(long.MaxValue, false)]
     [InlineData(long.MinValue, false)]
