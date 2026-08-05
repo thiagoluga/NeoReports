@@ -1439,3 +1439,34 @@ injection point for a custom strategy today.
 Deleted rather than kept "for the future" — an unreachable guard is indistinguishable from a working
 one until the day it is needed, and P7c already cost this repo a fully-built, fully-tested
 `ISourceRowCounter` that nothing could reach.
+
+## D80 — Row-count reconciliation: advisory, and free (2026-08-05)
+
+§5 recorded that the QueryBuilder allows a **non-unique keyset key**: single-column keyset with
+strict `>` drops the tail of a duplicate group that straddles a page boundary. Silently. It is not
+statically detectable — the model carries no PK/unique metadata — and no source can observe it,
+because a source only ever sees the page it returned.
+
+Reconciliation is the one signal that surfaces it. Progress tracking (D47) already counts the
+source's rows before the loop starts, so comparing that against `recordsRead` at the end costs one
+subtraction and **needs no new configuration at all**.
+
+That last part changed the shape of this from what was originally proposed. The plan was an opt-in
+flag; there is nothing to opt into, because the count is already there whenever progress tracking is
+on. No new public API was added.
+
+**Advisory, never fatal.** The count predates the run, so a concurrent insert or delete explains a
+difference exactly as well as a defect does; failing a run on it would make a busy table look broken.
+It surfaces as a warning log plus a `row-count-mismatch` job event, so it is visible in
+`GET /jobs/{id}/events` rather than only in a log nobody greps.
+
+A **strict mode** that fails the run was considered and left out. A count taken before the run cannot
+be the authority for failing one, and adding public surface for a check that is approximate by
+construction is how a knob becomes a support burden.
+
+Only a `Completed` run is reconciled. `CompletedPartial` skipped batches on purpose — reading fewer
+rows is the expected outcome and is already reported as `Partial` (D75), so flagging it again would
+dress a known cause as an unknown one. `Failed` and `Cancelled` runs legitimately read less.
+
+The non-unique key itself remains undetectable up front; this makes its *consequence* observable,
+which is the most that can be done without the model change §5 describes.

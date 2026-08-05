@@ -108,7 +108,7 @@ locally verifiable.
   doesn't distinguish the two. **Needs** the catalog to carry the with/without-time-zone distinction
   (a design change). Same class as the Oracle `TIMESTAMP WITH TIME ZONE` sub-case (the FF7 model has
   no `TZH:TZM`). Workaround today: key on a plain `timestamp`/UTC column, or run the session in UTC.
-- **QueryBuilder allows a non-unique keyset key.** Single-column keyset with strict `>` requires a
+- ~~**QueryBuilder allows a non-unique keyset key.**~~ **MITIGATED (ADR D80)** — still not statically detectable, but its consequence now is: a completed run whose row count disagrees with the pre-run count emits a `row-count-mismatch` event. Advisory, since the count predates the run. Original description: Single-column keyset with strict `>` requires a
   unique, monotonic key; if the user picks a non-unique column, the tail of a duplicate group that
   straddles a page boundary is dropped. Not statically detectable (no PK/unique metadata in the
   model). Consider a builder warning when the key isn't a PK, or documenting the requirement more

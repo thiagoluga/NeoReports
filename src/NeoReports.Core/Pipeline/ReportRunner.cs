@@ -421,6 +421,32 @@ public sealed class ReportRunner : IReportRunner
                 }
             }
 
+            // Reconciliation (ADR D80). Progress tracking already counts the source's rows before the
+            // loop starts (D47), so comparing that against what was actually read costs one
+            // subtraction and needs no new configuration. It is the only signal that surfaces a
+            // non-unique keyset key: single-column keyset with strict `>` drops the tail of a
+            // duplicate group straddling a page boundary, silently, and no source can see it happen.
+            //
+            // Advisory, never fatal, and deliberately so: the count predates the run, so a concurrent
+            // insert or delete explains a difference just as well as a defect does. Failing a run on
+            // it would turn a busy table into a broken report. Only a Completed run is checked —
+            // CompletedPartial skipped batches on purpose, and a Failed or Cancelled run legitimately
+            // read less.
+            if (status == ReportRunStatus.Completed && totalRecords is { } expectedRows && recordsRead != expectedRows)
+            {
+                execution.Logger.LogWarning(
+                    "Report {ReportName} read {Read} rows but the pre-run count reported {Expected}. " +
+                    "Concurrent writes explain a small difference; a persistent one can mean the keyset key " +
+                    "is not unique, which drops rows at page boundaries.",
+                    report.Name, recordsRead, expectedRows);
+
+                await events.EmitAsync(JobEventTypes.RowCountMismatch, null, new Dictionary<string, string>
+                {
+                    ["expected"] = expectedRows.ToString(CultureInfo.InvariantCulture),
+                    ["read"] = recordsRead.ToString(CultureInfo.InvariantCulture),
+                }, cancellationToken).ConfigureAwait(false);
+            }
+
             long bytesWritten = 0;
             var uploads = new List<UploadResult>();
             var uploadFailed = false;
