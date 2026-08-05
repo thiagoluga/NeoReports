@@ -1290,3 +1290,37 @@ read as an outright failure. The dashboard's recent-files list is left to `Compl
 has no status indicator, and inventing one would mean designing outside the handoff (CLAUDE.md), so a
 partial run's artifact is surfaced on the Jobs and report-detail pages instead, where its status is
 visible next to it.
+
+## D76 — `TimeProvider` in the in-memory scheduler, so the recurring loop can be tested (2026-08-05)
+
+`InMemoryJobScheduler`'s recurring loop was untestable in practice. Cronos granularity is one minute,
+so every assertion about firing behaviour would have cost a wall-clock minute of CI — which is why
+`RecurringSchedulingTests` carried a *"verified manually via the live sample"* caveat from D41 onward,
+and why the loop's catch-all shipped uncovered in #268 and had to be reverted when SonarCloud's
+new-code coverage gate refused it at 57.1%. The gate was right: a permanently-untested error path is
+not fixable with a footnote.
+
+**Decision (maintainer, 2026-08-05): inject `TimeProvider` and add
+`Microsoft.Extensions.TimeProvider.Testing` to CPM as a test-only dependency.**
+
+`TimeProvider` itself is **BCL** (.NET 8), so the shipped package gains nothing: `DateTime.UtcNow`
+becomes `_timeProvider.GetUtcNow()`, `new PeriodicTimer(chunk)` becomes
+`new PeriodicTimer(chunk, _timeProvider)`, and `Task.Delay(x, token)` becomes
+`Task.Delay(x, _timeProvider, token)`. The constructor parameter is optional and defaults to
+`TimeProvider.System`, so `new InMemoryJobScheduler(store, worker)` still compiles.
+
+Hand-rolling a fake was considered and rejected: implementing timer scheduling semantics correctly is
+fiddly, and it would mean maintaining test infrastructure Microsoft already ships. The package is in
+the `Microsoft.Extensions.*` family already present in CPM.
+
+### What it bought
+
+The catch-all reverted in #268 is back **with a test that fails without it**, and the loop now has
+real coverage: it fires when the clock reaches the occurrence, it survives a firing that throws and
+fires again, and removal stops it. The D41 caveat is retired.
+
+One test-authoring note worth keeping: a fake clock makes the loop's *waiting* deterministic, but the
+firing it releases still runs on the thread pool. Advancing the clock in one jump can land before the
+loop has reached its next wait, and the time is then consumed by nothing — the first draft of the
+failure test hung on exactly that. The tests advance in steps until the condition holds, with a
+ceiling, rather than jumping and hoping.
