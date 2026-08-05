@@ -178,8 +178,8 @@ public sealed class InMemoryJobScheduler : IReportJobScheduler, IRecurringReport
                     if (cts.Token.IsCancellationRequested)
                         return;
 
-                    // Overlapping firings run concurrently (ADR D41) — no skip-if-running check;
-                    // the engine already isolates concurrent job runs.
+                    // Overlapping firings run concurrently (ADR D41) — there is deliberately no
+                    // skip-if-running check, because the engine already isolates concurrent runs.
                     await EnqueueAsync(new ReportJobRequest(reportName), CancellationToken.None).ConfigureAwait(false);
                 }
             }
@@ -193,16 +193,21 @@ public sealed class InMemoryJobScheduler : IReportJobScheduler, IRecurringReport
     /// <summary>Cancels all running jobs and recurring loops, and waits for them to unwind.</summary>
     public async ValueTask DisposeAsync()
     {
+        // CancelAsync rather than Cancel: cancellation callbacks otherwise run synchronously on the
+        // thread disposing the scheduler, so one slow continuation would stall shutdown for the rest.
+        // A source already disposed by its own loop is the normal race here — that loop owns its CTS
+        // and disposes it on every exit path — so ObjectDisposedException means "already stopped",
+        // which is exactly the state this method is trying to reach.
         foreach (var cts in _running.Values)
         {
-            try { cts.Cancel(); }
-            catch (ObjectDisposedException) { }
+            try { await cts.CancelAsync().ConfigureAwait(false); }
+            catch (ObjectDisposedException) { /* already stopped and disposed itself */ }
         }
 
         foreach (var entry in _recurring.Values)
         {
-            try { entry.Cts.Cancel(); }
-            catch (ObjectDisposedException) { }
+            try { await entry.Cts.CancelAsync().ConfigureAwait(false); }
+            catch (ObjectDisposedException) { /* already stopped and disposed itself */ }
         }
 
         try
