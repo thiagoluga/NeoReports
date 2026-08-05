@@ -296,11 +296,12 @@ rather than decided:
   string-matching it, so a well-formed-but-wrong header still fails. Original description: ignoring
   `MapNeoReports`'s configurable prefix — under `MapNeoReports("/v2")` the 202's `Location` is a 404
   for any client that follows it.
-- **Array/object run parameters still diverge by backend.** Complex parameter values are documented
-  out of scope for v1, but nothing rejects them: sync/in-memory hand the source a `JsonElement` (the
-  very thing an ADO provider can't bind) while Hangfire hands it the raw JSON text. Either reject them
-  at the boundary with a 400, or agree one representation — the current silence produces a driver
-  error at read time.
+- ~~**Array/object run parameters still diverge by backend.**~~ **FIXED (ADR D72)** — the run endpoint
+  answers 400 naming the parameter, so the documented limit is real and identical on every backend.
+  Scalars are unaffected, `null` included. Not applied to source property bags: those are a provider's
+  configuration surface, not a value bound into a query. Original description: sync/in-memory hand the
+  source a `JsonElement` (the very thing an ADO provider can't bind) while Hangfire hands it the raw
+  JSON text.
 - ~~**`POST/PUT /sources` property bags are not normalized.**~~ **FIXED** — both handlers now run the
   bag through the same normalizer the run endpoint uses (renamed `NormalizeJsonValues`, since it serves
   two request shapes). Original description: `SourceRequest.Properties` is the same

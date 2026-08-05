@@ -1184,3 +1184,20 @@ provider's ceiling, and a page size is a throughput hint, not a promise about ho
 at once. Both derive `hasMore` from the server's own continuation token, so clamping only means more
 requests — it cannot truncate. (Had they inferred it from a full page, clamping alone would have
 been unsafe; that is precisely the bug fixed in the paragraph above.)
+
+### D72, closing item — structured run parameters are refused at the boundary
+
+Array/object parameter values were documented out of scope for v1, but nothing rejected them, and
+what happened next depended on which backend ran the job: the sync and in-memory paths handed the
+source a `JsonElement` — the very type an ADO provider cannot bind — while Hangfire round-tripped
+the bag and handed over raw JSON text. Either way the caller learned about the limit as a driver
+error partway through a run, attributed to the source rather than to the request that caused it.
+
+`POST /reports/{name}/run` now answers **400** naming the offending parameter. That makes the
+documented limit real and identical on every backend, and moves the failure to the moment the
+caller can act on it. Scalars are unaffected — `null` explicitly still binds, since an optional
+parameter is a normal thing to send.
+
+The guard is deliberately **not** applied to source property bags, which travel the same
+`object?`-valued shape: those are a provider's own configuration surface rather than a value bound
+into a query, and nothing in the audit showed them failing this way.
