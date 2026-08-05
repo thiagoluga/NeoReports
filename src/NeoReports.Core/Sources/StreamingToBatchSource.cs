@@ -1,3 +1,4 @@
+using System.Globalization;
 using NeoReports.Abstractions;
 
 namespace NeoReports.Core.Sources;
@@ -18,13 +19,17 @@ namespace NeoReports.Core.Sources;
 /// <typeparam name="T">The record (row) type produced by the wrapped source.</typeparam>
 public sealed class StreamingToBatchSource<T> : IBatchSource<T>
 {
-    // Opaque non-null token that keeps the pipeline asking for the next page; the real position lives
-    // in the retained enumerator, not in the cursor.
-    private const string MorePages = "+";
-
     private readonly IStreamingSource<T> _inner;
     private IAsyncEnumerator<T>? _enumerator;
     private bool _exhausted;
+
+    // The real position lives in the retained enumerator, and this adapter only ever reads the
+    // incoming cursor as "null or not" (null restarts the enumerator). The value it *emits* used to
+    // be the constant "+", which was fine in isolation but broke the contract every other source
+    // keeps: a page that reports more data must hand back a cursor different from the one it was
+    // given. Counting pages costs nothing and makes that invariant hold everywhere, which is what
+    // lets ReportRunner detect a genuinely stuck source without special-casing this adapter.
+    private long _pagesEmitted;
 
     /// <summary>Creates the adapter.</summary>
     /// <param name="inner">The streaming source to page over.</param>
@@ -48,6 +53,7 @@ public sealed class StreamingToBatchSource<T> : IBatchSource<T>
                 await _enumerator.DisposeAsync().ConfigureAwait(false);
             _enumerator = _inner.ReadAsync(context.Execution, cancellationToken).GetAsyncEnumerator(cancellationToken);
             _exhausted = false;
+            _pagesEmitted = 0;
         }
 
         if (_exhausted || _enumerator is null)
@@ -65,6 +71,10 @@ public sealed class StreamingToBatchSource<T> : IBatchSource<T>
             _enumerator = null;
         }
 
-        return new BatchResult<T>(page, hasMore ? MorePages : null, hasMore);
+        _pagesEmitted++;
+        return new BatchResult<T>(
+            page,
+            hasMore ? _pagesEmitted.ToString(CultureInfo.InvariantCulture) : null,
+            hasMore);
     }
 }

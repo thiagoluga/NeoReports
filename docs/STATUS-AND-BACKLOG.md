@@ -192,11 +192,13 @@ The unambiguous ones shipped — the engine's reserved `cursor`/`pageSize` bind 
 parameters arriving as `JsonElement`. What is left changes behaviour or semantics, so it is recorded
 rather than decided:
 
-- **The page loop has no safety net.** `ReportRunner`'s loop is `while(true)` driven purely by
-  `HasMore`: no page cap, no "the cursor did not change" guard, no "zero rows but still more" guard.
-  Every item below is only as dangerous as that. A generic guard here would bound *all* of them at
-  once and is probably the highest-leverage single change — but it changes termination semantics for
-  every source, so it needs a call.
+- ~~**The page loop has no safety net.**~~ **DECIDED AND FIXED (ADR D72).** The maintainer chose a
+  non-advancing-cursor guard with **no** page cap: it catches a source making no progress without
+  imposing a ceiling a legitimately huge report could hit. The check runs after the batch is written,
+  so the last readable page is not discarded. Enforcing it exposed that `StreamingToBatchSource`
+  emitted a constant cursor — every file-backed source would have failed at page 2 — so the adapter
+  now emits its page count rather than the runner special-casing a sentinel. Original description:
+  no page cap, no "the cursor did not change" guard, no "zero rows but still more" guard.
 - **`records.Count == pageSize` ends a run early when the server caps the page.** OData's `Skip`
   strategy (`ODataBatchSource`) and the HTTP source's `Page`/`Offset` strategies infer "more data"
   from a full page. Services that clamp `$top`/`limit` below the engine's 1000 default (Dynamics, SAP
