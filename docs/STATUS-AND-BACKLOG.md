@@ -187,7 +187,7 @@ need a decision.
   correctly refused the uncovered branch. **Unblocking it means injecting `TimeProvider`** (BCL, so no
   production dependency) and driving the loop from a fake clock — `Microsoft.Extensions.TimeProvider.Testing`
   would be a new CPM test dependency, which is the maintainer's call.
-- **`CompletedPartial` surfaces as a `Completed` job (by design, flagged).** A run that skipped
+- ~~**`CompletedPartial` surfaces as a `Completed` job.**~~ **DECIDED AND FIXED (ADR D75)** — new `ReportJobStatus.Partial`, appended at the end of the enum. Note the original entry below was **wrong**: `SkippedBatches` is on `ReportRunResult`, not `JobStats`, so the skip never reached the job record at all and the status was the only possible channel. Original description: A run that skipped
   batches maps to `ReportJobStatus.Completed`; the skip is visible only in `Stats.SkippedBatches`.
   There is no `Partial` job status. Worth confirming this is still the intent, since silent partial
   data reads as a green job.

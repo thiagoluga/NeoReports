@@ -60,9 +60,16 @@ public sealed class ReportJobWorker
 
             await _store.UpdateStatsAsync(jobId, result.Stats, CancellationToken.None).ConfigureAwait(false);
 
-            var status = result.Status == ReportRunStatus.Failed
-                ? ReportJobStatus.Failed
-                : ReportJobStatus.Completed;
+            // A run that skipped batches produced a file missing rows the source held, and used to
+            // land on Completed. The count is no help: SkippedBatches is on ReportRunResult and is
+            // not one of JobStats's counters, so it never reaches the job record — a partial run and
+            // a whole one were identical to every caller of the job API (ADR D75).
+            ReportJobStatus status = result.Status switch
+            {
+                ReportRunStatus.Failed => ReportJobStatus.Failed,
+                ReportRunStatus.CompletedPartial => ReportJobStatus.Partial,
+                _ => ReportJobStatus.Completed,
+            };
             await _store.UpdateStatusAsync(jobId, status, result.Error, CancellationToken.None).ConfigureAwait(false);
 
             _logger.LogInformation(

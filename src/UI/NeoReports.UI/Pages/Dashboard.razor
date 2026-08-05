@@ -194,7 +194,7 @@
 
     private static DashboardMetrics ComputeMetrics(IReadOnlyList<ApiJobView> jobs)
     {
-        var terminal = jobs.Where(j => j.Status is "Completed" or "Failed" or "Cancelled").ToArray();
+        var terminal = jobs.Where(j => j.Status is "Completed" or "Partial" or "Failed" or "Cancelled").ToArray();
         var completed = jobs.Where(j => j.Status == "Completed").ToArray();
 
         string successRate = terminal.Length > 0

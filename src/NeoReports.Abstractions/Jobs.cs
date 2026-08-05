@@ -9,7 +9,7 @@ public enum ReportJobStatus
     /// <summary>Currently being processed.</summary>
     Running,
 
-    /// <summary>Finished successfully (possibly partial when batches were skipped).</summary>
+    /// <summary>Finished successfully, with every batch written.</summary>
     Completed,
 
     /// <summary>Aborted by an unrecoverable error.</summary>
@@ -22,7 +22,22 @@ public enum ReportJobStatus
     Paused,
 
     /// <summary>Waiting to retry after a transient failure.</summary>
-    Retrying
+    Retrying,
+
+    /// <summary>
+    /// Finished, but one or more batches were skipped by the failure strategy, so the output is
+    /// missing rows the source held (ADR D75). Distinct from <see cref="Completed"/> because the
+    /// skip count never reaches the job record at all — <c>SkippedBatches</c> lives on the runner's
+    /// <c>ReportRunResult</c> and is not among <see cref="JobStats"/>'s counters — so before this
+    /// value existed, a partial run and a whole one were indistinguishable to every caller of the
+    /// job API. A green status nobody can look past is how partial data gets treated as complete.
+    /// <para>
+    /// Appended at the end of the enum on purpose: the members carry implicit values, so inserting
+    /// this next to <see cref="Completed"/> would have renumbered everything after it and silently
+    /// reinterpreted any status already persisted as an integer.
+    /// </para>
+    /// </summary>
+    Partial
 }
 
 /// <summary>Aggregate counters for a running/finished job.</summary>

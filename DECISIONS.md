@@ -1253,3 +1253,40 @@ A host that genuinely wants job-level retries can still add them through its own
 or by re-enqueuing; nothing here prevents that. The attribute is on the invoker type, which is where
 Hangfire reads it when the job is created, so it covers both the one-shot and the recurring entry
 points.
+
+## D75 — `ReportJobStatus.Partial`: a run that skipped batches no longer reports green (2026-08-05)
+
+A run that skipped batches (`SkipBatchAndLog`) produced `ReportRunStatus.CompletedPartial` and the
+job layer mapped everything that was not `Failed` onto `ReportJobStatus.Completed`. The output was
+therefore missing rows the source held, and the job said it succeeded.
+
+The backlog recorded this as "the skip is visible only in `Stats.SkippedBatches`". **That was wrong,
+and the truth is worse:** `SkippedBatches` lives on the runner's `ReportRunResult` and is *not* one
+of `JobStats`'s counters, so it never reaches the job record at all. Before this change a caller of
+the job API had **no way whatsoever** to distinguish a partial run from a whole one — the status was
+the only channel, and it was green.
+
+**Decision (maintainer, 2026-08-05): add `Partial`.** It is the only fix consistent with the rest of
+D72's work, which was all about never truncating quietly.
+
+### ABI notes (rule 7)
+
+`ReportJobStatus` lives in the frozen `NeoReports.Abstractions`, so two things were deliberate:
+
+- **Appended at the end**, after `Retrying`. The members carry implicit values, so inserting `Partial`
+  next to `Completed` — where it reads best — would have renumbered every member after it and
+  silently reinterpreted any status already persisted as an integer.
+- **Additive, not breaking at the ABI level**, but a consumer with an exhaustive `switch` over the
+  enum now has an unhandled case, and one compiling with warnings-as-errors will see CS8509. Recorded
+  in `CHANGELOG.md` for that reason.
+
+`Completed`'s own doc comment used to read "(possibly partial when batches were skipped)" — that
+caveat is now a status of its own, so the comment says what it means: every batch was written.
+
+The UI treats `Partial` as terminal (it is) and as *not* a clean success: it counts toward the
+denominator of the dashboard's success rate but not the numerator, which is the honest arithmetic. It
+renders `warn` + `file-alert` — deliberately not `alert-triangle`, which is `Failed`'s icon and would
+read as an outright failure. The dashboard's recent-files list is left to `Completed` only: that row
+has no status indicator, and inventing one would mean designing outside the handoff (CLAUDE.md), so a
+partial run's artifact is surfaced on the Jobs and report-detail pages instead, where its status is
+visible next to it.
