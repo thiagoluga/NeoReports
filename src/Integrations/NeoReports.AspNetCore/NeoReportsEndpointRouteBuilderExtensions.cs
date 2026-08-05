@@ -1299,22 +1299,18 @@ public static class NeoReportsEndpointRouteBuilderExtensions
     /// they are left alone here.
     /// </para>
     /// </summary>
+    /// <para>
+    /// <see cref="PrimitiveObjectConverter"/> turns every scalar into a CLR primitive and leaves
+    /// exactly the structured values as a <see cref="JsonElement"/>, so the value-kind check below is
+    /// the whole test. <c>FirstOrDefault</c> over a <see cref="KeyValuePair{TKey,TValue}"/> yields a
+    /// default pair — <c>Key</c> null — when nothing matches, which is the "no complex parameter"
+    /// answer.
+    /// </para>
     /// <param name="parameters">The normalized parameter bag.</param>
-    private static string? FirstComplexParameter(IReadOnlyDictionary<string, object?>? parameters)
-    {
-        if (parameters is null)
-            return null;
-
-        foreach (KeyValuePair<string, object?> pair in parameters)
-        {
-            // PrimitiveObjectConverter turns every scalar into a CLR primitive and leaves exactly the
-            // structured values as a JsonElement, so this is the whole test.
-            if (pair.Value is JsonElement { ValueKind: JsonValueKind.Array or JsonValueKind.Object })
-                return pair.Key;
-        }
-
-        return null;
-    }
+    private static string? FirstComplexParameter(IReadOnlyDictionary<string, object?>? parameters) =>
+        parameters?
+            .FirstOrDefault(pair => pair.Value is JsonElement { ValueKind: JsonValueKind.Array or JsonValueKind.Object })
+            .Key;
 
     private static IReadOnlyDictionary<string, object?>? NormalizeJsonValues(
         IReadOnlyDictionary<string, object?>? parameters)
