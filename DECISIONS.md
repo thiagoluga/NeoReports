@@ -1105,3 +1105,47 @@ Shipped as `samples/15-aspire-pro-demo`, sample 14's twin plus `NeoReports.Xlsx.
 **Consequence, stated rather than discovered:** because Q2 now enforces the license at run time, this sample **builds without a license but refuses to start without one** — the same honest hard-fail every Pro consumer gets (D70/D36). Its README says so up front and points at `tools/NeoReports.LicenseTool`, and points readers who just want the all-sources tour at sample 14, which needs no license. Samples 06 and 07 (which predate all of this and already referenced Pro projects) carry the same note.
 
 The two commercial packages' PolyForm Small Business terms are unchanged by this: a sample referencing the project is the maintainer's own use of their own code, and the packages stay `IsPackable=false`, out of the OSS NuGet release.
+
+## D72 — Page-loop termination: the runner refuses a cursor that does not advance (2026-08-05)
+
+`ReportRunner`'s page loop is `while(true)` driven purely by `BatchResult.HasMore`. It has no page
+cap and no notion of progress, so a source that reports more data while handing back the cursor it
+was given makes the runner re-issue the identical read **forever**: a job that never completes and
+never fails, holding its worker until an operator notices. This is not hypothetical — Facebook
+Graph's `paging.cursors.after` echoes the requested cursor on the last page, and the same shape
+showed up across the audit in `docs/STATUS-AND-BACKLOG.md` §6.
+
+**Decision (maintainer, 2026-08-05): a non-advancing-cursor guard, and no page cap.** The guard
+catches the real defect — a source making no progress — without imposing an artificial ceiling that
+a legitimately enormous report could hit. Cost is one string comparison per page.
+
+The run fails with `Failed` and an error naming the batch. The check runs **after** the batch is
+written, not before: the rows just read were delivered correctly and it is only the *next* read that
+is impossible, so aborting earlier would throw away a good page for no reason.
+
+**Where it belongs.** In the runner, not in each source. A source only ever sees one page at a time
+and cannot tell that it is repeating itself, and third-party `IBatchSource<T>` implementations get
+the protection for free. GraphQL (D63), Elasticsearch and — since the §6 pass — the generic HTTP
+source each guard their own token shape as well; those are cheaper, more specific errors, and this
+is the backstop underneath them.
+
+### What this cost, and why it is the right price
+
+The guard turns "a source with more data returns a cursor different from the one it received" from
+an unstated assumption into an enforced contract — and **one shipped source violated it**.
+`StreamingToBatchSource` keeps its real position in a retained enumerator and only ever reads the
+incoming cursor as null-or-not; it emitted the constant `"+"` for every page. Under a naive guard,
+**every file-backed source** (CSV, Parquet, XLSX, and the HTTP source's `None` strategy) would have
+failed at page 2.
+
+Two ways out. Exempting the sentinel in the runner was rejected: it would couple the runner to
+another type's private constant and leave the contract quietly false, so the next adapter written
+the same way breaks again. Instead the adapter now emits its page count. The value is opaque and
+never read back, so this changes nothing about how streaming works — it just makes the invariant
+true everywhere, which is what allows the runner's check to stay a two-line comparison with no
+special cases.
+
+`StuckCursorTests` covers both halves, and covers them against each other: reverting the guard fails
+the stuck-source tests, and reverting *only* the adapter (keeping the guard) fails the streaming
+test. The echoing fake throws past 50 reads on purpose — without the guard it loops forever, and a
+hanging test is worse than a failing one, both for CI and for anyone bisecting later.

@@ -332,6 +332,12 @@ public sealed class ReportRunner : IReportRunner
                 retries += Math.Max(0, attempts - 1);
                 batches++;
                 recordsRead += batch.RawCount;
+
+                // Kept for the stuck-cursor check at the bottom of the loop. The check runs *after*
+                // this batch is written: the rows just read are perfectly good data, and it is only
+                // the next read that is impossible — discarding them here would throw away a page the
+                // source delivered correctly.
+                string? previousCursor = cursor;
                 cursor = batch.NextCursor;
 
                 try
@@ -393,6 +399,26 @@ public sealed class ReportRunner : IReportRunner
 
                 if (!batch.HasMore)
                     break;
+
+                // The loop is driven purely by HasMore, so a source that claims more data without
+                // moving its cursor makes the runner re-issue the identical read forever: a job that
+                // never finishes and never fails, holding a worker until someone notices. Real APIs
+                // do this — Facebook Graph echoes the requested cursor on its last page — and it is
+                // invisible from inside a source, which only ever sees one page at a time, so the
+                // check belongs here rather than repeated in each of them (D72). Sources whose
+                // position is not really in the cursor must still advance it: StreamingToBatchSource
+                // counts pages for exactly this reason.
+                if (string.Equals(cursor, previousCursor, StringComparison.Ordinal))
+                {
+                    status = ReportRunStatus.Failed;
+                    error = $"The source reported more data after batch {pageNumber} but returned the same " +
+                            "cursor it was given, so the next read would repeat that one forever. A source " +
+                            "with more data must return a cursor different from the one it received.";
+                    execution.Logger.LogError(
+                        "Report {ReportName} aborted after batch {Page}: the source's cursor did not advance.",
+                        report.Name, pageNumber);
+                    break;
+                }
             }
 
             long bytesWritten = 0;
