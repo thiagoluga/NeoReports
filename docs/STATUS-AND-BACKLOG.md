@@ -51,14 +51,20 @@ enterprise-readiness and test coverage, and shipped everything actionable.
 ## Open backlog — deferred, with rationale
 
 > **State as of 2026-08-05 (end of the autonomous sweep).** §5 and §6 are cleared of everything that
-> had an answer — 12 PRs merged (#261–#271) and ADRs **D72–D75**. What is listed below as still open
-> is open *because it needs the maintainer*, not because it was missed. The four live items are:
-> Pro **Q3b/c** (rotate the compromised placeholder signing key before publishing), the
-> **`Microsoft.Extensions.TimeProvider.Testing`** CPM decision that unblocks the recurring-loop
-> catch-all, **Aspire 9.5 → 13.4** (four majors — a framework migration, not a bump), and the
-> representation trade-offs recorded in §5 (XLSX 64-bit precision, `DateTimeOffset`) plus the design
-> changes that need a catalog/model change (Postgres `timestamptz`, non-unique keyset key,
-> multi-output write atomicity, `FailureRate` minimum sample, upload-cancellation attribution).
+> had an answer — 17 PRs merged (#261–#277) and ADRs **D72–D80**. What is listed below as still open
+> is open *because it needs the maintainer or a next-major ABI change*, not because it was missed.
+> The live items are:
+>
+> 1. **Pro Q3b/c** — rotate the placeholder signing key (its private half was generated in a chat
+>    session, so it is compromised) and publish. Blocked on the maintainer.
+> 2. **Postgres/Redshift `timestamptz` keyset boundary** — needs `ColumnType` to carry the
+>    with/without-time-zone distinction, which is a change to the frozen `Abstractions` ABI, so a
+>    next-major item. Every cheap alternative trades the bug for another: forcing the session time
+>    zone affects the user's own SQL, and `AT TIME ZONE` on the column defeats the index that keyset
+>    pagination exists to use. Workaround today: key on a plain `timestamp`/UTC column.
+> 3. **XLSX pre-1900 dates** — `DateTime.ToOADate` cannot express them; inherent to the serial Excel
+>    uses, not decidable in that layer.
+> 4. **CA1068-style next-major bundling** (§1) and the CI hardening in §2.
 
 
 ### 1. Next-major breaking cleanup (needs a 2.0 line)
