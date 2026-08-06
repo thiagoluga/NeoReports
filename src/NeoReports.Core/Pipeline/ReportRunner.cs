@@ -159,20 +159,18 @@ public sealed class ReportRunner : IReportRunner
         // all-or-nothing publish guarantee), only in a dedicated partial-artifact store, and only
         // when one is registered. A capture failure (writer refuses to finalize mid-failure, store
         // I/O error, ...) must never change the run's own outcome.
-        async Task CaptureOnePartialAsync(
-            Func<CancellationToken, Task> finalize, Func<ValueTask> disposeWriter, FileStream stream,
-            Action markClosed, string path, string fileName, string mimeType, IPartialArtifactStore partialStore)
+        async Task CaptureOnePartialAsync(PendingPartial partial, IPartialArtifactStore partialStore)
         {
             try
             {
-                await finalize(CancellationToken.None).ConfigureAwait(false);
-                await disposeWriter().ConfigureAwait(false);
-                await stream.FlushAsync(CancellationToken.None).ConfigureAwait(false);
-                await stream.DisposeAsync().ConfigureAwait(false);
-                markClosed();
+                await partial.Finalize(CancellationToken.None).ConfigureAwait(false);
+                await partial.DisposeWriter().ConfigureAwait(false);
+                await partial.Stream.FlushAsync(CancellationToken.None).ConfigureAwait(false);
+                await partial.Stream.DisposeAsync().ConfigureAwait(false);
+                partial.MarkClosed();
 
-                var partialName = Path.GetFileNameWithoutExtension(fileName) + ".partial" + Path.GetExtension(fileName);
-                await partialStore.SaveAsync(execution.JobId, path, partialName, mimeType, CancellationToken.None).ConfigureAwait(false);
+                var partialName = Path.GetFileNameWithoutExtension(partial.FileName) + ".partial" + Path.GetExtension(partial.FileName);
+                await partialStore.SaveAsync(execution.JobId, partial.Path, partialName, partial.MimeType, CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception)
             {
@@ -189,16 +187,20 @@ public sealed class ReportRunner : IReportRunner
             foreach (RunningOutput output in outputs)
             {
                 await CaptureOnePartialAsync(
-                    output.Writer.FinalizeAsync, output.Writer.DisposeAsync, output.WriteStream,
-                    () => output.Closed = true, output.Path, output.FileName, output.MimeType, partialStore)
+                    new PendingPartial(
+                        output.Writer.FinalizeAsync, output.Writer.DisposeAsync, output.WriteStream,
+                        () => output.Closed = true, output.Path, output.FileName, output.MimeType),
+                    partialStore)
                     .ConfigureAwait(false);
             }
 
             foreach (RunningSectioned output in sectioned)
             {
                 await CaptureOnePartialAsync(
-                    output.Writer.FinalizeAsync, output.Writer.DisposeAsync, output.WriteStream,
-                    () => output.Closed = true, output.Path, output.FileName, output.MimeType, partialStore)
+                    new PendingPartial(
+                        output.Writer.FinalizeAsync, output.Writer.DisposeAsync, output.WriteStream,
+                        () => output.Closed = true, output.Path, output.FileName, output.MimeType),
+                    partialStore)
                     .ConfigureAwait(false);
             }
         }
@@ -421,6 +423,32 @@ public sealed class ReportRunner : IReportRunner
                 }
             }
 
+            // Reconciliation (ADR D80). Progress tracking already counts the source's rows before the
+            // loop starts (D47), so comparing that against what was actually read costs one
+            // subtraction and needs no new configuration. It is the only signal that surfaces a
+            // non-unique keyset key: single-column keyset with strict `>` drops the tail of a
+            // duplicate group straddling a page boundary, silently, and no source can see it happen.
+            //
+            // Advisory, never fatal, and deliberately so: the count predates the run, so a concurrent
+            // insert or delete explains a difference just as well as a defect does. Failing a run on
+            // it would turn a busy table into a broken report. Only a Completed run is checked —
+            // CompletedPartial skipped batches on purpose, and a Failed or Cancelled run legitimately
+            // read less.
+            if (status == ReportRunStatus.Completed && totalRecords is { } expectedRows && recordsRead != expectedRows)
+            {
+                execution.Logger.LogWarning(
+                    "Report {ReportName} read {Read} rows but the pre-run count reported {Expected}. " +
+                    "Concurrent writes explain a small difference; a persistent one can mean the keyset key " +
+                    "is not unique, which drops rows at page boundaries.",
+                    report.Name, recordsRead, expectedRows);
+
+                await events.EmitAsync(JobEventTypes.RowCountMismatch, null, new Dictionary<string, string>
+                {
+                    ["expected"] = expectedRows.ToString(CultureInfo.InvariantCulture),
+                    ["read"] = recordsRead.ToString(CultureInfo.InvariantCulture),
+                }, cancellationToken).ConfigureAwait(false);
+            }
+
             long bytesWritten = 0;
             var uploads = new List<UploadResult>();
             var uploadFailed = false;
@@ -533,8 +561,8 @@ public sealed class ReportRunner : IReportRunner
             }
             else
             {
-                // status == Failed (from either a read failure or a write failure escalated to
-                // abort) — CompletedPartial runs legitimately publish above and never reach here;
+                // Reached only by a genuine failure, from either a read failure or a write failure
+                // escalated to abort. A partial run legitimately publishes above and never lands here;
                 // only a genuine failure captures partials (D11's batch-atomicity: the partial file
                 // contains exactly the fully-written batches).
                 await CapturePartialArtifactsAsync().ConfigureAwait(false);
@@ -612,6 +640,20 @@ public sealed class ReportRunner : IReportRunner
             // Disposal failures during cleanup are non-fatal.
         }
     }
+
+    /// <summary>
+    /// One output's closing handles, grouped so partial capture takes a subject and a store rather
+    /// than eight positional arguments — the regular and sectioned call sites pass exactly the same
+    /// shape, so the grouping is the one that already existed implicitly.
+    /// </summary>
+    private readonly record struct PendingPartial(
+        Func<CancellationToken, Task> Finalize,
+        Func<ValueTask> DisposeWriter,
+        FileStream Stream,
+        Action MarkClosed,
+        string Path,
+        string FileName,
+        string MimeType);
 
     /// <summary>A finished output file (regular or sectioned) for upload and artifact retention.</summary>
     private interface IFinishedFile

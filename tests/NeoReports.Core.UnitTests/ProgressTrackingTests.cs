@@ -307,4 +307,85 @@ public class ProgressTrackingTests
         await Should.ThrowAsync<OperationCanceledException>(
             () => ReportRunner.ExecuteAsync(report, execution, new EmptyServiceProvider(), cts.Token));
     }
+
+    // --- ADR D80: reconciliation ---
+
+    private static CompiledReport ReconcileReport(IBatchSource<Sale> source, FakeWriterFactory? writer = null) =>
+        new ReportBuilder<Sale>("r")
+            .From(source)
+            .WithPageSize(10)
+            .Column(v => v.Id, "Id")
+            .To(new OutputSpec(writer ?? new FakeWriterFactory()))
+            .Build();
+
+    private static async Task<IReadOnlyList<JobEvent>> RunAndReadEventsAsync(CompiledReport report, string jobId)
+    {
+        var store = new InMemoryJobEventStore();
+        await ReportRunner.ExecuteAsync(
+            report,
+            new ReportExecutionContext(jobId, "r", null, NullLogger.Instance, CancellationToken.None),
+            new SingleServiceProvider(store),
+            CancellationToken.None);
+
+        return await store.ListAsync(jobId, JobEventTypes.RowCountMismatch, 100, 0, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task A_completed_run_that_read_fewer_rows_than_counted_reports_a_mismatch()
+    {
+        // Two rows delivered against a count of five. A non-unique keyset key loses rows exactly like
+        // this — silently, invisibly to the source — and reconciliation is the only place it surfaces.
+        var jobId = Guid.NewGuid().ToString("N");
+        var source = new FakeCountingBatchSource<Sale>(new[] { Page(1, 2) }, count: 5);
+
+        IReadOnlyList<JobEvent> events = await RunAndReadEventsAsync(ReconcileReport(source), jobId);
+
+        JobEvent mismatch = events.ShouldHaveSingleItem();
+        mismatch.Data!["expected"].ShouldBe("5");
+        mismatch.Data!["read"].ShouldBe("2");
+    }
+
+    [Fact]
+    public async Task A_run_whose_count_matches_reports_nothing()
+    {
+        // The check must stay quiet on the ordinary case, or the event becomes noise nobody reads.
+        var jobId = Guid.NewGuid().ToString("N");
+        var source = new FakeCountingBatchSource<Sale>(new[] { Page(1, 2) }, count: 2);
+
+        (await RunAndReadEventsAsync(ReconcileReport(source), jobId)).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task A_source_that_cannot_count_reports_nothing()
+    {
+        // No count, nothing to reconcile against — and emitting a mismatch here would accuse every
+        // source that simply does not implement ISourceRowCounter.
+        //
+        // FakeBatchSource, not FakeCountingBatchSource with count: null — that fake maps null to 0,
+        // so it expresses "counted zero" rather than "cannot count", and the first draft of this test
+        // failed against correct code because of it.
+        var jobId = Guid.NewGuid().ToString("N");
+        var source = new FakeBatchSource<Sale>(new[] { Page(1, 2) });
+
+        (await RunAndReadEventsAsync(ReconcileReport(source), jobId)).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task A_partial_run_reports_no_mismatch()
+    {
+        // CompletedPartial skipped batches on purpose, so reading fewer rows is the expected outcome
+        // and is already reported as Partial (D75). Flagging it again would be double-counting a
+        // known cause as if it were an unknown one.
+        var jobId = Guid.NewGuid().ToString("N");
+        var source = new FakeCountingBatchSource<Sale>(new[] { Page(1), Page(2), Page(3) }, count: 3);
+        CompiledReport report = new ReportBuilder<Sale>("r")
+            .From(source)
+            .WithPageSize(10)
+            .Column(v => v.Id, "Id")
+            .To(new OutputSpec(new FakeWriterFactory(2)))
+            .OnFailure(f => f.SkipBatchAndLog())
+            .Build();
+
+        (await RunAndReadEventsAsync(report, jobId)).ShouldBeEmpty();
+    }
 }

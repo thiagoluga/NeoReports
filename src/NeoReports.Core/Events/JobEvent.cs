@@ -59,6 +59,14 @@ public static class JobEventTypes
     /// <summary>Terminal: the run was cancelled. No <see cref="JobEvent.Data"/>.</summary>
     public const string RunCancelled = "run-cancelled";
 
+    /// <summary>
+    /// A completed run read a different number of rows than the pre-run count reported (ADR D80).
+    /// Advisory: the count is taken before the loop starts, so a concurrent write explains a small
+    /// difference — but a keyset key that is not unique loses the tail of a duplicate group at a page
+    /// boundary, and this is the only place that shows up at all.
+    /// </summary>
+    public const string RowCountMismatch = "row-count-mismatch";
+
     /// <summary>The per-job event cap was reached; appended exactly once, then every further event for this job is dropped. No <see cref="JobEvent.Data"/>.</summary>
     public const string EventsTruncated = "events-truncated";
 }
