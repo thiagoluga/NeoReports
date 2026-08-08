@@ -134,13 +134,55 @@ internal static class XlsxCells
         return cell;
     }
 
+    /// <summary>
+    /// The earliest date Excel's serial numbering and .NET's OADate agree on (ADR D82).
+    /// <para>
+    /// Excel's 1900 date system contains a phantom <c>1900-02-29</c> — a deliberate Lotus 1-2-3
+    /// compatibility bug — which .NET's real calendar does not. The OLE epoch (<c>1899-12-30</c>,
+    /// two days before Excel's serial 1) is chosen so the two off-by-ones cancel <b>after</b> the
+    /// phantom day, and only after it: <c>2020-01-01</c> is 43831 in both, and <c>1900-03-01</c> is 61
+    /// in both, but <c>1900-01-01</c> is OADate 2 against Excel serial 1. Verified against the
+    /// framework, not assumed.
+    /// </para>
+    /// </summary>
+    /// <remarks>
+    /// <see cref="DateTimeKind.Unspecified"/> is deliberate, not an oversight left to the default: this
+    /// is a calendar boundary, not an instant. <see cref="DateTime.ToOADate"/> ignores
+    /// <see cref="DateTime.Kind"/> and converts the tick value, and <see cref="DateTime"/> comparison
+    /// does the same — so the threshold has to be kind-agnostic to match what it is guarding. Pinning
+    /// it to <c>Utc</c> or <c>Local</c> would imply a conversion that neither side performs.
+    /// </remarks>
+    private static readonly DateTime FirstFaithfulExcelDate = new(1900, 3, 1, 0, 0, 0, DateTimeKind.Unspecified);
+
     // Dates are stored as their numeric OADate serial (no data type) styled with a date number-format.
-    private static Cell DateCell(DateTime value, string reference, int styleIndex) => new()
+    private static Cell DateCell(DateTime value, string reference, int styleIndex)
     {
-        CellReference = reference,
-        StyleIndex = (uint)styleIndex,
-        CellValue = new CellValue(value.ToOADate().ToString(CultureInfo.InvariantCulture)),
-    };
+        // Below the boundary the serial is not merely imprecise, it is a different date — or no date
+        // at all. Three distinct ways, all of which used to reach the file silently or kill it:
+        //
+        //   * 1900-01-01 .. 1900-02-28 land one day late, because Excel counts the phantom day and
+        //     .NET does not.
+        //   * anything before 1899-12-30 produces a NEGATIVE serial, which Excel cannot render as a
+        //     date at all.
+        //   * DateTime.MinValue is special-cased by the framework to return 0.0 instead of throwing,
+        //     so an unset/default date was quietly written as 1899-12-30 — a real-looking date the
+        //     report never contained.
+        //   * a year below 100 throws OverflowException, which aborted the ENTIRE workbook over one
+        //     cell (the same shape as the illegal-control-character bug fixed earlier).
+        //
+        // Falling back to an invariant round-trip string keeps the exact value at the cost of Excel's
+        // date formatting for that cell — the same per-value trade D77 makes for numbers that cannot
+        // be represented exactly, and for the same reason: only pay it where the alternative is wrong.
+        if (value < FirstFaithfulExcelDate)
+            return InlineStringCell(value.ToString("O", CultureInfo.InvariantCulture), reference);
+
+        return new Cell
+        {
+            CellReference = reference,
+            StyleIndex = (uint)styleIndex,
+            CellValue = new CellValue(value.ToOADate().ToString(CultureInfo.InvariantCulture)),
+        };
+    }
 
     private static Cell InlineStringCell(string text, string reference) => new()
     {

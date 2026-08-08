@@ -9,6 +9,18 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 ## [Unreleased]
 
 ### Fixed
+- **XLSX dates Excel cannot represent faithfully are written as text instead of a wrong serial
+  (ADR D82).** The cutoff is **1900-03-01**, not 1900: Excel's date system contains a phantom
+  `1900-02-29` that .NET's calendar does not, and the OLE epoch only cancels that offset above the
+  phantom day. Four distinct failures are closed by one guard — dates from `1900-01-01` to
+  `1900-02-28` landed **one day late**; anything before `1899-12-30` produced a negative serial Excel
+  cannot render as a date; `DateTime.MinValue` is special-cased by the framework to return `0.0`, so
+  an unset date was silently written as `1899-12-30`; and a year below 100 threw `OverflowException`,
+  **aborting the entire workbook over a single cell**.
+  Such values now become an invariant round-trip string, keeping the exact date at the cost of Excel's
+  date formatting for that cell. Applies to `DateTime`, `DateOnly` and `DateTimeOffset`, in both the
+  MIT and Pro writers. Dates from `1900-03-01` on are unaffected and still written as real date cells.
+
 - **A keyset key that carries a time zone is no longer compared against a zone-less cast (ADR D81).**
   `ColumnType.Timestamp` is the offset-aware temporal member (it is what a `DateTimeOffset` is inferred
   as) and now gets an offset-aware cast — `::timestamptz` on PostgreSQL/Redshift,

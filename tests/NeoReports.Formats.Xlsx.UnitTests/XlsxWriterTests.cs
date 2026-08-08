@@ -53,6 +53,69 @@ public class XlsxWriterTests
         written.Hour.ShouldBe(11, "08:30-03:00 is 11:30 UTC");
     }
 
+    // ADR D82. Below 1900-03-01 the OADate serial is not a rounding problem, it is a different date or
+    // none at all — Excel counts a phantom 1900-02-29 that .NET's calendar does not, so the two systems
+    // only agree above that day. Each case below is a distinct way the old code got it wrong.
+    [Theory]
+    // One day late: OADate 2 against Excel serial 1. The quietest of the four — a plausible date, just
+    // not the one in the report.
+    [InlineData("1900-01-01")]
+    [InlineData("1900-02-28")]
+    // Negative serial: Excel cannot render it as a date at all.
+    [InlineData("1899-12-29")]
+    [InlineData("1850-06-15")]
+    // A year below 100 throws OverflowException out of ToOADate, which took the WHOLE workbook down
+    // over a single cell.
+    [InlineData("0050-01-01")]
+    public async Task A_date_Excel_cannot_represent_faithfully_is_written_as_text(string iso)
+    {
+        var value = DateTime.Parse(iso, System.Globalization.CultureInfo.InvariantCulture);
+
+        using XLWorkbook workbook = await WriteAndReopen(
+            new XlsxOptions(), OneColumn("At", ColumnType.DateTime), new object?[][] { new object?[] { value } });
+
+        IXLCell cell = workbook.Worksheet(1).Cell(2, 1);
+        cell.Value.IsDateTime.ShouldBeFalse("a serial Excel would misread must not be written as one");
+        cell.GetString().ShouldBe(value.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
+
+        // The exact format matters beyond being readable: NeoReports' own XLSX *source* falls back to
+        // DateTime.Parse(..., RoundtripKind) for a non-numeric cell in a date column, so writing "O"
+        // is what keeps a report round-tripping back out as a real DateTime rather than a string.
+        DateTime.Parse(
+            cell.GetString(),
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.RoundtripKind).ShouldBe(value);
+    }
+
+    [Fact]
+    public async Task DateTime_MinValue_is_not_silently_written_as_1899_12_30()
+    {
+        // The framework special-cases MinValue to return 0.0 from ToOADate instead of throwing, so an
+        // unset or default date used to land in the file as 1899-12-30 — a real-looking date the report
+        // never held. This is the one case a range check alone would miss if it only guarded against
+        // the exception.
+        using XLWorkbook workbook = await WriteAndReopen(
+            new XlsxOptions(), OneColumn("At", ColumnType.DateTime), new object?[][] { new object?[] { DateTime.MinValue } });
+
+        IXLCell cell = workbook.Worksheet(1).Cell(2, 1);
+        cell.Value.IsDateTime.ShouldBeFalse();
+        cell.GetString().ShouldBe(DateTime.MinValue.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    [Theory]
+    [InlineData("1900-03-01")] // the first date the two systems agree on — must stay a real date cell
+    [InlineData("1970-01-01")]
+    [InlineData("2026-01-15")]
+    public async Task A_date_Excel_represents_faithfully_stays_a_date_cell(string iso)
+    {
+        var value = DateTime.Parse(iso, System.Globalization.CultureInfo.InvariantCulture);
+
+        using XLWorkbook workbook = await WriteAndReopen(
+            new XlsxOptions(), OneColumn("At", ColumnType.DateTime), new object?[][] { new object?[] { value } });
+
+        workbook.Worksheet(1).Cell(2, 1).GetDateTime().ShouldBe(value);
+    }
+
     [Fact]
     public async Task A_bigint_beyond_double_precision_keeps_its_exact_digits()
     {
