@@ -163,8 +163,8 @@ public class KeysetSqlGeneratorTests
     [Fact]
     public void Oracle_parses_a_zoned_timestamp_cursor_with_the_TZH_TZM_model()
     {
-        QueryModel model = SingleTable(new QuerySelectColumn(Ref("t0", "id"), "Ts", "TIMESTAMP(6) WITH TIME ZONE"))
-            with { KeyDataType = "TIMESTAMP(6) WITH TIME ZONE" };
+        const string keyDataType = "TIMESTAMP(6) WITH TIME ZONE";
+        QueryModel model = SingleTable(new QuerySelectColumn(Ref("t0", "id"), "Ts", keyDataType)) with { KeyDataType = keyDataType };
 
         GeneratedQuery result = KeysetSqlGenerator.Generate(model, SqlDialect.Oracle);
 
