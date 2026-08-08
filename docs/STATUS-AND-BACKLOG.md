@@ -65,8 +65,11 @@ enterprise-readiness and test coverage, and shipped everything actionable.
 >    mismatch is **ORA-01830 on page 2**, not a silent shift. Still open in the same family:
 >    **`time with time zone` (`timetz`)** drops its zone against `::time` the same way (reproduced),
 >    but fixing it needs a `Time`/`TimeTz` split — see §5.
-> 3. **XLSX pre-1900 dates** — `DateTime.ToOADate` cannot express them; inherent to the serial Excel
->    uses, not decidable in that layer.
+> 3. ~~**XLSX pre-1900 dates**~~ — **FIXED (ADR D82)**, and the real boundary turned out to be
+>    **1900-03-01**: Excel's phantom `1900-02-29` means the sixty days from `1900-01-01` were written
+>    as a *different, plausible* date rather than being unrepresentable. Measuring also turned up
+>    `DateTime.MinValue` silently becoming `1899-12-30`, and a year below 100 throwing out of
+>    `ToOADate` and **aborting the whole workbook**. One range check closes all four.
 > 4. **CA1068-style next-major bundling** (§1) and the CI hardening in §2.
 
 
@@ -168,7 +171,11 @@ ones are **fixed** (PR pending/merged); two representation tradeoffs are recorde
   numbers as IEEE-754 doubles, so preserving the exact value **requires** writing it as text — which
   loses Excel's numeric sorting/formatting. That number-vs-text tradeoff is a product decision, so it
   is left as-is with the value rounded (today's behaviour) pending a call.
-- ~~**XLSX `DateTimeOffset` drops the offset**~~ **FIXED (ADR D77)** — it was writing the wrong *instant* (and disagreeing with CSV by up to 14h), now `UtcDateTime`. **Pre-1900 dates remain deferred** — inherent to the OADate serial. Original description: `dto`
+- ~~**XLSX `DateTimeOffset` drops the offset**~~ **FIXED (ADR D77)** — it was writing the wrong *instant* (and disagreeing with CSV by up to 14h), now `UtcDateTime`. **Pre-1900 dates are now FIXED too (ADR D82)** — and the deferral's premise ("inherent to the OADate
+  serial") understated it: the true cutoff is `1900-03-01`, because Excel's phantom `1900-02-29` made
+  the sixty days from `1900-01-01` come out as a *different* date rather than an unrepresentable one.
+  Measuring it also surfaced `DateTime.MinValue` silently writing `1899-12-30` and a sub-year-100 date
+  throwing `OverflowException` out of `ToOADate`, taking the entire workbook down with it. Original description: `dto`
   is stored via `dto.DateTime` (offset discarded) and `DateTime.ToOADate()` can't represent dates
   before 1899-12-30. Both are inherent to the OADate/no-tz cell model; revisit only if a real report
   needs sub-day-offset fidelity or pre-1900 dates.

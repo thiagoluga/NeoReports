@@ -1546,3 +1546,58 @@ session. The Postgres suite keeps the old zone-less cast as a **live control** t
 lost — without it, a suite that never sets a session zone would pass with the bug still in place,
 since under UTC both casts agree. Same split as the Oracle `TO_TIMESTAMP` fix: unit tests for what we
 emit, containers for whether the database agrees.
+
+## D82 — XLSX dates below 1900-03-01 are written as text (2026-08-08)
+
+§5 recorded "XLSX pre-1900 dates" as inherent to the OADate serial and not decidable in that layer.
+Measuring it moved the boundary and turned one entry into four distinct defects.
+
+### The boundary is 1900-03-01, not 1900
+
+Excel's 1900 date system contains a phantom **1900-02-29** — a deliberate Lotus 1-2-3 compatibility
+bug — which .NET's calendar does not have. The OLE epoch (`1899-12-30`, two days before Excel's
+serial 1) is chosen so the two off-by-ones cancel, but they only cancel *after* the phantom day.
+Verified against the framework rather than assumed:
+
+| date | `ToOADate()` | Excel serial | agree? |
+|---|---|---|---|
+| `2020-01-01` | 43831 | 43831 | yes |
+| `1900-03-01` | 61 | 61 | yes — the first day they do |
+| `1900-02-28` | 60 | 59 | **no**, lands on the phantom day |
+| `1900-01-01` | 2 | 1 | **no**, one day late |
+
+So the sixty days from `1900-01-01` to `1900-02-28` were not "unrepresentable"; they were written as
+a **different, plausible date**. That is the quietest failure of the four and was not on record at all.
+
+### Four failures, one guard
+
+1. `1900-01-01 .. 1900-02-28` — off by one day (above).
+2. Anything before `1899-12-30` — **negative** serial, which Excel cannot render as a date.
+3. `DateTime.MinValue` — the framework special-cases it to return `0.0` instead of throwing, so an
+   unset or default date was written as `1899-12-30`: a real-looking date the report never held. A
+   guard written only against the exception would have missed exactly this one.
+4. A year below 100 — `ToOADate` throws `OverflowException`, which aborted the **entire workbook**
+   over a single cell. The same shape as the illegal-control-character bug fixed earlier, and the
+   reason a range check is better than a `try`/`catch` here: the check also covers 1-3, which do not
+   throw at all.
+
+A single `value < 1900-03-01` test covers all four, which is why it is a comparison and not exception
+handling.
+
+### Text, not a corrected serial
+
+Writing `OADate - 1` for the Jan/Feb 1900 window would make Excel display the right date, and was
+rejected: it stores a serial that means a different date to anything reading the file with OLE
+semantics, and Excel's own date arithmetic across the phantom day is inconsistent regardless. An
+invariant `"O"` round-trip string is unambiguous in every reader, at the cost of Excel's date
+formatting for that cell — the same per-value trade D77 makes for numbers that cannot be represented
+exactly, taken for the same reason: only pay it where the alternative is wrong.
+
+The guard lives in `XlsxCells.DateCell`, which the MIT and Pro writers share, and covers `DateTime`,
+`DateOnly` and `DateTimeOffset` (whose UTC conversion can itself cross the boundary) through the one
+call site each already routes to.
+
+**Verified failing without the fix**: all six new cases fail when the threshold is neutralized, while
+the three above-boundary cases keep passing — so they are not vacuous. Neutralizing it with
+`if (false)` does not compile (CS0162 under warnings-as-errors), so the revert was done by moving the
+threshold, which keeps the branch reachable.
