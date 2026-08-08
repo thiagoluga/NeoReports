@@ -8,6 +8,26 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 
 ## [Unreleased]
 
+### Added
+- **The three commercial Pro packages are now published to nuget.org (ADR D83).**
+  `NeoReports.Xlsx.Pro`, `NeoReports.Sources.Join.Pro` and `NeoReports.QueryBuilder.Pro` ship on the
+  same version tag as the MIT packages, each carrying its own **PolyForm Small Business 1.0.0**
+  `LICENSE.txt` rather than the repo-wide MIT expression. Being able to `dotnet add package` them does
+  not make them free: they refuse to operate without a valid license key (`NEOREPORTS_LICENSE_KEY`, or
+  `AddNeoReportsProLicense(key)` / `ProLicenseGate.Register(key)`), which is the enforcement D70 put in
+  place of the old "you cannot obtain the package" gating.
+  This reverses **D30** — the `pack-pro.yml` workflow that uploaded them as build artifacts is removed,
+  since `release.yml` now packs and pushes them with everything else.
+
+### Security
+- **The Pro license-signing key was rotated (ADR D83).** The key the packages shipped with was a
+  placeholder whose private half had been generated inside a chat session, so it must never have signed
+  anything real. It never did — no customer license was issued under it — so nothing that exists stops
+  verifying. A future rotation would not be so cheap: validation is offline with no revocation list, so
+  rotating after licenses are in the wild invalidates all of them at once.
+  A test now fails if that placeholder ever returns to `ProLicense.PublicKeyBase64`, because a `v*` tag
+  publishes straight to NuGet with no human step in between and NuGet versions are immutable.
+
 ### Fixed
 - **XLSX dates Excel cannot represent faithfully are written as text instead of a wrong serial
   (ADR D82).** The cutoff is **1900-03-01**, not 1900: Excel's date system contains a phantom

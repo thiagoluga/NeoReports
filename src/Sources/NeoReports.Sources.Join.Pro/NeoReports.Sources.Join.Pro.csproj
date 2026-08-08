@@ -5,12 +5,13 @@
     <Description>NeoReports Pro — multi-source composition: enrichment (batched per-page lookup) and keyset merge-join.</Description>
     <PackageTags>reports;reporting;multi-source;join;enrichment</PackageTags>
 
-    <!-- Commercial package (maintainer decision, D29). NOT MIT: licensed under PolyForm Small
-         Business 1.0.0 (free for organizations under USD 1M annual revenue; a commercial license is
-         required above that). Override the repo-wide MIT metadata, and keep it out of the OSS NuGet
-         release (IsPackable=false). Distribution (D30): the pack-pro.yml workflow packs it as a CI
-         build artifact only, overriding IsPackable per project; nothing is published to a feed. -->
-    <IsPackable>false</IsPackable>
+    <!-- Commercial package. NOT MIT: licensed under PolyForm Small Business 1.0.0 (free for
+         organizations under USD 1M annual revenue; a commercial license is required above that) —
+         which is why the repo-wide MIT metadata is overridden below.
+         PUBLISHED to nuget.org (D70, reversing D30's distribution-only gating; wired up in D83).
+         Enforcement is no longer "you cannot get the package" but the runtime license check in
+         NeoReports.Licensing, so the package itself is public while its features are not free. -->
+    <IsPackable>true</IsPackable>
     <PackageLicenseExpression></PackageLicenseExpression>
     <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
   </PropertyGroup>

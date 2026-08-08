@@ -14,16 +14,15 @@ public static class ProLicense
     /// safe to publish; only the matching private key (held only by the maintainer's license-issuing
     /// side, out of scope for this repo) can produce a signature this verifies.
     /// <para>
-    /// <b>Placeholder key pair.</b> This constant was generated for this package's initial
-    /// implementation and has not yet been used to sign any real customer license. Before issuing
-    /// any real NeoReports Pro license, generate a fresh production key pair through a process where
-    /// the private half never appears in a chat transcript, source control, or any shared document —
-    /// move it straight into a secrets vault — then replace this constant in a new release. Existing
-    /// license keys signed under a rotated-out key stop verifying.
+    /// <b>Production key, generated 2026-08-08 (ADR D83).</b> It replaces the placeholder this
+    /// package shipped with, whose private half had been generated inside a chat session and was
+    /// therefore burned before it ever signed anything. Rotating this constant again invalidates
+    /// <b>every</b> license already issued under it — validation is offline, so there is no way to
+    /// re-issue selectively. Treat a rotation as a breaking release, not a maintenance detail.
     /// </para>
     /// </summary>
     public const string PublicKeyBase64 =
-        "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE8CTV2vXjiGkicpdqu6zK5kzHUCAotsIs7ysuwvAP/ZhxSmAcK/ZuZ4w//6XT0I71il/8qeuobgic5csTNd5How==";
+        "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEVFPHemBTUrnP9IOObkGNSIy/y5vblPPlirW9o0jk0zG51PzuzLvxf6c+OnQWRxvsWGkF1yU3b/kyZVgAULAT3w==";
 
     /// <summary>
     /// Validates <paramref name="licenseKey"/> against the embedded NeoReports Pro public key.

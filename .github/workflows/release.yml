@@ -2,6 +2,14 @@ name: Release
 
 # Publishes all NeoReports packages to NuGet when a version tag is pushed.
 # Tag the release commit as vX.Y.Z (e.g. v1.0.0); the version is derived from the tag.
+#
+# "All" now genuinely means all: since D83 the three commercial Pro packages are IsPackable=true and
+# are picked up by the solution-wide pack below, so this workflow publishes them alongside the MIT
+# ones (they carry their own PolyForm LICENSE.txt rather than the repo-wide MIT expression). The
+# separate pack-pro.yml that used to upload them as build artifacts is gone — it existed only for
+# D30's "never published to a feed" stance, which D70 reversed. There is no human step between a
+# v* tag and a public NuGet push, which is why NeoReports.Licensing has a test asserting the
+# embedded signing key is not the burned placeholder.
 on:
   push:
     tags:
