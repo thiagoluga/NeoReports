@@ -170,7 +170,15 @@ public sealed class AdoFilterTranslator : IFilterTranslator
         ColumnType.Boolean => $"{token}::boolean",
         ColumnType.Date => $"{token}::date",
         ColumnType.Time => $"{token}::time",
-        ColumnType.DateTime or ColumnType.Timestamp => $"{token}::timestamp",
+        ColumnType.DateTime => $"{token}::timestamp",
+        // Zoned columns get the zoned cast, for the same reason the keyset cursor does (ADR D81): a
+        // value that carries an offset must not be re-interpreted in the session's time zone. Filter
+        // values are hand-typed rather than machine-generated, so most carry no offset at all — those
+        // are unaffected, because `::timestamptz` reads a zone-less literal in the session zone,
+        // which is exactly what `::timestamp` followed by the implicit coercion already did. The
+        // difference appears only when the typed value states an offset, and then honouring it is the
+        // answer the user asked for. (Verified against a real container both ways.)
+        ColumnType.Timestamp => $"{token}::timestamptz",
         ColumnType.Uuid => $"{token}::uuid",
         _ => null,
     };

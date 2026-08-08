@@ -70,7 +70,15 @@ public sealed record SqlDialect(
         ColumnType.Boolean => $"{token}::boolean",
         ColumnType.Date => $"{token}::date",
         ColumnType.Time => $"{token}::time",
-        ColumnType.DateTime or ColumnType.Timestamp => $"{token}::timestamp",
+        ColumnType.DateTime => $"{token}::timestamp",
+        // A zoned key's cursor carries its offset (the codec's "O" round-trip of a Utc-kind DateTime
+        // ends in 'Z'), and `::timestamp` throws that away — Postgres then coerces the now-naive
+        // value into the column's type using the SESSION time zone, moving the boundary by the
+        // session offset. With strict `>` that silently skips every row inside the shifted window
+        // (measured: under America/Sao_Paulo, one of three rows past the cursor disappeared).
+        // `::timestamptz` honours the offset, so the boundary is the instant the cursor named
+        // whatever the session is set to (ADR D81).
+        ColumnType.Timestamp => $"{token}::timestamptz",
         ColumnType.Uuid => $"{token}::uuid",
         _ => null,
     };
@@ -85,8 +93,21 @@ public sealed record SqlDialect(
         // second page throws ORA-01858. Parse it explicitly with the exact format model the codec
         // documents (7 fractional digits, matching .NET's "O" specifier). Comparing a DATE column
         // against a TIMESTAMP promotes the DATE, so one model covers DATE/DATETIME/TIMESTAMP keys.
-        ColumnType.Date or ColumnType.DateTime or ColumnType.Timestamp =>
+        ColumnType.Date or ColumnType.DateTime =>
             $"TO_TIMESTAMP({token}, 'YYYY-MM-DD\"T\"HH24:MI:SS.FF7')",
+        // TIMESTAMP WITH TIME ZONE needs its own model, and not merely for accuracy: the driver hands
+        // such a column back as a DateTimeOffset, so the cursor ends in an offset (`+00:00`) that the
+        // model above has no element for — Oracle rejects it with ORA-01830 ("format picture ends
+        // before converting entire input string") on the second page. The same failure shape as the
+        // ORA-01858 crash fixed for plain TIMESTAMP keys, reached through a different type. TZH:TZM
+        // consumes the offset; both the parse and the resulting keyset boundary were verified against
+        // a real Oracle container under a non-UTC session (ADR D81).
+        //
+        // TIMESTAMP WITH LOCAL TIME ZONE is deliberately NOT here: the driver normalizes it to the
+        // session zone and returns a plain naive DateTime, so its cursor carries no offset and the
+        // model above is the correct one (also verified).
+        ColumnType.Timestamp =>
+            $"TO_TIMESTAMP_TZ({token}, 'YYYY-MM-DD\"T\"HH24:MI:SS.FF7TZH:TZM')",
         _ => null,
     };
 }
@@ -117,11 +138,40 @@ public static class SqlTypeMap
             || t.Contains("real", StringComparison.Ordinal))
             return ColumnType.Decimal;
         if (t.Contains("timestamp", StringComparison.Ordinal) || t.Contains("datetime", StringComparison.Ordinal))
-            return ColumnType.DateTime;
+            return IsZoned(t) ? ColumnType.Timestamp : ColumnType.DateTime;
         if (t.Contains("date", StringComparison.Ordinal))
             return ColumnType.Date;
         if (t.Contains("time", StringComparison.Ordinal))
             return ColumnType.Time;
         return ColumnType.String;
     }
+
+    /// <summary>
+    /// Whether an already-lower-cased timestamp/datetime type name is the offset-aware variant:
+    /// PostgreSQL/Redshift <c>timestamp with time zone</c> (alias <c>timestamptz</c>), Oracle
+    /// <c>TIMESTAMP(6) WITH TIME ZONE</c>, SQL Server <c>datetimeoffset</c>, Snowflake
+    /// <c>TIMESTAMP_TZ</c>/<c>TIMESTAMP_LTZ</c>.
+    /// </summary>
+    /// <remarks>
+    /// <c>"without time zone"</c> is excluded explicitly because it <b>contains</b>
+    /// <c>"with time zone"</c> — PostgreSQL's <c>information_schema</c> reports the zone-less type as
+    /// <c>timestamp without time zone</c>, so a naïve substring test would classify every naive
+    /// column as zoned and cast its cursor to <c>timestamptz</c>. The caller also guarantees the name
+    /// is timestamp-ish before asking: <c>time with time zone</c> (<c>timetz</c>) satisfies the same
+    /// substring but is <see cref="ColumnType.Time"/>, and casting it to <c>timestamptz</c> would
+    /// make the comparison fail outright.
+    /// <para>
+    /// Oracle's <c>TIMESTAMP(6) WITH LOCAL TIME ZONE</c> is excluded — and not by accident, even
+    /// though <c>"with local time zone"</c> happens not to contain <c>"with time zone"</c>. The driver
+    /// normalizes that type to the session zone and returns a plain naive value, so it belongs with
+    /// <see cref="ColumnType.DateTime"/>; a test pins the classification so a future rewrite of this
+    /// predicate cannot quietly move it.
+    /// </para>
+    /// </remarks>
+    private static bool IsZoned(string t) =>
+        (t.Contains("with time zone", StringComparison.Ordinal) && !t.Contains("without time zone", StringComparison.Ordinal))
+        || t.Contains("timestamptz", StringComparison.Ordinal)
+        || t.Contains("datetimeoffset", StringComparison.Ordinal)
+        || t.Contains("timestamp_tz", StringComparison.Ordinal)
+        || t.Contains("timestamp_ltz", StringComparison.Ordinal);
 }

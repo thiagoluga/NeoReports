@@ -8,6 +8,24 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 
 ## [Unreleased]
 
+### Fixed
+- **A keyset key that carries a time zone is no longer compared against a zone-less cast (ADR D81).**
+  `ColumnType.Timestamp` is the offset-aware temporal member (it is what a `DateTimeOffset` is inferred
+  as) and now gets an offset-aware cast — `::timestamptz` on PostgreSQL/Redshift,
+  `TO_TIMESTAMP_TZ(…FF7TZH:TZM)` on Oracle — while `ColumnType.DateTime` keeps the zone-less one.
+  `SqlTypeMap` also learned to produce `Timestamp`: it previously mapped every `timestamp`/`datetime`
+  name to `DateTime`, so a catalog-driven report could not express a zoned column at all.
+  On **PostgreSQL** the old cast discarded the cursor's offset and Postgres re-read the value in the
+  session's time zone, moving the page boundary and **silently dropping the rows inside that window**
+  while the run still reported `Completed` (measured: one of three rows past the cursor, under
+  `America/Sao_Paulo`). On **Oracle** the same mismatch was not silent — the driver returns
+  `TIMESTAMP WITH TIME ZONE` as a `DateTimeOffset`, so the cursor carried an offset the naive format
+  model could not parse and page 2 failed with **ORA-01830**.
+  Preview filters on such a column get the same cast. Values typed without an offset behave exactly as
+  before; a value that states one is now honoured instead of ignored.
+  No API changed. If you worked around this by declaring a zoned column as `ColumnType.String`, or by
+  writing the zoned cast yourself in a code-first report's SQL, both keep working.
+
 ### Added
 - **`ReportJobStatus.Partial` (ADR D75).** A run that skipped batches (`SkipBatchAndLog`) finished
   with output missing rows the source held, and the job reported `Completed`. The skip count was no

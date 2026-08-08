@@ -24,10 +24,25 @@ public enum ColumnType
     /// <summary>Time of day without date.</summary>
     Time,
 
-    /// <summary>Date and time.</summary>
+    /// <summary>
+    /// Date and time carrying no zone or offset — a "wall clock" reading, and what
+    /// <see cref="System.DateTime"/> members are inferred as (SQL Server <c>datetime2</c>,
+    /// PostgreSQL <c>timestamp</c>, Oracle <c>TIMESTAMP</c>).
+    /// </summary>
     DateTime,
 
-    /// <summary>Point in time, typically UTC.</summary>
+    /// <summary>
+    /// An offset-aware point in time, and what <see cref="System.DateTimeOffset"/> members are
+    /// inferred as (PostgreSQL <c>timestamptz</c>, SQL Server <c>datetimeoffset</c>, Oracle
+    /// <c>TIMESTAMP WITH TIME ZONE</c>).
+    /// <para>
+    /// The distinction from <see cref="DateTime"/> is load-bearing, not cosmetic: a provider that
+    /// binds a temporal value as text has to cast it to the matching zoned type. Casting an
+    /// offset-bearing value to a zone-less one discards the offset and re-reads the value in the
+    /// session's time zone, which moves the instant — silently skipping or repeating rows when the
+    /// value is a keyset cursor (ADR D81).
+    /// </para>
+    /// </summary>
     Timestamp,
 
     /// <summary>Universally unique identifier.</summary>
