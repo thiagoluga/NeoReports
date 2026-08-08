@@ -145,7 +145,14 @@ internal static class XlsxCells
     /// framework, not assumed.
     /// </para>
     /// </summary>
-    private static readonly DateTime FirstFaithfulExcelDate = new(1900, 3, 1);
+    /// <remarks>
+    /// <see cref="DateTimeKind.Unspecified"/> is deliberate, not an oversight left to the default: this
+    /// is a calendar boundary, not an instant. <see cref="DateTime.ToOADate"/> ignores
+    /// <see cref="DateTime.Kind"/> and converts the tick value, and <see cref="DateTime"/> comparison
+    /// does the same — so the threshold has to be kind-agnostic to match what it is guarding. Pinning
+    /// it to <c>Utc</c> or <c>Local</c> would imply a conversion that neither side performs.
+    /// </remarks>
+    private static readonly DateTime FirstFaithfulExcelDate = new(1900, 3, 1, 0, 0, 0, DateTimeKind.Unspecified);
 
     // Dates are stored as their numeric OADate serial (no data type) styled with a date number-format.
     private static Cell DateCell(DateTime value, string reference, int styleIndex)
