@@ -155,7 +155,9 @@ public class AdoFilterTranslatorTests
     [InlineData(ColumnType.Date, "date")]
     [InlineData(ColumnType.Time, "time")]
     [InlineData(ColumnType.DateTime, "timestamp")]
-    [InlineData(ColumnType.Timestamp, "timestamp")]
+    // Timestamp is the offset-aware member and gets the offset-aware cast; casting it to the
+    // zone-less `timestamp` was the ADR D81 bug (this row asserted the defect).
+    [InlineData(ColumnType.Timestamp, "timestamptz")]
     [InlineData(ColumnType.Uuid, "uuid")]
     public void PostgresCast_maps_every_castable_column_type(ColumnType type, string sqlType) =>
         AdoFilterTranslator.PostgresCast(type, "@filter0").ShouldBe($"@filter0::{sqlType}");

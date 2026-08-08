@@ -10,6 +10,8 @@ public sealed record Sale(long Id, string Customer, decimal Amount, DateTime Dat
 
 public sealed record TemporalSale(long Id, DateTime Ts);
 
+public sealed record ZonedSale(long Id, DateTimeOffset Ts);
+
 [Collection(nameof(OracleCollection))]
 public class OracleKeysetSourceTests
 {
@@ -102,6 +104,58 @@ public class OracleKeysetSourceTests
         pages.ShouldBe(3); // 5 rows / 2 per page
         all.Select(v => v.Id).ShouldBe(new long[] { 1, 2, 3, 4, 5 }); // in Ts order, no gaps or duplicates
         all.Select(v => v.Ts).ShouldBeInOrder();
+    }
+
+    // The zoned counterpart (ADR D81). The driver returns a TIMESTAMP WITH TIME ZONE column as a
+    // DateTimeOffset, so the cursor ends in an offset ("+00:00") that the naive model above cannot
+    // consume — before D81 the QueryBuilder emitted that model for this type too and Oracle rejected
+    // page 2 with ORA-01830. Unlike PostgreSQL, where the same mismatch shifts the boundary silently,
+    // here it is a hard stop; this test pins that the TZH:TZM model both parses and paginates.
+    private const string ZonedSql =
+        "SELECT Id, Ts FROM nr_zoned_keyset " +
+        "WHERE (:cursor IS NULL OR Ts > TO_TIMESTAMP_TZ(:cursor, 'YYYY-MM-DD\"T\"HH24:MI:SS.FF7TZH:TZM')) ORDER BY Ts";
+
+    [SkippableFact]
+    public async Task A_zoned_timestamp_keyset_cursor_round_trips_across_pages()
+    {
+        Skip.IfNot(_fixture.Available, "Docker/Oracle container not available.");
+        await SeedZonedAsync();
+
+        var source = Source.Oracle(_fixture.ConnectionString, ZonedSql)
+            .Keyset<ZonedSale, DateTimeOffset>(v => v.Ts, pageSize: 2);
+
+        var all = new List<ZonedSale>();
+        string? cursor = null;
+        var pages = 0;
+        while (true)
+        {
+            var result = await source.ReadBatchAsync(new BatchContext(Exec(), 2, cursor, pages + 1), CancellationToken.None);
+            all.AddRange(result.Records);
+            pages++;
+            if (!result.HasMore || pages > 20)
+                break;
+            cursor = result.NextCursor;
+            cursor.ShouldNotBeNull();
+        }
+
+        pages.ShouldBe(3); // 5 rows / 2 per page
+        all.Select(v => v.Id).ShouldBe(new long[] { 1, 2, 3, 4, 5 });
+        all.Select(v => v.Ts).ShouldBeInOrder();
+    }
+
+    private async Task SeedZonedAsync()
+    {
+        await using var connection = new OracleConnection(_fixture.ConnectionString);
+        await connection.OpenAsync();
+
+        await ExecuteIgnoring(connection,
+            "CREATE TABLE nr_zoned_keyset (Id NUMBER(19) PRIMARY KEY, Ts TIMESTAMP WITH TIME ZONE NOT NULL)", ignoreCode: -955);
+        for (var id = 1; id <= 5; id++)
+        {
+            await ExecuteIgnoring(connection,
+                $"INSERT INTO nr_zoned_keyset (Id, Ts) VALUES ({id}, TIMESTAMP '2026-01-01 0{id}:00:00 +00:00')", ignoreCode: -1);
+        }
+        await ExecuteIgnoring(connection, "COMMIT", ignoreCode: 0);
     }
 
     // Oracle has no CREATE TABLE IF NOT EXISTS and the container is shared assembly-wide, so the DDL

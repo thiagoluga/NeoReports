@@ -1470,3 +1470,79 @@ dress a known cause as an unknown one. `Failed` and `Cancelled` runs legitimatel
 
 The non-unique key itself remains undetectable up front; this makes its *consequence* observable,
 which is the most that can be done without the model change §5 describes.
+
+## D81 — Zoned temporal keys get a zoned cast (2026-08-08)
+
+§5 recorded that a PostgreSQL/Redshift `timestamptz` keyset key can shift its page boundary under a
+non-UTC session, and deferred it: the fix supposedly needed `ColumnType` to carry the
+with/without-time-zone distinction, a change to the frozen `Abstractions` ABI and therefore a
+next-major item.
+
+**That premise was wrong, and re-reading the model is what unblocked this.** `ColumnType` already
+carries the distinction. `ReportColumns.InferColumnType` maps `DateTime` → `ColumnType.DateTime` and
+`DateTimeOffset` → `ColumnType.Timestamp`; the two members are the naive and the offset-aware
+temporal type, and have been since they were introduced. Two things ignored it:
+
+1. `SqlDialect.PostgresCast` and `AdoFilterTranslator.PostgresCast` both matched
+   `DateTime or Timestamp` and emitted `::timestamp` for either.
+2. `SqlTypeMap.ToColumnType` never produced `Timestamp` at all — every name containing `timestamp`
+   or `datetime` mapped to `DateTime`, so the catalog path could not express a zoned column even
+   though the enum could.
+
+So the change is a classification fix plus two cast arms. **No ABI change, no new enum member.** The
+doc comments on both members now state the distinction, because leaving it implicit is what let two
+independent call sites collapse it.
+
+### What the bug actually did, measured
+
+Against real containers, not reasoned about:
+
+- **PostgreSQL** (session `America/Sao_Paulo`): the cursor for a `timestamptz` key is the codec's
+  round-trip of a `Utc`-kind `DateTime`, so it ends in `Z`. `::timestamp` discards that, and Postgres
+  re-reads the now-naive value in the session zone — moving the boundary by the session offset. Of
+  three rows past the cursor, **one silently disappeared**. The run reports `Completed`.
+- **Oracle**: not silent at all. The driver returns `TIMESTAMP WITH TIME ZONE` as a `DateTimeOffset`,
+  so the cursor ends in `+00:00`, and the naive `TO_TIMESTAMP(…FF7)` model has no element to consume
+  it — **ORA-01830 on page 2**. The same failure shape as the ORA-01858 crash fixed for plain
+  `TIMESTAMP` keys, reached through a different type. `TO_TIMESTAMP_TZ(…FF7TZH:TZM)` parses it.
+
+Two databases, two very different symptoms, one cause. The Postgres half was the one on record; the
+Oracle half was found only because the fix was verified against a container instead of reasoned about.
+
+### The substring trap
+
+`IsZoned` cannot simply test for `"with time zone"`: PostgreSQL's `information_schema` reports the
+naive type as **`timestamp without time zone`**, which contains that string. A predicate that missed
+this would have inverted the fix — sending every naive column down the zoned path — while looking
+correct. `"without time zone"` is therefore excluded first, and a test pins both spellings.
+
+Two neighbours are deliberately left where they were, each verified:
+
+- **`time with time zone`** (`timetz`) matches the same substring but is `ColumnType.Time`; casting it
+  to `timestamptz` would make the comparison fail outright. The classifier only asks `IsZoned` about
+  names that are already timestamp-ish. `timetz` has the *same* zone-dropping bug against `::time`
+  (reproduced: 1 row found vs 0), but fixing it needs a `Time`/`TimeTz` split — a new public enum
+  member for a type PostgreSQL itself discourages, with no analogue in the other four dialects, and
+  whose cursor form is a `DateTimeOffset` that does not round-trip into a `timetz` literal anyway.
+  Recorded in the backlog rather than guessed at.
+- **Oracle `TIMESTAMP WITH LOCAL TIME ZONE`** is normalized to the session zone by the driver and
+  comes back as a plain naive `DateTime`, so the naive model is the correct one for it. It falls out
+  of the predicate for the incidental reason that `"with local time zone"` does not contain
+  `"with time zone"` — incidental enough to be worth a test, which exists.
+
+### Filters get the same cast
+
+`AdoFilterTranslator` translates hand-typed preview filter values, where most inputs carry no offset
+at all. Those are unaffected: `::timestamptz` reads a zone-less literal in the session zone, which is
+exactly what `::timestamp` plus the implicit coercion already did (verified both ways). The behaviour
+differs only when the typed value *states* an offset — and then honouring it is the answer the user
+asked for.
+
+### Verification
+
+`KeysetSqlGeneratorTests` pins which cast is emitted for each type-name spelling; the Postgres and
+Oracle integration suites pin that those casts are correct against the real engines under a non-UTC
+session. The Postgres suite keeps the old zone-less cast as a **live control** that asserts rows *are*
+lost — without it, a suite that never sets a session zone would pass with the bug still in place,
+since under UTC both casts agree. Same split as the Oracle `TO_TIMESTAMP` fix: unit tests for what we
+emit, containers for whether the database agrees.

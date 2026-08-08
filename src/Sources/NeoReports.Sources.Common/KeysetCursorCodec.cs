@@ -13,6 +13,15 @@ namespace NeoReports.Sources.Common;
 /// culture-invariant ISO-8601 round-trip form; the author's cast must match it (implicit on SQL
 /// Server/PostgreSQL, but Oracle needs an explicit <c>TO_TIMESTAMP(@cursor, 'YYYY-MM-DD"T"HH24:MI:SS.FF7')</c>
 /// format model and MySQL is sensitive to the <c>T</c> separator).
+/// <para>
+/// <b>A key column that carries a time zone needs the matching zoned cast</b> — <c>@cursor::timestamptz</c>
+/// on PostgreSQL, <c>TO_TIMESTAMP_TZ(:cursor, 'YYYY-MM-DD"T"HH24:MI:SS.FF7TZH:TZM')</c> on Oracle.
+/// The encoded cursor keeps the offset the driver reported (a trailing <c>Z</c> for Npgsql's Utc-kind
+/// <c>timestamptz</c>, a <c>+hh:mm</c> for Oracle's <c>DateTimeOffset</c>), and a zone-less cast either
+/// discards it — moving the page boundary by the session's offset and dropping the rows inside that
+/// window — or, on Oracle, fails to parse it at all (ORA-01830). ADR D81 covers this for the generated
+/// SQL the QueryBuilder emits; in the typed code-first path the cast is in the author's own SQL.
+/// </para>
 /// </summary>
 internal static class KeysetCursorCodec
 {

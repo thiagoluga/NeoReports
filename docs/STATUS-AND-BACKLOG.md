@@ -57,11 +57,14 @@ enterprise-readiness and test coverage, and shipped everything actionable.
 >
 > 1. **Pro Q3b/c** — rotate the placeholder signing key (its private half was generated in a chat
 >    session, so it is compromised) and publish. Blocked on the maintainer.
-> 2. **Postgres/Redshift `timestamptz` keyset boundary** — needs `ColumnType` to carry the
->    with/without-time-zone distinction, which is a change to the frozen `Abstractions` ABI, so a
->    next-major item. Every cheap alternative trades the bug for another: forcing the session time
->    zone affects the user's own SQL, and `AT TIME ZONE` on the column defeats the index that keyset
->    pagination exists to use. Workaround today: key on a plain `timestamp`/UTC column.
+> 2. ~~**Postgres/Redshift `timestamptz` keyset boundary**~~ — **FIXED (ADR D81)**, and the reason it
+>    sat here was wrong: `ColumnType` already carried the distinction (`DateTime` naive,
+>    `Timestamp` offset-aware — that is what a `DateTimeOffset` infers to). The casts collapsed the two
+>    and the catalog mapper never emitted `Timestamp`. No ABI change was needed. Verifying against real
+>    containers also turned up a second, louder symptom nobody had recorded: on Oracle the same
+>    mismatch is **ORA-01830 on page 2**, not a silent shift. Still open in the same family:
+>    **`time with time zone` (`timetz`)** drops its zone against `::time` the same way (reproduced),
+>    but fixing it needs a `Time`/`TimeTz` split — see §5.
 > 3. **XLSX pre-1900 dates** — `DateTime.ToOADate` cannot express them; inherent to the serial Excel
 >    uses, not decidable in that layer.
 > 4. **CA1068-style next-major bundling** (§1) and the CI hardening in §2.
@@ -107,13 +110,31 @@ locally verifiable.
   second page. Now casts with the codec's documented `TO_TIMESTAMP(:cursor,
   'YYYY-MM-DD"T"HH24:MI:SS.FF7')`. Unit test asserts the emitted SQL; an Oracle integration test
   (`A_timestamp_keyset_cursor_round_trips_across_pages`) empirically validates the model.
-- **Postgres/Redshift `timestamptz` keyset boundary can shift under a non-UTC session.** `PostgresCast`
+- ~~**Postgres/Redshift `timestamptz` keyset boundary can shift under a non-UTC session.**~~
+  **FIXED (ADR D81).** The premise recorded here — that `ColumnType` cannot distinguish the two — was
+  false: `DateTime` is the naive member and `Timestamp` the offset-aware one (a `DateTimeOffset`
+  infers to it), and both casts simply matched `DateTime or Timestamp` together while `SqlTypeMap`
+  never produced `Timestamp` at all. Classification fix plus two cast arms; no ABI change. Measured
+  under `America/Sao_Paulo`: one of three rows past the cursor silently vanished, run still
+  `Completed`. The Oracle sub-case was **worse than recorded** — the driver returns
+  `TIMESTAMP WITH TIME ZONE` as a `DateTimeOffset`, so the cursor carries `+00:00` the naive model
+  cannot parse: **ORA-01830 on page 2**, a hard failure, same shape as the ORA-01858 bug fixed in
+  #237. Original description: `PostgresCast`
   casts the cursor to `::timestamp` (no zone). For a `timestamptz` key that discards the offset and
   re-interprets it in the session `TimeZone`, silently skipping or duplicating a window of rows.
   Naïvely switching to `::timestamptz` just moves the bug to plain `timestamp` keys — `ColumnType`
   doesn't distinguish the two. **Needs** the catalog to carry the with/without-time-zone distinction
   (a design change). Same class as the Oracle `TIMESTAMP WITH TIME ZONE` sub-case (the FF7 model has
   no `TZH:TZM`). Workaround today: key on a plain `timestamp`/UTC column, or run the session in UTC.
+- **`time with time zone` (`timetz`) drops its zone the same way — open, needs a `Time`/`TimeTz` split.**
+  Found while fixing D81 and reproduced against a real container: under `America/Sao_Paulo`,
+  `v > '12:00:00.0000000+00:00'::time` returns **0** rows where `::timetz` returns **1**. It is not
+  covered by D81 because `ColumnType.Time` is a single member, and the fix is not free: a new public
+  enum member for a type PostgreSQL itself discourages, with no analogue in the other four dialects,
+  and whose cursor form (a `DateTimeOffset` rendered `"O"`, i.e. `0001-01-01T12:00:00.0000000+00:00`)
+  does not round-trip into a `timetz` literal anyway — so a keyset key of this type needs its own
+  encoding decision, not just a cast. Filters are the realistic exposure. Not guessed at; recorded
+  with the repro so the next pass starts from evidence.
 - ~~**QueryBuilder allows a non-unique keyset key.**~~ **MITIGATED (ADR D80)** — still not statically detectable, but its consequence now is: a completed run whose row count disagrees with the pre-run count emits a `row-count-mismatch` event. Advisory, since the count predates the run. Original description: Single-column keyset with strict `>` requires a
   unique, monotonic key; if the user picks a non-unique column, the tail of a duplicate group that
   straddles a page boundary is dropped. Not statically detectable (no PK/unique metadata in the

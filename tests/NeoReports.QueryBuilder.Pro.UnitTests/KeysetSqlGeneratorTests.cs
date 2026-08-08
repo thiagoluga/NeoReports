@@ -132,6 +132,71 @@ public class KeysetSqlGeneratorTests
         result.Sql.ShouldContain("t0.\"id\" > @cursor::uuid");
     }
 
+    // ADR D81. A zoned key's cursor keeps the offset the driver reported; `::timestamp` discards it and
+    // Postgres then re-reads the value in the SESSION time zone, moving the page boundary. Measured
+    // against a real container under America/Sao_Paulo: one of the three rows past the cursor vanished.
+    [Theory]
+    [InlineData("timestamp with time zone", "timestamptz")]
+    [InlineData("timestamptz", "timestamptz")]
+    [InlineData("TIMESTAMP(6) WITH TIME ZONE", "timestamptz")] // Oracle's catalog spelling
+    [InlineData("datetimeoffset", "timestamptz")]              // SQL Server's
+    [InlineData("TIMESTAMP_TZ", "timestamptz")]                // Snowflake's
+    // "without time zone" CONTAINS "with time zone" — classifying on that substring alone would send
+    // every naive Postgres column down the zoned path, which is why the predicate excludes it first.
+    [InlineData("timestamp without time zone", "timestamp")]
+    [InlineData("timestamp", "timestamp")]
+    [InlineData("datetime2", "timestamp")]
+    // WITH LOCAL TIME ZONE is normalized to the session zone by the driver and comes back naive.
+    [InlineData("TIMESTAMP(6) WITH LOCAL TIME ZONE", "timestamp")]
+    public void Postgres_casts_a_temporal_cursor_by_whether_the_key_carries_a_zone(string keyDataType, string expectedCast)
+    {
+        QueryModel model = SingleTable(new QuerySelectColumn(Ref("t0", "id"), "Ts", keyDataType)) with { KeyDataType = keyDataType };
+
+        GeneratedQuery result = KeysetSqlGenerator.Generate(model, SqlDialect.Postgres);
+
+        result.Sql.ShouldContain($"t0.\"id\" > @cursor::{expectedCast}");
+    }
+
+    // Oracle is not a silent shift but a hard stop: the driver returns TIMESTAMP WITH TIME ZONE as a
+    // DateTimeOffset, so the cursor ends in "+00:00", and the naive format model has no element to
+    // consume it — ORA-01830 on page 2. Verified against a real Oracle container.
+    [Fact]
+    public void Oracle_parses_a_zoned_timestamp_cursor_with_the_TZH_TZM_model()
+    {
+        QueryModel model = SingleTable(new QuerySelectColumn(Ref("t0", "id"), "Ts", "TIMESTAMP(6) WITH TIME ZONE"))
+            with { KeyDataType = "TIMESTAMP(6) WITH TIME ZONE" };
+
+        GeneratedQuery result = KeysetSqlGenerator.Generate(model, SqlDialect.Oracle);
+
+        result.Sql.ShouldContain("TO_TIMESTAMP_TZ(:cursor, 'YYYY-MM-DD\"T\"HH24:MI:SS.FF7TZH:TZM')");
+    }
+
+    [Theory]
+    [InlineData("TIMESTAMP(6)")]
+    [InlineData("DATE")]
+    [InlineData("TIMESTAMP(6) WITH LOCAL TIME ZONE")]
+    public void Oracle_keeps_the_naive_model_for_a_key_whose_cursor_has_no_offset(string keyDataType)
+    {
+        QueryModel model = SingleTable(new QuerySelectColumn(Ref("t0", "id"), "Ts", keyDataType)) with { KeyDataType = keyDataType };
+
+        GeneratedQuery result = KeysetSqlGenerator.Generate(model, SqlDialect.Oracle);
+
+        result.Sql.ShouldContain("TO_TIMESTAMP(:cursor, 'YYYY-MM-DD\"T\"HH24:MI:SS.FF7')");
+        result.Sql.ShouldNotContain("TO_TIMESTAMP_TZ");
+    }
+
+    // `time with time zone` satisfies the "with time zone" substring but is not a timestamp; casting
+    // it to timestamptz would make the comparison fail outright, so it must stay ColumnType.Time.
+    [Theory]
+    [InlineData("time with time zone", ColumnType.Time)]
+    [InlineData("timetz", ColumnType.Time)]
+    [InlineData("time without time zone", ColumnType.Time)]
+    [InlineData("date", ColumnType.Date)]
+    [InlineData("timestamp with time zone", ColumnType.Timestamp)]
+    [InlineData("timestamp without time zone", ColumnType.DateTime)]
+    public void SqlTypeMap_classifies_temporal_type_names(string dbType, ColumnType expected) =>
+        SqlTypeMap.ToColumnType(dbType).ShouldBe(expected);
+
     [Fact]
     public void Oracle_casts_a_numeric_cursor_with_TO_NUMBER()
     {
