@@ -16,6 +16,27 @@ public class ProLicenseTests
         publicKey.KeySize.ShouldBe(256);
     }
 
+    /// <summary>
+    /// The burned placeholder key (ADR D83). Its private half was generated inside a chat session, so
+    /// anyone reading that transcript can mint licenses that validate forever — offline validation has
+    /// no revocation list. It is written out here, in the open, precisely because it is worthless: the
+    /// only thing it can still do is come back by accident.
+    /// </summary>
+    private const string BurnedPlaceholderKey =
+        "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE8CTV2vXjiGkicpdqu6zK5kzHUCAotsIs7ysuwvAP/ZhxSmAcK/ZuZ4w//6XT0I71il/8qeuobgic5csTNd5How==";
+
+    [Fact]
+    public void The_embedded_public_key_is_not_the_burned_placeholder()
+    {
+        // A revert, a bad merge resolution, or a copy-paste from an old branch would silently ship
+        // packages that trust a compromised key — and NuGet versions are immutable, so it could not be
+        // taken back. The Pro packages are publishable (IsPackable, D83), which is exactly what makes
+        // this worth a test rather than a comment: the release path no longer has a human in it.
+        ProLicense.PublicKeyBase64.ShouldNotBe(
+            BurnedPlaceholderKey,
+            "the placeholder signing key is compromised and must never be shipped — see ADR D83");
+    }
+
     [Fact]
     public void A_key_signed_by_a_different_key_pair_is_rejected_by_the_embedded_public_key()
     {

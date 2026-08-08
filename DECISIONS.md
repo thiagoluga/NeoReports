@@ -1601,3 +1601,64 @@ call site each already routes to.
 the three above-boundary cases keep passing — so they are not vacuous. Neutralizing it with
 `if (false)` does not compile (CS0162 under warnings-as-errors), so the revert was done by moving the
 threshold, which keeps the branch reachable.
+
+## D83 — Pro packages published to nuget.org, signing key rotated (2026-08-08)
+
+Completes Epic Q3. Three things had to land together, and could not land apart.
+
+### The key
+
+`ProLicense.PublicKeyBase64` now holds a production key the maintainer generated locally on
+2026-08-08, with the private half going straight into a vault. It replaces the placeholder Q1 shipped,
+whose private half had been generated inside an implementation chat session — plaintext, no rotation,
+no audit trail. That placeholder never signed a customer license, which is the only reason this was
+cheap: **rotating after the first license is issued invalidates every license already out there**,
+because validation is offline and has no revocation list (D70's accepted gap). A rotation is a
+breaking release, not maintenance.
+
+The supplied key was validated before it went in: distinct from the placeholder, imports as ECDsa
+P-256, and carries no private half (91-byte SubjectPublicKeyInfo).
+
+### Publication reverses D30, which D70 had already superseded on paper
+
+D29/D30 gated Pro by **distribution** — `IsPackable=false`, never pushed to a feed, packed only as a
+CI build artifact by `pack-pro.yml`. D70 replaced that with a runtime license check precisely so the
+packages could go public. The code half of that landed in Q1/Q2; the packaging half never did, so the
+repo sat in a contradictory state: enforcement built for a public package, on a package nothing could
+publish.
+
+The three Pro projects are now `IsPackable=true` and are picked up by `release.yml`'s solution-wide
+`dotnet pack` / `nuget push`. Verified by actually packing the solution rather than assuming: all
+three produce packages, and each carries its own PolyForm `LICENSE.txt`
+(`<license type="file">`) instead of the repo-wide MIT expression — the failure that would otherwise
+be both silent and legally wrong.
+
+`pack-pro.yml` is **deleted**. Its entire purpose was D30's artifacts-only stance; keeping it would
+have meant a redundant job on every tag whose header comment ("nothing is published to nuget.org")
+had become actively false.
+
+### Why this had to be one PR
+
+Splitting it looked reasonable and was the dangerous option. `release.yml` packs the whole solution,
+so **flipping `IsPackable` alone arms any `v*` tag to publish the compromised placeholder** — and
+NuGet versions are immutable, so that could not be taken back. The obvious safety net (a test
+asserting the constant is not the placeholder) cannot merge on its own either: it is red until the key
+is swapped. So: key, flags, guard, together or not at all.
+
+### The guard
+
+`ProLicenseTests.The_embedded_public_key_is_not_the_burned_placeholder` fails if the placeholder ever
+returns via a revert, a bad merge resolution, or a copy-paste from an old branch. The burned key is
+written out in the test in the clear — it is worthless as a secret, and the only thing it can still do
+is come back by accident.
+
+This is a gate rather than a comment because **there is no longer a human between a `v*` tag and a
+public push**. Verified by putting the placeholder back: exactly that test fails, the other 48 pass.
+
+### Not a CI secret
+
+The private key stays out of GitHub entirely — not a secret, not a variable. The release pipeline only
+*publishes* packages; signing a license is a manual act by the maintainer against the vault copy. A
+signing key in CI would let anyone who can run a workflow mint permanent licenses, and offline
+validation means those could never be revoked. The only secret the release needs remains
+`NUGET_API_KEY`.

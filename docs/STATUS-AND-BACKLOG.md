@@ -55,8 +55,9 @@ enterprise-readiness and test coverage, and shipped everything actionable.
 > is open *because it needs the maintainer or a next-major ABI change*, not because it was missed.
 > The live items are:
 >
-> 1. **Pro Q3b/c** — rotate the placeholder signing key (its private half was generated in a chat
->    session, so it is compromised) and publish. Blocked on the maintainer.
+> 1. ~~**Pro Q3b/c**~~ — **DONE (ADR D83, 2026-08-08).** The maintainer generated and vaulted the
+>    production key; the three Pro packages now publish to nuget.org on a version tag. Shipped as one
+>    atomic PR because the halves are unsafe apart — see §4.
 > 2. ~~**Postgres/Redshift `timestamptz` keyset boundary**~~ — **FIXED (ADR D81)**, and the reason it
 >    sat here was wrong: `ColumnType` already carried the distinction (`DateTime` naive,
 >    `Timestamp` offset-aware — that is what a `DateTimeOffset` infers to). The casts collapsed the two
@@ -96,12 +97,19 @@ enterprise-readiness and test coverage, and shipped everything actionable.
   now **0**. (Resolving a PR thread does **not** close a repo-level alert, so each was handled via
   `PATCH /repos/thiagoluga/NeoReports/code-scanning/alerts/{number}` or a real fix.)
 
-### 4. Pro packaging (Epic Q3b/c) — blocked on the maintainer
-- The three Pro packages are enforced (Q1/Q2) and an issuing tool exists (Q3a), but publishing is
-  **blocked** on rotating the embedded placeholder public key: the maintainer must run the license
-  tool's `keygen` **locally**, store the private half in a vault, and commit only the new public
-  key. The key generated during development is compromised (it appeared in a chat transcript) and
-  must never be the production signing key.
+### 4. Pro packaging (Epic Q3b/c) — **DONE (ADR D83, 2026-08-08)**
+- The maintainer generated the production key pair locally and vaulted the private half; the new
+  public key is embedded, and the three Pro packages are `IsPackable=true`, published by `release.yml`
+  on a version tag alongside the MIT ones (each with its own PolyForm `LICENSE.txt` — verified by
+  packing, not assumed). `pack-pro.yml` is deleted; D30's artifacts-only stance was already superseded
+  by D70.
+- Shipped as **one atomic PR** on purpose: `release.yml` packs the whole solution, so flipping
+  `IsPackable` on its own would have armed any `v*` tag to publish the compromised placeholder, and
+  NuGet versions are immutable. The guard test that prevents the placeholder returning cannot merge
+  alone either — it is red until the key is swapped.
+- **Rotating again will not be this cheap.** The placeholder had signed nothing, so replacing it broke
+  nothing. Validation is offline with no revocation list (D70's accepted gap), so any future rotation
+  invalidates every license already issued. Treat it as a breaking release.
 
 ### 5. Follow-up bug-hunt findings (2026-07-30)
 A focused review of the keyset/cursor and resilience/failure paths surfaced these. One is fixed; the
