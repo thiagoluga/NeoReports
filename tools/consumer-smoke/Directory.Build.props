@@ -1,0 +1,14 @@
+<Project>
+
+  <!-- Deliberately does NOT import the repo-root props, and there is no Directory.Packages.props
+       beside it either. MSBuild stops walking up the moment it finds these files, so this project is
+       cut off from Central Package Management and from every repo-wide setting.
+       That isolation is the point: this project must resolve NeoReports from nuget.org exactly as a
+       customer would, with no ProjectReference, no local artifact directory and no version pinned by
+       the repo. Inheriting the repo's props would quietly reintroduce the coupling it exists to avoid. -->
+
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+</Project>
