@@ -137,17 +137,35 @@ namespace NeoReports.LicenseTool
         /// there is no reason for this command to be able to read a <c>.pem</c> at all.
         /// </para>
         /// </remarks>
-        private static int Verify(string[] args)
-        {
-            string licenseKey = RequireOption(args, "--license");
+        private static int Verify(string[] args) =>
+            VerifyWith(RequireOption(args, "--license"), verifyingKey: null);
 
+        /// <summary>
+        /// The body of <c>verify</c>. <paramref name="verifyingKey"/> is <c>null</c> for every call
+        /// the CLI makes, meaning "the key embedded in this build".
+        /// </summary>
+        /// <remarks>
+        /// The parameter exists so the <b>success</b> path can be executed by a test. Producing a
+        /// license that validates against the embedded key requires the vaulted private half, which
+        /// never touches CI — so without a seam, the branch the maintainer actually depends on would
+        /// ship having never run once, and a null licensee or a bad format string in it would surface
+        /// on the one occasion it matters. The seam is internal and the CLI never reaches it, so the
+        /// command's meaning ("validated against what we shipped") is unchanged; exposing it as a
+        /// <c>--public-key</c> flag was rejected for the opposite reason — it would let the pre-release
+        /// check be run against the key it was just handed, checking nothing.
+        /// </remarks>
+        internal static int VerifyWith(string licenseKey, ECDsa? verifyingKey)
+        {
             try
             {
-                LicenseToken token = ProLicense.Validate(licenseKey);
+                LicenseToken token = verifyingKey is null
+                    ? ProLicense.Validate(licenseKey)
+                    : LicenseValidator.Validate(licenseKey, verifyingKey);
+
                 Console.WriteLine(
                     $"VALID — issued to \"{token.Licensee}\", " +
                     $"{token.IssuedAtUtc:yyyy-MM-dd} to {token.ExpiresAtUtc:yyyy-MM-dd}.");
-                Console.Error.WriteLine("The embedded public key is the pair of the key that signed this license.");
+                Console.Error.WriteLine("The verifying key is the pair of the key that signed this license.");
                 return 0;
             }
             catch (NeoReportsLicenseException ex)

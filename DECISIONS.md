@@ -1685,7 +1685,18 @@ reason for the command to be able to read a private key at all.
 
 **The test pins that it can fail.** A `verify` that reports success regardless would be worse than not
 having one — it would launder the exact mistake it exists to catch into a green tick. A freshly
-generated pair stands in for a mismatched one, since it is by construction not the embedded pair; the
-positive path cannot be tested in CI, because it needs the vaulted key. That asymmetry is the design:
-CI pins that the command discriminates, the maintainer runs the positive half by hand. Verified by
-making `verify` always return 0 — that test, and only that test, fails.
+generated pair stands in for a mismatched one, since it is by construction not the embedded pair.
+Verified by making `verify` always return 0 — that test, and only that test, fails.
+
+**And the success path is executed too**, which the first cut of this got wrong. It shipped with the
+`VALID` branch untested and the gap rationalized as inherent ("the positive path needs the vaulted
+key, so CI cannot run it"). The coverage gate rejected that, correctly: the branch the maintainer
+depends on before every release would have gone out having never run once, so a null licensee or a bad
+format string in it would surface on the single occasion it matters. The body moved behind an internal
+seam taking an explicit verifying key — `null` for every call the CLI makes, meaning the embedded key
+— so a test can drive the same code with a generated pair.
+
+A `--public-key` **flag** was considered for this and rejected: it would let the pre-release check be
+run against the key it was just handed, which checks nothing, and the footgun would sit on the command
+whose entire purpose is catching that class of mistake. An internal seam has the same testing benefit
+with none of that surface.

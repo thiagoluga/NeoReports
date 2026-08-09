@@ -56,6 +56,44 @@ public sealed class LicenseToolKeyHandlingTests : IDisposable
     /// private key, which lives in a vault and never touches CI. That asymmetry is the point: this
     /// test pins that the command discriminates, and the maintainer runs the positive half by hand.
     /// </remarks>
+    /// <summary>
+    /// The success path of `verify` — the branch the maintainer actually depends on before tagging a
+    /// release, and the one that would otherwise ship having never executed. Producing a license that
+    /// validates against the *embedded* key needs the vaulted private half, which never touches CI, so
+    /// the test drives the same code with an explicit key pair through the internal seam.
+    /// </summary>
+    [Fact]
+    public void Verify_reports_a_matching_pair_as_valid()
+    {
+        string keyPath = PathIn("matching-key.pem");
+        RunCapturingStdout("keygen", "--out", keyPath).ExitCode.ShouldBe(0);
+
+        (int signExit, string licenseKey) = RunCapturingStdout(
+            "sign", "--key", keyPath, "--licensee", "Acme Corp", "--days", "7");
+        signExit.ShouldBe(0);
+
+        using ECDsa verifyingKey = ECDsa.Create();
+        verifyingKey.ImportFromPem(File.ReadAllText(keyPath));
+
+        using var capture = new StringWriter();
+        Console.SetOut(capture);
+        int exitCode;
+        try
+        {
+            exitCode = Cli.VerifyWith(licenseKey.Trim(), verifyingKey);
+        }
+        finally
+        {
+            Console.SetOut(_originalOut);
+        }
+
+        exitCode.ShouldBe(0);
+        capture.ToString().ShouldContain("VALID");
+        // The licensee is echoed back, so a mismatch between what was signed and what verifies is
+        // visible to the eye and not just to the exit code.
+        capture.ToString().ShouldContain("Acme Corp");
+    }
+
     [Fact]
     public void Verify_rejects_a_license_signed_by_a_key_that_is_not_the_embedded_pair()
     {
