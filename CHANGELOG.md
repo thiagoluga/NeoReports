@@ -8,6 +8,13 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-08-09
+
+**Major release.** The breaking changes below were held back for exactly this line — see the
+*Removed* and *Changed (breaking…)* sections. Every one of them is **source**-breaking only: no
+member that was ever thrown, called at runtime, or persisted changes meaning, so an upgrade that
+compiles is an upgrade that behaves the same, with the single exception of the S3 key guard.
+
 ### Added
 - **The three commercial Pro packages are now published to nuget.org (ADR D83).**
   `NeoReports.Xlsx.Pro`, `NeoReports.Sources.Join.Pro` and `NeoReports.QueryBuilder.Pro` ship on the
@@ -87,7 +94,7 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   message naming the token and value. Move the hierarchy into the template instead. The guard is
   narrower than the Local destination's: `..` and `:` remain legal in S3 keys and are not rejected.
 
-### Removed (breaking, Abstractions ABI — next major)
+### Removed (breaking, Abstractions ABI)
 - **Removed the never-thrown exception types `BatchFailedException`, `SourceFailedException` and
   `ThresholdExceededException` from `NeoReports.Abstractions`.** They described a batch/source/
   threshold failure but were never thrown anywhere: the pipeline reports those failures through
@@ -95,16 +102,16 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   As dead surface in a frozen ABI (rule 7) they were a liability. `NeoReportsException` (the base)
   and `ConfigurationException` are unchanged and still used. This is source-breaking for any consumer
   that referenced those three types (nothing ever threw them, so no `catch` for them could have
-  fired) and is therefore slated for the next **major** release.
+  fired) which is why it was held for this **major** release.
 
-### Changed (breaking, public API — next major)
+### Changed (breaking, public API)
 - **`CancellationToken` moved to the last parameter** in the three public health-check helpers that
   had it mid-list (CA1068): `AdoSourceHealth.PingAsync(connectionFactory, timeout, pingSql,
   cancellationToken)`, `AdoSourceHealth.CheckConnectionStringAsync(definition, connectionFactory,
   timeout, pingSql, cancellationToken)` and `HttpHealthProbe.SendAsync(client, method, targetUrl,
   auth, content, cancellationToken)`. The token now has a `default`, so most callers are unaffected,
   but positional callers that passed the token before the trailing `pingSql`/`content` argument are
-  source-breaking; bundled with the removal above for the next **major** release.
+  source-breaking; bundled with the removal above into this **major** release.
 
 ### Added
 - **Streaming XLSX output at constant memory (resolves D14).** Both the MIT single-sheet XLSX writer
@@ -779,7 +786,8 @@ First public release.
   source-link, and a per-package README. Tests, samples and benchmarks are not
   packable.
 
-[Unreleased]: https://github.com/thiagoluga/NeoReports/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/thiagoluga/NeoReports/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/thiagoluga/NeoReports/compare/v1.2.0...v2.0.0
 [1.2.0]: https://github.com/thiagoluga/NeoReports/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/thiagoluga/NeoReports/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/thiagoluga/NeoReports/releases/tag/v1.0.0
