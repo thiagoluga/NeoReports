@@ -28,6 +28,7 @@ namespace NeoReports.LicenseTool
                 {
                     "keygen" => KeyGen(args),
                     "sign" => Sign(args),
+                    "verify" => Verify(args),
                     _ => Unknown(args[0]),
                 };
             }
@@ -55,6 +56,12 @@ namespace NeoReports.LicenseTool
 
               sign --key <private-key.pem> --licensee <name> [--days 30] [--from <yyyy-MM-dd>]
                   Issues a license key signed with the private key. Prints the key to stdout.
+
+              verify --license <license-key>
+                  Validates a license key against the public key EMBEDDED in this build, exactly as a
+                  customer's process would. Run this before every release: sign a throwaway license
+                  with the vaulted private key and verify it. Nothing else checks that the key
+                  committed in ProLicense.PublicKeyBase64 is the pair of the key in the vault.
 
             Rotating the signing key invalidates every license already issued under the old one.
             """);
@@ -112,6 +119,63 @@ namespace NeoReports.LicenseTool
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Validates a license key against the public key <b>embedded in this build</b>
+        /// (<c>ProLicense.PublicKeyBase64</c>) — deliberately the same code path a customer's process
+        /// runs, so what it proves is what they will experience.
+        /// </summary>
+        /// <remarks>
+        /// Its real job is closing a gap nothing else covers: that the public key committed to source
+        /// is the pair of the private key in the vault. A mismatched pair compiles, packs, passes CI
+        /// and publishes — and then every license ever issued fails for every customer at once, found
+        /// out by a support ticket. Signing a throwaway license and verifying it here is the only
+        /// check that exercises both halves together, and it costs seconds.
+        /// <para>
+        /// Takes the license key, never the private key: verification needs only the public half, so
+        /// there is no reason for this command to be able to read a <c>.pem</c> at all.
+        /// </para>
+        /// </remarks>
+        private static int Verify(string[] args) =>
+            VerifyWith(RequireOption(args, "--license"), verifyingKey: null);
+
+        /// <summary>
+        /// The body of <c>verify</c>. <paramref name="verifyingKey"/> is <c>null</c> for every call
+        /// the CLI makes, meaning "the key embedded in this build".
+        /// </summary>
+        /// <remarks>
+        /// The parameter exists so the <b>success</b> path can be executed by a test. Producing a
+        /// license that validates against the embedded key requires the vaulted private half, which
+        /// never touches CI — so without a seam, the branch the maintainer actually depends on would
+        /// ship having never run once, and a null licensee or a bad format string in it would surface
+        /// on the one occasion it matters. The seam is internal and the CLI never reaches it, so the
+        /// command's meaning ("validated against what we shipped") is unchanged; exposing it as a
+        /// <c>--public-key</c> flag was rejected for the opposite reason — it would let the pre-release
+        /// check be run against the key it was just handed, checking nothing.
+        /// </remarks>
+        internal static int VerifyWith(string licenseKey, ECDsa? verifyingKey)
+        {
+            try
+            {
+                LicenseToken token = verifyingKey is null
+                    ? ProLicense.Validate(licenseKey)
+                    : LicenseValidator.Validate(licenseKey, verifyingKey);
+
+                Console.WriteLine(
+                    $"VALID — issued to \"{token.Licensee}\", " +
+                    $"{token.IssuedAtUtc:yyyy-MM-dd} to {token.ExpiresAtUtc:yyyy-MM-dd}.");
+                Console.Error.WriteLine("The verifying key is the pair of the key that signed this license.");
+                return 0;
+            }
+            catch (NeoReportsLicenseException ex)
+            {
+                // Not rethrown into the generic handler: a failure here is the answer the command was
+                // asked for, and the reason (SignatureInvalid vs Expired vs Malformed) is the whole
+                // point — a mismatched key pair reports SignatureInvalid.
+                Console.Error.WriteLine($"INVALID ({ex.Reason}): {ex.Message}");
+                return 1;
+            }
         }
 
         private static int Sign(string[] args)

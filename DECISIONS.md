@@ -1662,3 +1662,41 @@ The private key stays out of GitHub entirely — not a secret, not a variable. T
 signing key in CI would let anyone who can run a workflow mint permanent licenses, and offline
 validation means those could never be revoked. The only secret the release needs remains
 `NUGET_API_KEY`.
+
+## D84 — `verify`: proving the key pair before a release (2026-08-08)
+
+D83 added a guard that the embedded key is not the burned placeholder. That catches a *revert*. It
+does not catch the other way of getting the key wrong, which is at least as likely on a rotation:
+committing a public key that belongs to a **different pair** than the private key in the vault — a
+second `keygen` run, a copy from the wrong terminal scrollback.
+
+Nothing detected that. It compiles, packs, passes CI, and publishes. The failure surfaces later, all
+at once, as every license the maintainer issues being rejected by every customer — and since D83 a
+`v*` tag publishes with no human step and NuGet versions are immutable.
+
+The tool had `keygen` and `sign` but no way to exercise both halves together. `verify --license <key>`
+runs `ProLicense.Validate` against the key **embedded in that build** — deliberately the same code
+path a customer's process takes, so what it proves is what they will experience. The documented
+pre-release ritual is: sign a throwaway one-day license with the vaulted key, verify it, expect
+`VALID`.
+
+It takes the license key, never a `.pem`: verification needs only the public half, so there is no
+reason for the command to be able to read a private key at all.
+
+**The test pins that it can fail.** A `verify` that reports success regardless would be worse than not
+having one — it would launder the exact mistake it exists to catch into a green tick. A freshly
+generated pair stands in for a mismatched one, since it is by construction not the embedded pair.
+Verified by making `verify` always return 0 — that test, and only that test, fails.
+
+**And the success path is executed too**, which the first cut of this got wrong. It shipped with the
+`VALID` branch untested and the gap rationalized as inherent ("the positive path needs the vaulted
+key, so CI cannot run it"). The coverage gate rejected that, correctly: the branch the maintainer
+depends on before every release would have gone out having never run once, so a null licensee or a bad
+format string in it would surface on the single occasion it matters. The body moved behind an internal
+seam taking an explicit verifying key — `null` for every call the CLI makes, meaning the embedded key
+— so a test can drive the same code with a generated pair.
+
+A `--public-key` **flag** was considered for this and rejected: it would let the pre-release check be
+run against the key it was just handed, which checks nothing, and the footgun would sit on the command
+whose entire purpose is catching that class of mistake. An internal seam has the same testing benefit
+with none of that surface.

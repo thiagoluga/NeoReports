@@ -37,7 +37,29 @@ Three guards back this up, but none of them replaces putting the key in a vault:
   world-readable. **On Windows there is no equivalent**: the file inherits its directory's ACL, which
   is why the command above targets a user-private directory rather than a shared or repo path.
 
-## 2. Issue a license
+## 2. Check the key pair before every release
+
+**Run this before pushing a `vX.Y.Z` tag.** Nothing else verifies that the public key committed to
+`ProLicense.PublicKeyBase64` is the pair of the private key in the vault — a mismatch compiles, packs,
+passes CI and publishes, and is then discovered by the first customer whose license does not work.
+Since D83 a tag publishes to nuget.org with no human step, and NuGet versions are immutable.
+
+Sign a throwaway license with the vaulted key, then verify it against the key this build embeds:
+
+```bash
+dotnet run --project tools/NeoReports.LicenseTool -- \
+    sign --key <path-to-vaulted-key.pem> --licensee "Key pair check" --days 1 > /tmp/check.key
+
+dotnet run --project tools/NeoReports.LicenseTool -- verify --license "$(cat /tmp/check.key)"
+```
+
+`VALID` (exit 0) means the two halves match. `INVALID (SignatureInvalid)` means the committed public
+key belongs to a **different** pair — stop, and fix the constant before tagging.
+
+`verify` runs the same code path a customer's process does, and takes only the license key: verifying
+needs the public half, so the command has no reason to be able to read a `.pem` at all.
+
+## 3. Issue a license
 
 ```bash
 dotnet run --project tools/NeoReports.LicenseTool -- \

@@ -20,6 +20,12 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   since `release.yml` now packs and pushes them with everything else.
 
 ### Security
+- **`license-tool verify --license <key>`** closes the one gap the D83 guard could not: that the public
+  key committed to source is the *pair* of the private key in the vault. Nothing checked that — a
+  mismatched pair compiles, packs, passes CI and publishes, and surfaces as every customer's license
+  failing at once. Sign a throwaway license with the vaulted key and verify it before tagging a
+  release; the command runs the same code path a customer's process does. Maintainer tooling, not
+  shipped.
 - **The Pro license-signing key was rotated (ADR D83).** The key the packages shipped with was a
   placeholder whose private half had been generated inside a chat session, so it must never have signed
   anything real. It never did — no customer license was issued under it — so nothing that exists stops
