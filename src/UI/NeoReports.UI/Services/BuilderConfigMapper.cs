@@ -478,6 +478,15 @@ public static class BuilderConfigMapper
         owner[name] = value;
     }
 
+    private static void Set(JsonObject owner, string name, string? value) =>
+        Set(owner, name, value is null ? null : JsonValue.Create(value));
+
+    private static void Set(JsonObject owner, string name, int value) =>
+        Set(owner, name, JsonValue.Create(value));
+
+    private static void Set(JsonObject owner, string name, bool value) =>
+        Set(owner, name, JsonValue.Create(value));
+
     private static void RemoveCaseVariant(JsonObject owner, string name)
     {
         string? existing = owner
@@ -487,15 +496,6 @@ public static class BuilderConfigMapper
         if (existing is not null && !string.Equals(existing, name, StringComparison.Ordinal))
             owner.Remove(existing);
     }
-
-    private static void Set(JsonObject owner, string name, string? value) =>
-        Set(owner, name, value is null ? null : JsonValue.Create(value));
-
-    private static void Set(JsonObject owner, string name, int value) =>
-        Set(owner, name, JsonValue.Create(value));
-
-    private static void Set(JsonObject owner, string name, bool value) =>
-        Set(owner, name, JsonValue.Create(value));
 
     private static int? TryGetInt(JsonObject owner, string name) =>
         Get(owner, name) is JsonValue value

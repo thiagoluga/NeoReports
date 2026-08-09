@@ -185,75 +185,71 @@ public static partial class ReportConfigSecrets
     {
         foreach (string key in bag.Select(pair => pair.Key).ToArray())
         {
-            JsonNode? value = bag[key];
+            JsonNode? stored = storedBag is null ? null : Member(storedBag, key);
+            bool storedExists = storedBag is not null && HasMember(storedBag, key);
 
-            if (IsRedacted(value))
-            {
-                if (storedBag is null || !HasMember(storedBag, key))
-                {
-                    throw new ConfigurationException(
-                        $"The '{section}' property '{key}' was sent as a redacted placeholder, but the stored " +
-                        "configuration has no value to restore for it. Send the real value instead.");
-                }
-
-                bag[key] = Member(storedBag, key)?.DeepClone();
-                continue;
-            }
-
-            switch (value)
-            {
-                case JsonObject nested:
-                    RestoreMembers(nested, storedBag is null ? null : Member(storedBag, key) as JsonObject, $"{section}.{key}");
-                    break;
-
-                case JsonArray array:
-                    RestoreElements(array, storedBag is null ? null : Member(storedBag, key) as JsonArray, $"{section}.{key}");
-                    break;
-
-                default:
-                    break;
-            }
+            Replace(bag, key, RestoreValue(bag[key], stored, storedExists, $"The '{section}' property '{key}'", $"{section}.{key}"));
         }
+    }
+
+    /// <summary>
+    /// Returns the value to keep at one position: the stored counterpart when the incoming value is
+    /// the sentinel, otherwise the incoming value with its children restored in place.
+    /// </summary>
+    /// <param name="value">The incoming value.</param>
+    /// <param name="stored">The stored counterpart, or <c>null</c> when there is none (or it is a JSON null).</param>
+    /// <param name="storedExists">Whether a stored counterpart is present at all — a stored JSON null is not "missing".</param>
+    /// <param name="sentinelLabel">How to name this position, as a sentence opener, if the sentinel cannot be resolved.</param>
+    /// <param name="childSection">Section label to pass down to children.</param>
+    private static JsonNode? RestoreValue(
+        JsonNode? value, JsonNode? stored, bool storedExists, string sentinelLabel, string childSection)
+    {
+        if (IsRedacted(value))
+        {
+            if (!storedExists)
+            {
+                throw new ConfigurationException(
+                    $"{sentinelLabel} was sent as a redacted placeholder, but the stored configuration has " +
+                    "no value to restore for it. Send the real value instead.");
+            }
+
+            return stored?.DeepClone();
+        }
+
+        switch (value)
+        {
+            case JsonObject nested:
+                RestoreMembers(nested, stored as JsonObject, childSection);
+                break;
+
+            case JsonArray array:
+                RestoreElements(array, stored as JsonArray, childSection);
+                break;
+
+            default:
+                break;
+        }
+
+        return value;
     }
 
     // Inside a property bag an array is ordered data, not a set of identified sections, so index is
     // the only pairing available; an editor that reorders one has to send the real values.
+    //
+    // Elements go through the same RestoreValue as members, which is what makes a redacted *scalar*
+    // element work — `"mirrors": ["…", "…"]` with a credential in one of them. Descending only into
+    // object elements left that one holding the literal sentinel, and it got persisted: found by
+    // round-tripping a real report, after every flat-bag test had passed.
     private static void RestoreElements(JsonArray array, JsonArray? storedArray, string section)
     {
         for (var i = 0; i < array.Count; i++)
         {
-            JsonNode? stored = storedArray is not null && i < storedArray.Count ? storedArray[i] : null;
+            bool storedExists = storedArray is not null && i < storedArray.Count;
+            JsonNode? stored = storedExists ? storedArray![i] : null;
+            JsonNode? restored = RestoreValue(array[i], stored, storedExists, $"The element '{section}[{i}]'", $"{section}[{i}]");
 
-            // A redacted element is a scalar the array itself holds — `"mirrors": ["…", "…"]` with a
-            // credential in one of them. Descending only into object elements left that one holding
-            // the literal sentinel, which then got persisted: found by round-tripping a real report,
-            // after the flat-bag tests all passed.
-            if (IsRedacted(array[i]))
-            {
-                if (stored is null)
-                {
-                    throw new ConfigurationException(
-                        $"The '{section}[{i}]' element was sent as a redacted placeholder, but the stored " +
-                        "configuration has no value to restore for it. Send the real value instead.");
-                }
-
-                array[i] = stored.DeepClone();
-                continue;
-            }
-
-            switch (array[i])
-            {
-                case JsonObject element:
-                    RestoreMembers(element, stored as JsonObject, $"{section}[{i}]");
-                    break;
-
-                case JsonArray nested:
-                    RestoreElements(nested, stored as JsonArray, $"{section}[{i}]");
-                    break;
-
-                default:
-                    break;
-            }
+            if (!ReferenceEquals(array[i], restored))
+                array[i] = restored;
         }
     }
 
