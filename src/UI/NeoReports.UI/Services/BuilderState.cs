@@ -52,9 +52,16 @@ public sealed class BuilderState
     /// connection has to read differently from no connection at all — "no connection string set" on
     /// a report that has one is the kind of wrong that gets acted on.
     /// </summary>
-    public string ConnectionSummary => !string.IsNullOrWhiteSpace(ConnectionStringVariable)
-        ? $"${{{ConnectionStringVariable}}}"
-        : ConnectionStringKept ? "connection kept · not shown" : "no connection string set";
+    public string ConnectionSummary
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(ConnectionStringVariable))
+                return $"${{{ConnectionStringVariable}}}";
+
+            return ConnectionStringKept ? "connection kept · not shown" : "no connection string set";
+        }
+    }
 
     /// <summary>
     /// Source type ids that ride the ADO/keyset source family (<c>AdoKeysetSource</c>,

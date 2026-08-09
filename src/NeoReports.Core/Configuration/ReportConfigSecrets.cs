@@ -36,6 +36,8 @@ public static partial class ReportConfigSecrets
     /// </summary>
     public const string RedactedValue = "${neoreports:redacted}";
 
+    private const string PropertiesMember = "properties";
+
     private static readonly JsonDocumentOptions ParseOptions = new()
     {
         CommentHandling = JsonCommentHandling.Skip,
@@ -71,11 +73,9 @@ public static partial class ReportConfigSecrets
 
         foreach (JsonObject bag in PropertyBags(root))
         {
-            foreach (string key in bag.Select(pair => pair.Key).ToArray())
-            {
-                if (ShouldRedact(key, bag[key]))
-                    bag[key] = RedactedValue;
-            }
+            // Materialized before writing: the bag is mutated inside the loop.
+            foreach (string key in bag.Where(pair => ShouldRedact(pair.Key, pair.Value)).Select(pair => pair.Key).ToArray())
+                bag[key] = RedactedValue;
         }
 
         return root.ToJsonString();
@@ -104,9 +104,9 @@ public static partial class ReportConfigSecrets
         JsonObject root = ParseObject(document);
         JsonObject stored = ParseObject(storedDocument);
 
-        // Sections are paired by identity (the source is a singleton; outputs by format id;
-        // destinations by type id) rather than by array index, so reordering or adding an output in
-        // the editor cannot restore a secret into the wrong section.
+        // Sections are paired by identity rather than by array index — the source is a singleton,
+        // outputs pair on their format id and destinations on their type id — so reordering or
+        // adding an output in the editor cannot restore a secret into the wrong section.
         foreach ((JsonObject bag, JsonObject? storedBag, string section) in PairedPropertyBags(root, stored))
         {
             foreach (string key in bag.Select(pair => pair.Key).ToArray())
@@ -146,7 +146,9 @@ public static partial class ReportConfigSecrets
 
     private static bool ShouldRedact(string key, JsonNode? value)
     {
-        if (value is not JsonValue jsonValue || !jsonValue.TryGetValue(out string? text) || text is null)
+        // A JSON null is a null JsonNode, never a JsonValue, so reaching here with a successful
+        // string read means `text` is non-null.
+        if (value is not JsonValue jsonValue || !jsonValue.TryGetValue(out string? text))
             return false;
 
         if (EnvironmentPlaceholder().IsMatch(text))
@@ -174,21 +176,21 @@ public static partial class ReportConfigSecrets
     private static IEnumerable<(JsonObject Bag, JsonObject? Stored, string Section)> PairedPropertyBags(
         JsonObject root, JsonObject? stored)
     {
-        if (Member(root, "source") is JsonObject source && Member(source, "properties") is JsonObject sourceBag)
+        if (Member(root, "source") is JsonObject source && Member(source, PropertiesMember) is JsonObject sourceBag)
         {
             JsonObject? storedBag = stored is not null
                 && Member(stored, "source") is JsonObject storedSource
-                    ? Member(storedSource, "properties") as JsonObject
+                    ? Member(storedSource, PropertiesMember) as JsonObject
                     : null;
 
             yield return (sourceBag, storedBag, "source");
         }
 
-        foreach (var pair in SectionBags(root, stored, "outputs", "format"))
-            yield return pair;
+        foreach ((JsonObject Bag, JsonObject? Stored, string Section) output in SectionBags(root, stored, "outputs", "format"))
+            yield return output;
 
-        foreach (var pair in SectionBags(root, stored, "destinations", "type"))
-            yield return pair;
+        foreach ((JsonObject Bag, JsonObject? Stored, string Section) destination in SectionBags(root, stored, "destinations", "type"))
+            yield return destination;
     }
 
     private static IEnumerable<(JsonObject Bag, JsonObject? Stored, string Section)> SectionBags(
@@ -201,7 +203,7 @@ public static partial class ReportConfigSecrets
 
         foreach (JsonNode? element in array)
         {
-            if (element is not JsonObject section || Member(section, "properties") is not JsonObject bag)
+            if (element is not JsonObject section || Member(section, PropertiesMember) is not JsonObject bag)
                 continue;
 
             string? identity = Identity(section, identityKey);
@@ -210,7 +212,7 @@ public static partial class ReportConfigSecrets
                 .FirstOrDefault(candidate =>
                     string.Equals(Identity(candidate, identityKey), identity, StringComparison.OrdinalIgnoreCase));
 
-            yield return (bag, storedSection is null ? null : Member(storedSection, "properties") as JsonObject, $"{arrayName}[{identity}]");
+            yield return (bag, storedSection is null ? null : Member(storedSection, PropertiesMember) as JsonObject, $"{arrayName}[{identity}]");
         }
     }
 

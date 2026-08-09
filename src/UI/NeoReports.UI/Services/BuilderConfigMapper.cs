@@ -23,6 +23,9 @@ public static class BuilderConfigMapper
     /// <summary>The engine's placeholder for a value it would not show (ADR D86); sent back verbatim to keep it.</summary>
     public const string RedactedValue = "${neoreports:redacted}";
 
+    private const string PropertiesMember = "properties";
+    private const string ConnectionStringProperty = "connectionString";
+
     private static readonly JsonDocumentOptions ParseOptions = new()
     {
         CommentHandling = JsonCommentHandling.Skip,
@@ -110,7 +113,7 @@ public static class BuilderConfigMapper
             if (destinations.OfType<JsonObject>().FirstOrDefault() is { } destination)
             {
                 state.DestinationType = (Get(destination, "type") as JsonValue)?.ToString() ?? "";
-                state.DestinationPath = Get(destination, "properties") is JsonObject destinationProperties
+                state.DestinationPath = Get(destination, PropertiesMember) is JsonObject destinationProperties
                     ? (Get(destinationProperties, "path") as JsonValue)?.ToString() ?? ""
                     : "";
             }
@@ -144,7 +147,7 @@ public static class BuilderConfigMapper
         if (string.IsNullOrEmpty(state.SourceType) && !string.IsNullOrWhiteSpace(state.SourceRef))
             state.SourceType = resolveRegisteredSourceType?.Invoke(state.SourceRef) ?? "";
 
-        if (Get(source, "properties") is not JsonObject properties)
+        if (Get(source, PropertiesMember) is not JsonObject properties)
             return;
 
         if (state.UsesAdoSqlShape)
@@ -157,7 +160,7 @@ public static class BuilderConfigMapper
             // Every property is shown, including any the engine redacted — the placeholder is
             // editable text, so replacing it replaces the value and leaving it keeps the stored one.
             state.SourceProperties = properties
-                .Where(pair => !string.Equals(pair.Key, "connectionString", StringComparison.OrdinalIgnoreCase))
+                .Where(pair => !string.Equals(pair.Key, ConnectionStringProperty, StringComparison.OrdinalIgnoreCase))
                 .Select(pair => new PropertyRow { Key = pair.Key, Value = pair.Value?.ToString() ?? "" })
                 .ToList();
         }
@@ -166,7 +169,7 @@ public static class BuilderConfigMapper
         // a row: a ${VAR} placeholder fills the field, and a redacted literal is kept without being
         // shown (there is nothing honest to show — the engine held it back precisely because it may
         // be the secret itself).
-        string? connection = (Get(properties, "connectionString") as JsonValue)?.ToString();
+        string? connection = (Get(properties, ConnectionStringProperty) as JsonValue)?.ToString();
         if (string.Equals(connection, RedactedValue, StringComparison.Ordinal))
             state.ConnectionStringRedacted = true;
         else if (connection is not null && connection.StartsWith("${", StringComparison.Ordinal) && connection.EndsWith('}'))
@@ -202,84 +205,90 @@ public static class BuilderConfigMapper
 
     private static JsonObject BuildSource(BuilderState state, JsonObject? original)
     {
-        bool usesRef = !string.IsNullOrWhiteSpace(state.SourceRef);
-
-        // Carrying the stored bag forward is only safe while the source is still the same one:
-        // an HTTP source's "url"/"strategy" mean nothing to Postgres, and a stale credential
-        // reference even less. On a switch, start clean.
+        // Carrying the stored source forward is only safe while it is still the same one: an HTTP
+        // source's "url"/"strategy" mean nothing to Postgres, and a stale credential reference even
+        // less. On a switch, start clean.
         bool sameSource = original is not null
             && state.OriginalDocument is not null
             && string.Equals(state.LoadedSourceIdentity, state.SourceIdentity, StringComparison.Ordinal);
 
         JsonObject source = sameSource ? original!.DeepClone().AsObject() : new JsonObject();
-        JsonObject properties = Get(source, "properties") is JsonObject existing
+        JsonObject carried = Get(source, PropertiesMember) is JsonObject existing
             ? existing.DeepClone().AsObject()
             : new JsonObject();
 
         // Detached first: a JsonNode belongs to one parent, so re-assigning the very node already
         // sitting at "properties" is not a no-op.
-        Remove(source, "properties");
+        Remove(source, PropertiesMember);
 
+        bool usesRef = !string.IsNullOrWhiteSpace(state.SourceRef);
+        Set(source, "type", usesRef ? null : state.SourceType);
+        Set(source, "ref", usesRef ? state.SourceRef.Trim() : null);
+        Set(source, PropertiesMember, BuildSourceProperties(state, carried, usesRef));
+        return source;
+    }
+
+    private static JsonObject BuildSourceProperties(BuilderState state, JsonObject carried, bool usesRef)
+    {
         // The connection has its own field on the Configure step, so the carried-over value never
         // survives on its own: it is re-derived below, from that field or from the "keep what is
         // stored" flag. Leaving it in place would make naming a new variable a silent no-op.
-        Remove(properties, "connectionString");
+        Remove(carried, ConnectionStringProperty);
 
-        if (state.UsesAdoSqlShape)
-        {
-            Set(properties, "sql", state.SqlQuery);
-            Set(properties, "key", state.KeyColumn);
-        }
-        else
-        {
-            // The generic editor shows the whole bag, so its rows are the whole bag. Anything the
-            // user deleted there is meant to be gone.
-            var stored = new JsonObject();
-            foreach (string key in properties.Select(pair => pair.Key).ToArray())
-            {
-                JsonNode? value = properties[key];
-                properties.Remove(key);
-                stored[key] = value;
-            }
+        JsonObject properties = state.UsesAdoSqlShape
+            ? AdoSourceProperties(state, carried)
+            : GenericSourceProperties(state, carried);
 
-            // Last-write-wins on a duplicate (post-trim) key, rather than a throw: nothing in the
-            // editor stops a user typing two rows with the same key, and a crash on Validate/Save
-            // would cost them the whole in-progress wizard over a mistake they can fix by deleting
-            // the extra row.
-            foreach (PropertyRow row in state.SourceProperties.Where(row => !string.IsNullOrWhiteSpace(row.Key)))
-            {
-                string key = row.Key.Trim();
-
-                // A row the user did not touch keeps its original JSON type. Every row is text in
-                // the editor, so writing them all back as strings would quietly turn `90` into
-                // `"90"` and `true` into `"true"` on every edit — a change to the document that
-                // nobody asked for and that only some providers happen to tolerate.
-                JsonNode? storedValue = Get(stored, key);
-                bool unchanged = storedValue is not null
-                    && string.Equals(storedValue.ToString(), row.Value, StringComparison.Ordinal);
-                Set(properties, key, unchanged ? storedValue!.DeepClone() : JsonValue.Create(row.Value));
-            }
-        }
-
-        // Never overwrites a property the user typed by hand (e.g. an explicit "connectionString"
-        // row in the generic editor) — an explicit property always wins over this derived one.
-        if (!usesRef && !HasMember(properties, "connectionString"))
-        {
-            if (!string.IsNullOrWhiteSpace(state.ConnectionStringVariable))
-                Set(properties, "connectionString", $"${{{state.ConnectionStringVariable.Trim()}}}");
-            else if (state.ConnectionStringKept)
-                Set(properties, "connectionString", RedactedValue);
-        }
-        else if (usesRef)
+        if (usesRef)
         {
             // A registered source supplies the connection; sending one here would shadow it.
-            Remove(properties, "connectionString");
+            Remove(properties, ConnectionStringProperty);
+        }
+        else if (!HasMember(properties, ConnectionStringProperty))
+        {
+            // Never overwrites a property the user typed by hand (e.g. an explicit
+            // "connectionString" row in the generic editor) — an explicit property always wins.
+            if (!string.IsNullOrWhiteSpace(state.ConnectionStringVariable))
+                Set(properties, ConnectionStringProperty, $"${{{state.ConnectionStringVariable.Trim()}}}");
+            else if (state.ConnectionStringKept)
+                Set(properties, ConnectionStringProperty, RedactedValue);
         }
 
-        Set(source, "type", usesRef ? null : state.SourceType);
-        Set(source, "ref", usesRef ? state.SourceRef.Trim() : null);
-        Set(source, "properties", properties);
-        return source;
+        return properties;
+    }
+
+    // The SQL family has dedicated editors for its query and key column; every other stored property
+    // is carried through untouched, since nothing in the wizard could have changed it.
+    private static JsonObject AdoSourceProperties(BuilderState state, JsonObject carried)
+    {
+        Set(carried, "sql", state.SqlQuery);
+        Set(carried, "key", state.KeyColumn);
+        return carried;
+    }
+
+    // The generic editor shows the whole bag, so its rows are the whole bag: anything the user
+    // deleted there is meant to be gone, and `carried` only supplies the original JSON types.
+    private static JsonObject GenericSourceProperties(BuilderState state, JsonObject carried)
+    {
+        var properties = new JsonObject();
+
+        // Last-write-wins on a duplicate (post-trim) key, rather than a throw: nothing in the editor
+        // stops a user typing two rows with the same key, and a crash on Validate/Save would cost
+        // them the whole in-progress wizard over a mistake they can fix by deleting the extra row.
+        foreach (PropertyRow row in state.SourceProperties.Where(row => !string.IsNullOrWhiteSpace(row.Key)))
+        {
+            string key = row.Key.Trim();
+
+            // A row the user did not touch keeps its original JSON type. Every row is text in the
+            // editor, so writing them all back as strings would quietly turn `90` into `"90"` and
+            // `true` into `"true"` on every edit — a change to the document that nobody asked for
+            // and that only some providers happen to tolerate.
+            JsonNode? stored = Get(carried, key);
+            bool unchanged = stored is not null && string.Equals(stored.ToString(), row.Value, StringComparison.Ordinal);
+            Set(properties, key, unchanged ? stored!.DeepClone() : JsonValue.Create(row.Value));
+        }
+
+        return properties;
     }
 
     private static JsonArray BuildColumns(BuilderState state, JsonArray? original)
@@ -335,10 +344,10 @@ public static class BuilderConfigMapper
             // On a type switch the stored properties are dropped: an S3 bucket and region are not
             // configuration a local-filesystem destination should inherit.
             JsonObject destination = sameDestination ? first!.DeepClone().AsObject() : new JsonObject();
-            JsonObject? properties = Get(destination, "properties") is JsonObject stored
+            JsonObject? properties = Get(destination, PropertiesMember) is JsonObject stored
                 ? stored.DeepClone().AsObject()
                 : null;
-            Remove(destination, "properties");
+            Remove(destination, PropertiesMember);
 
             if (string.IsNullOrWhiteSpace(state.DestinationPath))
                 Remove(properties, "path");
@@ -346,7 +355,7 @@ public static class BuilderConfigMapper
                 Set(properties ??= new JsonObject(), "path", state.DestinationPath);
 
             Set(destination, "type", state.DestinationType);
-            Set(destination, "properties", properties is { Count: > 0 } ? properties : null);
+            Set(destination, PropertiesMember, properties is { Count: > 0 } ? properties : null);
             destinations.Add(destination);
         }
 

@@ -463,6 +463,8 @@ internal sealed class NeoReportsApiClient(
     IOptions<NeoReportsApiOptions> options,
     ILogger<NeoReportsApiClient> logger) : INeoReportsApiClient
 {
+    private const string JsonMediaType = "application/json";
+
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     private Uri ApiBase => new(
@@ -598,7 +600,7 @@ internal sealed class NeoReportsApiClient(
             : $"reports/validate?for={Uri.EscapeDataString(editingReportName)}";
         try
         {
-            using var content = new StringContent(configJson, Encoding.UTF8, "application/json");
+            using var content = new StringContent(configJson, Encoding.UTF8, JsonMediaType);
             using var response = await http.PostAsync(new Uri(apiBase, path), content, cancellationToken)
                 .ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
@@ -618,7 +620,7 @@ internal sealed class NeoReportsApiClient(
         var apiBase = ApiBase;
         try
         {
-            using var content = new StringContent(configJson, Encoding.UTF8, "application/json");
+            using var content = new StringContent(configJson, Encoding.UTF8, JsonMediaType);
             using var response = await http.PostAsync(new Uri(apiBase, "reports"), content, cancellationToken).ConfigureAwait(false);
 
             if (response.StatusCode == HttpStatusCode.Created)
@@ -650,7 +652,7 @@ internal sealed class NeoReportsApiClient(
         var apiBase = ApiBase;
         try
         {
-            using var content = new StringContent(configJson, Encoding.UTF8, "application/json");
+            using var content = new StringContent(configJson, Encoding.UTF8, JsonMediaType);
             using var response = await http.PutAsync(
                 new Uri(apiBase, $"reports/{Uri.EscapeDataString(name)}"), content, cancellationToken).ConfigureAwait(false);
 
@@ -1042,7 +1044,7 @@ internal sealed class NeoReportsApiClient(
             using var request = new HttpRequestMessage(
                 HttpMethod.Post, new Uri(apiBase, $"sources/{Uri.EscapeDataString(sourceName)}/query-sql"))
             {
-                Content = new StringContent(modelJson, Encoding.UTF8, "application/json"),
+                Content = new StringContent(modelJson, Encoding.UTF8, JsonMediaType),
             };
             using var response = await http.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
@@ -1082,7 +1084,7 @@ internal sealed class NeoReportsApiClient(
             using var request = new HttpRequestMessage(
                 HttpMethod.Post, new Uri(apiBase, $"sources/{Uri.EscapeDataString(sourceName)}/query-preview"))
             {
-                Content = new StringContent(modelJson, Encoding.UTF8, "application/json"),
+                Content = new StringContent(modelJson, Encoding.UTF8, JsonMediaType),
             };
             using var response = await http.SendAsync(request, cancellationToken).ConfigureAwait(false);
 

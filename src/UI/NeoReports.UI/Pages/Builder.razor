@@ -114,8 +114,8 @@
 
     protected override async Task OnInitializedAsync()
     {
-        bool editing = !string.IsNullOrWhiteSpace(EditName);
-        if (!editing && !IsResuming)
+        string? editName = string.IsNullOrWhiteSpace(EditName) ? null : EditName;
+        if (editName is null && !IsResuming)
             Wizard.Reset();
 
         ApiCapabilities? capabilities = await Api.TryGetCapabilitiesAsync();
@@ -124,7 +124,7 @@
             // Nothing to hydrate against and nothing to save to; the wizard stays browsable. Only
             // the edit path resets here — a mid-wizard "Back" must keep what the user already typed
             // (D69), and an unreachable engine is no reason to throw it away.
-            if (editing)
+            if (editName is not null)
                 Wizard.Reset();
 
             Wizard.EngineAvailable = false;
@@ -137,8 +137,8 @@
         // Loaded after the registered sources on purpose: a ref-based document names a source but
         // not its type (the type belongs to the registry, D42), and the Configure step's editor
         // shape depends on knowing it.
-        if (editing)
-            await LoadForEditAsync(EditName!);
+        if (editName is not null)
+            await LoadForEditAsync(editName);
 
         // Set last, because Reset() clears it and both paths above may have called it.
         Wizard.EngineAvailable = true;

@@ -645,26 +645,42 @@ public static class NeoReportsEndpointRouteBuilderExtensions
                 statusCode: StatusCodes.Status500InternalServerError);
         }
 
-        // A runtime schedule override still wins (ADR D41): editing a definition is not the same act
-        // as changing when it runs, so an override set through PUT /reports/{name}/schedule survives
-        // the edit and stays effective. Without an override, the declared schedule takes effect
-        // immediately — including its removal, which has to unregister the recurring job.
-        if (scheduler is not null)
-        {
-            IScheduleOverrideStore? overrides = http.RequestServices.GetService<IScheduleOverrideStore>();
-            ScheduleOverrideEntry? overrideEntry = overrides is null
-                ? null
-                : await overrides.GetAsync(name, cancellationToken).ConfigureAwait(false);
-
-            string? effectiveCron = EffectiveSchedule.Resolve(compiled.Schedule, overrideEntry);
-            if (effectiveCron is null)
-                await scheduler.RemoveRecurringAsync(name, cancellationToken).ConfigureAwait(false);
-            else
-                await scheduler.RegisterRecurringAsync(name, effectiveCron, cancellationToken).ConfigureAwait(false);
-        }
+        await ReconcileScheduleAsync(name, compiled, scheduler, http, cancellationToken).ConfigureAwait(false);
 
         var columns = compiled.Schema.Columns.Select(c => c.Name).ToArray();
         return Results.Ok(new ReportCreatedResponse(name, columns));
+    }
+
+    /// <summary>
+    /// Brings the recurring registration in line with a replaced report's declared schedule.
+    /// <para>
+    /// A runtime schedule override still wins (ADR D41): editing a definition is not the same act as
+    /// changing when it runs, so an override set through <c>PUT /reports/{name}/schedule</c> survives
+    /// the edit and stays effective. Without one, the declared schedule takes effect immediately —
+    /// including its <em>removal</em>, which has to unregister the recurring job rather than leave it
+    /// firing for a report that no longer declares it.
+    /// </para>
+    /// </summary>
+    private static async Task ReconcileScheduleAsync(
+        string name,
+        CompiledReport compiled,
+        IRecurringReportScheduler? scheduler,
+        HttpContext http,
+        CancellationToken cancellationToken)
+    {
+        if (scheduler is null)
+            return;
+
+        IScheduleOverrideStore? overrides = http.RequestServices.GetService<IScheduleOverrideStore>();
+        ScheduleOverrideEntry? overrideEntry = overrides is null
+            ? null
+            : await overrides.GetAsync(name, cancellationToken).ConfigureAwait(false);
+
+        string? effectiveCron = EffectiveSchedule.Resolve(compiled.Schedule, overrideEntry);
+        if (effectiveCron is null)
+            await scheduler.RemoveRecurringAsync(name, cancellationToken).ConfigureAwait(false);
+        else
+            await scheduler.RegisterRecurringAsync(name, effectiveCron, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<IResult> ValidateReportAsync(
