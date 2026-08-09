@@ -467,6 +467,15 @@ public static class BuilderConfigMapper
             owner[name] = value;
     }
 
+    private static void Set(JsonObject owner, string name, string? value) =>
+        Set(owner, name, value is null ? null : JsonValue.Create(value));
+
+    private static void Set(JsonObject owner, string name, int value) =>
+        Set(owner, name, JsonValue.Create(value));
+
+    private static void Set(JsonObject owner, string name, bool value) =>
+        Set(owner, name, JsonValue.Create(value));
+
     /// <summary>
     /// Writes a member, treating <c>null</c> as the JSON value <c>null</c> rather than as an
     /// omission — the distinction <see cref="Set"/> deliberately collapses, and the one a
@@ -477,15 +486,6 @@ public static class BuilderConfigMapper
         RemoveCaseVariant(owner, name);
         owner[name] = value;
     }
-
-    private static void Set(JsonObject owner, string name, string? value) =>
-        Set(owner, name, value is null ? null : JsonValue.Create(value));
-
-    private static void Set(JsonObject owner, string name, int value) =>
-        Set(owner, name, JsonValue.Create(value));
-
-    private static void Set(JsonObject owner, string name, bool value) =>
-        Set(owner, name, JsonValue.Create(value));
 
     private static void RemoveCaseVariant(JsonObject owner, string name)
     {
