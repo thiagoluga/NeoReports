@@ -44,6 +44,34 @@ public sealed class LicenseToolKeyHandlingTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// The pre-release key-pair check (ADR D83) is only worth running if it can fail. A `verify` that
+    /// reports success regardless would be worse than having none — it would launder exactly the
+    /// mistake it exists to catch (a public key committed that is not the pair of the vaulted private
+    /// key) into a green tick.
+    /// </summary>
+    /// <remarks>
+    /// A freshly generated pair stands in for a mismatched one: it is, by construction, not the pair
+    /// of the key embedded in this build. The positive path cannot be tested here — it needs the real
+    /// private key, which lives in a vault and never touches CI. That asymmetry is the point: this
+    /// test pins that the command discriminates, and the maintainer runs the positive half by hand.
+    /// </remarks>
+    [Fact]
+    public void Verify_rejects_a_license_signed_by_a_key_that_is_not_the_embedded_pair()
+    {
+        string keyPath = PathIn("foreign-key.pem");
+        RunCapturingStdout("keygen", "--out", keyPath).ExitCode.ShouldBe(0);
+
+        (int signExit, string licenseKey) = RunCapturingStdout(
+            "sign", "--key", keyPath, "--licensee", "Someone Else", "--days", "1");
+        signExit.ShouldBe(0);
+
+        (int verifyExit, string stdout) = RunCapturingStdout("verify", "--license", licenseKey.Trim());
+
+        verifyExit.ShouldNotBe(0, "a non-zero exit is what makes this usable as a release gate");
+        stdout.ShouldNotContain("VALID");
+    }
+
     [Fact]
     public void Keygen_writes_a_private_key_and_prints_the_public_half()
     {
