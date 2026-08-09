@@ -20,11 +20,23 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   properties and sections, a column's type / display name / format / culture, and any destination past
   the first all survive an edit. Previously **every column was rewritten as an untyped `String`** by a
   form that never displayed the type.
+- **Two outputs of the same format both survive an edit.** The Format step is a set of checkboxes, so
+  the Builder collapses outputs to distinct formats; it used to emit one output per format and delete
+  the second `csv` (each of which can carry its own writer options). Clearing a format still removes
+  every output of it, and the step now says when a report has more outputs than formats.
+- **A JSON `null` source property no longer becomes `""` on every edit.** A JSON null *is* a null
+  node, so "present but null" now tests membership rather than the value.
+- **A failed `PUT` save rolls the registry back whatever the failure was.** It previously caught only
+  `IOException`/`UnauthorizedAccessException`; any other store failure left the running report and the
+  persisted one disagreeing, so the edit applied until the next restart and then silently reverted.
 
 ### Added
 - **`GET /api/reports/{name}/config`** returns a config-origin report's stored document with
   credential-bearing values replaced by the reserved placeholder `${neoreports:redacted}` (`404` for a
-  code-registered report). A `${VAR}` placeholder is not a secret and comes back verbatim.
+  code-registered report). A `${VAR}` placeholder is not a secret and comes back verbatim. Redaction
+  walks nested objects and arrays — an HTTP source's `headers.Authorization` and a merge-join
+  source's child `connectionString` are both inside nested values — and a key whose *name* looks like
+  a credential hides its whole subtree rather than being descended into.
 - **`PUT /api/reports/{name}`** replaces a report in one step, restoring any `${neoreports:redacted}`
   from the stored document, so an editor can change a page size without the user retyping a connection
   string and without the secret ever leaving the host.

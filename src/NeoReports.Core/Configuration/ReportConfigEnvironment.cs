@@ -61,21 +61,25 @@ public static partial class ReportConfigEnvironment
 
     private static object? SubstituteValue(string propertyKey, object? value)
     {
-        if (value is not string text)
-            return value;
-
         // A redaction placeholder (ADR D86) is meaningful only between GET .../config and
         // PUT /reports/{name}, which resolves it against the stored document. One that reaches
-        // compilation means that resolution did not happen; failing here is what keeps it from
-        // being persisted and used as if it were a literal connection string. The sentinel is
-        // deliberately outside the ${VAR} grammar below, so this is the only thing that can catch it.
-        if (string.Equals(text, ReportConfigSecrets.RedactedValue, StringComparison.Ordinal))
+        // compilation means that resolution did not happen; failing here is what keeps it from being
+        // persisted and used as if it were a literal connection string. The sentinel is deliberately
+        // outside the ${VAR} grammar below, so this is the only thing that can catch it.
+        //
+        // The check looks *inside* nested values, unlike the ${VAR} substitution below: a sentinel
+        // left in an array element reached disk during development precisely because a string-only
+        // guard could not see it.
+        if (ReportConfigSecrets.HoldsRedactedValue(value))
         {
             throw new ConfigurationException(
                 $"Property '{propertyKey}' still holds the redaction placeholder " +
                 $"'{ReportConfigSecrets.RedactedValue}'. It can only be resolved by replacing an existing " +
                 "report (PUT /reports/{name}); send the real value instead.");
         }
+
+        if (value is not string text)
+            return value;
 
         Match match = PlaceholderPattern().Match(text);
         if (!match.Success)

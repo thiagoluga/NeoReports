@@ -197,6 +197,13 @@ public sealed class BuilderState
     /// </summary>
     public int AdditionalDestinationCount { get; set; }
 
+    /// <summary>
+    /// How many outputs the loaded document declared beyond one per distinct format. The Format step
+    /// is a set of checkboxes and cannot express "two csv outputs with different writer options";
+    /// all of them are kept on save, and this is what lets the step say so.
+    /// </summary>
+    public int AdditionalOutputCount { get; set; }
+
     /// <summary>The source currently selected, in the same shape as <see cref="LoadedSourceIdentity"/>.</summary>
     public string SourceIdentity =>
         string.IsNullOrWhiteSpace(SourceRef) ? $"type:{SourceType}" : $"ref:{SourceRef.Trim()}";
@@ -237,5 +244,6 @@ public sealed class BuilderState
         OriginalDocument = null;
         LoadedSourceIdentity = "";
         AdditionalDestinationCount = 0;
+        AdditionalOutputCount = 0;
     }
 }

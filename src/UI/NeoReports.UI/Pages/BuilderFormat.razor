@@ -20,6 +20,13 @@
        registered; v1 only ships CSV and XLSX writers, so PDF/JSON/TXT/XML were always dead ends.
        Per-format configuration (delimiter/encoding, sheet name/auto-filter, etc.) was removed:
        none of it was ever sent to the engine — OutputConfig only carries the format id. *@
+    @if (Wizard.IsEditing && Wizard.AdditionalOutputCount > 0)
+    {
+        <Banner Variant="info" Icon="info-circle">
+            <b>@(Wizard.AdditionalOutputCount) further output@(Wizard.AdditionalOutputCount == 1 ? "" : "s") on this report.</b>
+            <span style="font-size:12px">It declares more than one output of the same format, each with its own writer options. These checkboxes select formats, so all outputs of a selected format are kept exactly as they are; clearing a format removes every output of it.</span>
+        </Banner>
+    }
     @if (!Wizard.EngineAvailable)
     {
         <Banner Variant="info" Icon="info-circle">

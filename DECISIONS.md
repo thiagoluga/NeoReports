@@ -1788,9 +1788,23 @@ userinfo, because `https://user:pass@host` is a credential under a key as innoce
 The fragment list **over-matches on purpose**: `oauth2TokenEndpoint` contains "token" and gets hidden
 too. A denylist that fails open ships a literal secret the first time a key name is not on it; this
 one fails closed, and because `Restore` puts the value back untouched, over-matching costs only
-visibility, never correctness. Sections are paired by identity (source; outputs by `format`;
-destinations by `type`), never by array index, so reordering an output in an editor cannot restore a
-secret into the wrong section.
+visibility, never correctness.
+
+**The walk is recursive, and that was not the first attempt.** A property-bag value is not always a
+scalar: an HTTP source declares `headers` as an object (`Authorization` lives in there) and a
+merge-join source nests whole child sources, each with its own `properties` and connection string.
+The first implementation stopped at the top level and handed both back in plaintext — caught by
+`/code-review`, not by any test, because every test used a flat bag. A key whose *name* matches a
+fragment now hides its entire subtree rather than being descended into: `"credentials": {…}` is a
+credential whatever its inner keys are called, and guessing at them is the fail-open behaviour the
+list exists to avoid.
+
+Sections pair by identity (outputs by `format`, destinations by `type`) **and then by occurrence** —
+the nth section with a given id pairs with the nth stored one. Identity alone is not a key: nothing
+stops a report writing to two `s3` buckets, and first-match pairing would restore bucket A's access
+key into bucket B on any edit, silently, with both sections looking perfectly ordinary. Inside a bag
+an array is ordered data rather than identified sections, so index is the only pairing available
+there.
 
 The sentinel sits deliberately **outside** `ReportConfigEnvironment`'s `${NAME}` grammar (a colon is
 not legal in an environment variable name), so it can never be resolved as a variable lookup. It is
@@ -1837,6 +1851,27 @@ Two consequences of the same rule, both found by running the flow rather than by
 The wizard edits the **first** destination and passes the rest through, saying so on the Destination
 step rather than presenting the report as having exactly one. Matching by index rather than by type
 is what makes "change local to s3" mean changing *this* destination.
+
+### What the review pass caught
+
+Four defects survived implementation, self-review and a full green suite, and were found by
+`/code-review` afterwards. All four share a shape: the code does something plausible and nothing
+throws.
+
+- **Nested bag values escaped redaction** (above) — the only one that was a live secret leak.
+- **`Restore` paired sections by first match on a non-unique id** (above).
+- **Duplicate output formats were dropped on save.** The Format step is a set of checkboxes, so the
+  Builder collapses `outputs` into a `HashSet<string>`; emitting one output per distinct format
+  deleted the second of two `csv` outputs, each of which can carry its own writer options. Every
+  stored output of a kept format is now kept, and the step says so — the same treatment destinations
+  already had.
+- **A JSON `null` became `""` on a generic-property round-trip.** A JSON null *is* a null node, so
+  "present but null" has to be told apart from "absent" with `HasMember`; comparing against a null
+  stored value called the row changed and rewrote it as an empty string on every edit.
+- **The `PUT` rollback only caught `IOException`/`UnauthorizedAccessException`.** An
+  `IReportConfigStore` is an interface and a custom one can fail with anything; any other exception
+  left the registry holding the new definition while the store held the old, so the edit applied
+  until the next restart and then silently reverted.
 
 ### Verified end to end
 

@@ -634,11 +634,18 @@ public static class NeoReportsEndpointRouteBuilderExtensions
             // Same rule as create: the ORIGINAL document is persisted, ${VAR} placeholders intact.
             await configStore.SaveAsync(name, document, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex)
         {
             // Put the previous definition back rather than leaving the process running a report the
-            // next restart will not rehydrate.
+            // next restart will not rehydrate. Every failure rolls back, not only the file-system
+            // ones a create has to worry about: an IReportConfigStore is an interface, a custom one
+            // can throw anything, and a registry that disagrees with the store is a report that
+            // quietly reverts on the next restart — the hardest kind of bug to trace back to an edit.
             registry.Replace(existing);
+
+            if (ex is OperationCanceledException)
+                throw;
+
             return Results.Problem(
                 title: "Failed to persist the dynamic report.",
                 detail: ex.Message,

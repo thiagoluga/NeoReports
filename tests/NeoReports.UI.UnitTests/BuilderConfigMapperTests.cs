@@ -8,6 +8,8 @@ namespace NeoReports.UI.UnitTests;
 /// <summary>Epic D / D6: <see cref="BuilderConfigMapper.ToConfigJson"/> — BuilderState to config JSON.</summary>
 public class BuilderConfigMapperTests
 {
+    private const string PropertiesMember = "properties";
+
     private static readonly string[] IdCustomerAmountColumns = { "Id", "Customer", "Amount" };
     private static readonly string[] CsvXlsxFormats = { "csv", "xlsx" };
     private static readonly string[] ZetaAlphaMiddleColumns = { "Zeta", "Alpha", "Middle" };
@@ -485,6 +487,62 @@ public class BuilderConfigMapperTests
         // of "12345" into a number.
         doc.RootElement.GetProperty("source").GetProperty("properties").GetProperty("pageSize")
             .GetString().ShouldBe("120");
+    }
+
+    [Fact]
+    public void A_json_null_property_survives_an_untouched_round_trip()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"type":"http","properties":{"proxy":null,"url":"https://x"}}}
+            """).ShouldBeTrue();
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        // A JSON null IS a null node, so "present but null" has to be told apart from "absent" —
+        // otherwise the row reads as changed and `null` is written back as `""` on every edit.
+        JsonElement properties = doc.RootElement.GetProperty("source").GetProperty(PropertiesMember);
+        properties.GetProperty("proxy").ValueKind.ShouldBe(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public void Two_outputs_of_the_same_format_both_survive_an_edit()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"type":"http"},
+             "outputs":[{"format":"csv","properties":{"delimiter":";"}},
+                        {"format":"csv","properties":{"delimiter":"|"}},
+                        {"format":"xlsx"}]}
+            """).ShouldBeTrue();
+
+        // The Format step is a set of checkboxes and collapses these to {csv, xlsx}; emitting one
+        // output per distinct format would silently delete the second csv on any edit.
+        state.AdditionalOutputCount.ShouldBe(1);
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        JsonElement[] outputs = doc.RootElement.GetProperty("outputs").EnumerateArray().ToArray();
+        outputs.Length.ShouldBe(3);
+        outputs.Where(o => o.GetProperty("format").GetString() == "csv")
+            .Select(o => o.GetProperty(PropertiesMember).GetProperty("delimiter").GetString())
+            .ShouldBe([";", "|"]);
+    }
+
+    [Fact]
+    public void Clearing_a_format_removes_every_output_of_it()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"type":"http"},
+             "outputs":[{"format":"csv"},{"format":"csv"},{"format":"xlsx"}]}
+            """).ShouldBeTrue();
+        state.Formats.Remove("csv");
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        doc.RootElement.GetProperty("outputs").EnumerateArray()
+            .Select(o => o.GetProperty("format").GetString()).ShouldBe(["xlsx"]);
     }
 
     [Fact]

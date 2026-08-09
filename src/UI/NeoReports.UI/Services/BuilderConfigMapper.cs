@@ -96,12 +96,19 @@ public static class BuilderConfigMapper
 
         if (Get(root, "outputs") is JsonArray outputs)
         {
-            state.Formats = outputs
+            string[] formats = outputs
                 .OfType<JsonObject>()
                 .Select(output => (Get(output, "format") as JsonValue)?.ToString())
                 .Where(format => !string.IsNullOrWhiteSpace(format))
                 .Select(format => format!)
-                .ToHashSet(StringComparer.Ordinal);
+                .ToArray();
+
+            state.Formats = formats.ToHashSet(StringComparer.Ordinal);
+
+            // The Format step is a set of checkboxes, so it cannot represent "two csv outputs" —
+            // nothing stops a config document declaring them, with different writer properties each.
+            // Counted so the step can say so, and BuildOutputs keeps every one of them.
+            state.AdditionalOutputCount = formats.Length - state.Formats.Count;
         }
 
         // Only the first destination is editable — the wizard models one. Any others are carried
@@ -283,9 +290,18 @@ public static class BuilderConfigMapper
             // editor, so writing them all back as strings would quietly turn `90` into `"90"` and
             // `true` into `"true"` on every edit — a change to the document that nobody asked for
             // and that only some providers happen to tolerate.
-            JsonNode? stored = Get(carried, key);
-            bool unchanged = stored is not null && string.Equals(stored.ToString(), row.Value, StringComparison.Ordinal);
-            Set(properties, key, unchanged ? stored!.DeepClone() : JsonValue.Create(row.Value));
+            //
+            // "present but null" is tested with HasMember rather than a null node, because a JSON
+            // null IS a null node: `"proxy": null` hydrates to an empty row, and comparing against
+            // a null stored value would call it changed and write `""` back every time.
+            bool present = HasMember(carried, key);
+            JsonNode? stored = present ? Get(carried, key) : null;
+            bool unchanged = present && string.Equals(stored?.ToString() ?? string.Empty, row.Value, StringComparison.Ordinal);
+
+            if (unchanged)
+                SetNode(properties, key, stored?.DeepClone());
+            else
+                Set(properties, key, JsonValue.Create(row.Value));
         }
 
         return properties;
@@ -316,13 +332,25 @@ public static class BuilderConfigMapper
         var outputs = new JsonArray();
         foreach (string format in state.Formats.OrderBy(f => f, StringComparer.Ordinal))
         {
+            // EVERY stored output of a kept format is kept, not just the first. The checkbox is per
+            // format, so deselecting "csv" means all csv outputs go — but leaving it selected must
+            // not silently discard the second one, which a first-match lookup did.
+            //
             // Same reasoning as columns: a sectioned XLSX output (worksheet-per-section) is defined
             // entirely by properties the wizard cannot show, and must not be flattened by an edit.
-            JsonObject? stored = original?
+            JsonObject[] stored = original?
                 .OfType<JsonObject>()
-                .FirstOrDefault(output => string.Equals((Get(output, "format") as JsonValue)?.ToString(), format, StringComparison.Ordinal));
+                .Where(output => string.Equals((Get(output, "format") as JsonValue)?.ToString(), format, StringComparison.Ordinal))
+                .ToArray() ?? [];
 
-            outputs.Add(stored is not null ? stored.DeepClone() : new JsonObject { ["format"] = format });
+            if (stored.Length == 0)
+            {
+                outputs.Add(new JsonObject { ["format"] = format });
+                continue;
+            }
+
+            foreach (JsonObject output in stored)
+                outputs.Add(output.DeepClone());
         }
 
         return outputs;
@@ -428,7 +456,29 @@ public static class BuilderConfigMapper
             owner.Remove(key);
     }
 
+    /// <summary>Writes a member, treating <c>null</c> as "omit this member entirely".</summary>
     private static void Set(JsonObject owner, string name, JsonNode? value)
+    {
+        RemoveCaseVariant(owner, name);
+
+        if (value is null)
+            owner.Remove(name);
+        else
+            owner[name] = value;
+    }
+
+    /// <summary>
+    /// Writes a member, treating <c>null</c> as the JSON value <c>null</c> rather than as an
+    /// omission — the distinction <see cref="Set"/> deliberately collapses, and the one a
+    /// round-tripped <c>"key": null</c> depends on.
+    /// </summary>
+    private static void SetNode(JsonObject owner, string name, JsonNode? value)
+    {
+        RemoveCaseVariant(owner, name);
+        owner[name] = value;
+    }
+
+    private static void RemoveCaseVariant(JsonObject owner, string name)
     {
         string? existing = owner
             .Select(pair => pair.Key)
@@ -436,11 +486,6 @@ public static class BuilderConfigMapper
 
         if (existing is not null && !string.Equals(existing, name, StringComparison.Ordinal))
             owner.Remove(existing);
-
-        if (value is null)
-            owner.Remove(name);
-        else
-            owner[name] = value;
     }
 
     private static void Set(JsonObject owner, string name, string? value) =>

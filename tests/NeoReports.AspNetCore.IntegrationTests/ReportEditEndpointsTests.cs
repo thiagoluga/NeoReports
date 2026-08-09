@@ -166,6 +166,57 @@ public class ReportEditEndpointsTests : IDisposable
     }
 
     [Fact]
+    public async Task A_store_failure_of_any_kind_rolls_the_registry_back()
+    {
+        var store = new ThrowOnSecondSaveStore(Path.Join(_configDir, "throwing"));
+        using IHost host = await TestApp.StartAsync(services =>
+        {
+            // Registered before AddDynamicReports so its TryAddSingleton does not win.
+            services.AddSingleton<IReportConfigStore>(store);
+            services.AddDynamicReports(o => o.Directory = _configDir);
+            services.AddSingleton<IConfigSourceProvider>(new FakeConfigSourceProvider(
+                new[] { new object?[] { 1L, "Acme" } }));
+            services.AddSingleton<IWriterFactory>(new CsvWriterFactory(new CsvOptions()));
+        });
+        HttpClient client = await CreateSalesAsync(host);
+
+        string edited = Original.Replace("\"pageSize\": 100", "\"pageSize\": 250", StringComparison.Ordinal);
+        HttpResponseMessage response = await SendJsonAsync(client, HttpMethod.Put, "/api/reports/sales", edited);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.InternalServerError);
+
+        // The registry must not keep a definition the store never accepted: it would serve the edit
+        // until the next restart and then silently revert to the old one, which is about the hardest
+        // symptom there is to trace back to an edit.
+        JsonElement detail = await client.GetFromJsonAsync<JsonElement>("/api/reports/sales", Json);
+        detail.GetProperty("pageSize").GetInt32().ShouldBe(100);
+    }
+
+    /// <summary>
+    /// An <see cref="IReportConfigStore"/> is an interface — a custom one can fail with anything, not
+    /// only the <see cref="IOException"/>/<see cref="UnauthorizedAccessException"/> a file-backed one
+    /// raises. Throws on the replace, never on the create that sets the test up.
+    /// </summary>
+    private sealed class ThrowOnSecondSaveStore(string directory) : IReportConfigStore
+    {
+        private readonly FileReportConfigStore _inner = new(directory);
+        private int _saves;
+
+        public Task SaveAsync(string name, string configDocument, CancellationToken cancellationToken) =>
+            Interlocked.Increment(ref _saves) > 1
+                ? throw new InvalidOperationException("the store said no")
+                : _inner.SaveAsync(name, configDocument, cancellationToken);
+
+        public Task<bool> DeleteAsync(string name, CancellationToken cancellationToken) => _inner.DeleteAsync(name, cancellationToken);
+
+        public Task<bool> ExistsAsync(string name, CancellationToken cancellationToken) => _inner.ExistsAsync(name, cancellationToken);
+
+        public Task<IReadOnlyList<(string Name, string Document)>> ListAsync(CancellationToken cancellationToken) => _inner.ListAsync(cancellationToken);
+
+        public Task<string?> TryGetAsync(string name, CancellationToken cancellationToken) => _inner.TryGetAsync(name, cancellationToken);
+    }
+
+    [Fact]
     public async Task Put_rejects_a_document_whose_name_does_not_match_the_route()
     {
         using var host = await StartAsync();

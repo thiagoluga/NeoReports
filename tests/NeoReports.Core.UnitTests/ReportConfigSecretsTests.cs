@@ -204,6 +204,158 @@ public class ReportConfigSecretsTests
             [new OutputConfig("csv")])));
     }
 
+    // ---- Nested property-bag values -----------------------------------------------------------
+    //
+    // A bag value is not always a scalar: PrimitiveObjectConverter keeps nested objects and arrays,
+    // an HTTP source declares "headers" as an object (Authorization lives there), and a merge-join
+    // source nests whole child sources with their own connection strings. A top-level-only walk
+    // returned every one of those in plaintext.
+
+    [Fact]
+    public void A_secret_nested_inside_an_object_is_redacted()
+    {
+        const string document = """
+            {"source":{"type":"http","properties":{
+              "url":"https://api.example.com",
+              "headers":{"Accept":"application/json","Authorization":"Bearer sk-live-abc123"}}}}
+            """;
+
+        JsonElement headers = Properties(ReportConfigSecrets.Redact(document), "source").GetProperty("headers");
+        headers.GetProperty("Authorization").GetString().ShouldBe(ReportConfigSecrets.RedactedValue);
+        headers.GetProperty("Accept").GetString().ShouldBe("application/json");
+    }
+
+    [Fact]
+    public void A_merge_join_child_sources_connection_string_is_redacted()
+    {
+        const string document = """
+            {"source":{"type":"merge-join","properties":{
+              "key":"customerId",
+              "left":{"type":"sql","properties":{"connectionString":"Server=a;Password=p1","sql":"SELECT 1"}},
+              "right":{"type":"sql","properties":{"connectionString":"Server=b;Password=p2","sql":"SELECT 2"}}}}}
+            """;
+
+        JsonElement properties = Properties(ReportConfigSecrets.Redact(document), "source");
+        foreach (string side in new[] { "left", "right" })
+        {
+            JsonElement child = properties.GetProperty(side).GetProperty("properties");
+            child.GetProperty("connectionString").GetString().ShouldBe(ReportConfigSecrets.RedactedValue);
+            child.GetProperty("sql").GetString().ShouldNotBe(ReportConfigSecrets.RedactedValue);
+        }
+    }
+
+    [Fact]
+    public void A_secret_named_key_hides_its_whole_subtree_rather_than_being_descended_into()
+    {
+        // Descending into "credentials" would mean guessing at inner key names — exactly the
+        // fail-open behaviour the fragment list is designed to avoid.
+        const string document = """{"source":{"properties":{"credentials":{"user":"admin","pass":"hunter2"}}}}""";
+
+        Properties(ReportConfigSecrets.Redact(document), "source").GetProperty("credentials").GetString()
+            .ShouldBe(ReportConfigSecrets.RedactedValue);
+    }
+
+    [Fact]
+    public void Array_elements_are_walked_and_inherit_the_enclosing_key()
+    {
+        const string document = """
+            {"source":{"properties":{
+              "urls":["https://plain.example.com","https://user:pw@secret.example.com"],
+              "children":[{"apiKey":"live-1"},{"apiKey":"live-2"}]}}}
+            """;
+
+        JsonElement properties = Properties(ReportConfigSecrets.Redact(document), "source");
+        JsonElement[] urls = properties.GetProperty("urls").EnumerateArray().ToArray();
+        urls[0].GetString().ShouldBe("https://plain.example.com");
+        urls[1].GetString().ShouldBe(ReportConfigSecrets.RedactedValue);
+        properties.GetProperty("children").EnumerateArray()
+            .Select(child => child.GetProperty("apiKey").GetString())
+            .ShouldAllBe(value => value == ReportConfigSecrets.RedactedValue);
+    }
+
+    [Fact]
+    public void A_nested_secret_round_trips_through_Redact_and_Restore()
+    {
+        const string document = """
+            {"source":{"type":"http","properties":{
+              "headers":{"Authorization":"Bearer sk-live-abc123"},
+              "children":[{"apiKey":"live-1"}]}}}
+            """;
+
+        string restored = ReportConfigSecrets.Restore(ReportConfigSecrets.Redact(document), document);
+
+        JsonElement properties = Properties(restored, "source");
+        properties.GetProperty("headers").GetProperty("Authorization").GetString().ShouldBe("Bearer sk-live-abc123");
+        properties.GetProperty("children").EnumerateArray().Single().GetProperty("apiKey").GetString().ShouldBe("live-1");
+    }
+
+    [Fact]
+    public void A_redacted_array_element_is_restored_by_index()
+    {
+        // Descending only into object elements left a scalar element holding the literal sentinel,
+        // which was then persisted — found by round-tripping a real report through the running app,
+        // after every flat-bag test had passed.
+        const string stored = """{"source":{"properties":{"mirrors":["https://plain.example.com","https://u:p@secret.example.com"]}}}""";
+
+        string restored = ReportConfigSecrets.Restore(ReportConfigSecrets.Redact(stored), stored);
+
+        Properties(restored, "source").GetProperty("mirrors").EnumerateArray()
+            .Select(m => m.GetString())
+            .ShouldBe(["https://plain.example.com", "https://u:p@secret.example.com"]);
+    }
+
+    [Fact]
+    public void A_redacted_array_element_with_nothing_stored_is_rejected()
+    {
+        const string stored = """{"source":{"properties":{"mirrors":[]}}}""";
+        const string incoming = """{"source":{"properties":{"mirrors":["${neoreports:redacted}"]}}}""";
+
+        Should.Throw<ConfigurationException>(() => ReportConfigSecrets.Restore(incoming, stored))
+            .Message.ShouldContain("mirrors");
+    }
+
+    [Fact]
+    public void A_nested_placeholder_that_reaches_compilation_is_rejected()
+    {
+        // The string-only guard could not see this one, which is how it reached disk.
+        using JsonDocument headers = JsonDocument.Parse($$"""{"Authorization":"{{ReportConfigSecrets.RedactedValue}}"}""");
+
+        Should.Throw<ConfigurationException>(() => ReportConfigEnvironment.Substitute(new ReportConfig(
+            "sales",
+            new SourceConfig("http", new Dictionary<string, object?> { ["headers"] = headers.RootElement.Clone() }),
+            [new ColumnConfig("Id", ColumnType.Integer)],
+            [new OutputConfig("csv")])));
+    }
+
+    [Fact]
+    public void ContainsRedactedValue_sees_a_nested_placeholder()
+    {
+        ReportConfigSecrets.ContainsRedactedValue(
+            """{"source":{"properties":{"headers":{"Authorization":"${neoreports:redacted}"}}}}""").ShouldBeTrue();
+        ReportConfigSecrets.ContainsRedactedValue(
+            """{"source":{"properties":{"children":[{"apiKey":"${neoreports:redacted}"}]}}}""").ShouldBeTrue();
+    }
+
+    // ---- Sections that share an identity --------------------------------------------------------
+
+    [Fact]
+    public void Restore_pairs_repeated_section_ids_by_occurrence_not_by_first_match()
+    {
+        // Nothing stops a report writing to two S3 buckets. Pairing on identity alone would restore
+        // bucket A's access key into bucket B — silently, with both sections looking ordinary.
+        const string stored = """
+            {"destinations":[{"type":"s3","properties":{"bucket":"alpha","accessKey":"KEY-ALPHA"}},
+                             {"type":"s3","properties":{"bucket":"beta","accessKey":"KEY-BETA"}}]}
+            """;
+
+        string restored = ReportConfigSecrets.Restore(ReportConfigSecrets.Redact(stored), stored);
+
+        JsonElement[] destinations = JsonDocument.Parse(restored).RootElement
+            .GetProperty("destinations").EnumerateArray().Select(d => d.Clone()).ToArray();
+        destinations[0].GetProperty("properties").GetProperty("accessKey").GetString().ShouldBe("KEY-ALPHA");
+        destinations[1].GetProperty("properties").GetProperty("accessKey").GetString().ShouldBe("KEY-BETA");
+    }
+
     [Fact]
     public void An_unreadable_document_is_reported_as_a_configuration_error()
     {
