@@ -1700,3 +1700,59 @@ A `--public-key` **flag** was considered for this and rejected: it would let the
 run against the key it was just handed, which checks nothing, and the footgun would sit on the command
 whose entire purpose is catching that class of mistake. An internal seam has the same testing benefit
 with none of that surface.
+
+## D85 — Consumer smoke test, and why the samples were not converted (2026-08-08)
+
+With the Pro packages published (D83), the maintainer asked for a sample that *installs* them rather
+than referencing the projects. The obvious move — point `samples/15-aspire-pro-demo` at the published
+packages — was investigated and rejected.
+
+**The samples are the repo's compile-time canary.** Break a public API in `Core` and samples 14 and 15
+stop building immediately, before anything is tagged. On a pinned `PackageReference` they would keep
+building happily against the last release and the break would ship. That canary is worth more than a
+demonstration of how a customer installs, because the second goal has a cheaper answer that proves
+strictly more: exercise the artifact **on nuget.org**, not a local build of it.
+
+It also could not have been done by halves. `samples/15` reaches the NeoReports projects through
+`AllSourcesShared`, which sample 14 uses too, so converting only the Pro references would have put a
+*package* `NeoReports.Core` and a *project* `NeoReports.Core` in one build (NU1605). Converting the
+shared project would have dragged sample 14 along — a sample nobody asked to change.
+
+### What was built instead
+
+`tools/consumer-smoke`: outside `NeoReports.sln`, with a `Directory.Build.props` that does not import
+the repo's and an empty `Directory.Packages.props` beside it to stop the walk-up to Central Package
+Management. Everything resolves from nuget.org at the versions a customer would type.
+
+Three levels: identity (versions, `2.0.0+<commit>` informational version, the embedded key is the
+production one), **enforcement** (all three Pro packages refuse to work unlicensed, via both the static
+API and DI), and — only when `NEOREPORTS_LICENSE_KEY` is set — a real sectioned-workbook report whose
+output `.xlsx` is opened and inspected for two worksheets.
+
+### What it caught immediately
+
+Writing it surfaced three things about consuming 2.0.0 that no in-repo build could have:
+
+1. `NeoReports.Core 2.0.0` requires `Microsoft.Extensions.*` **10.0.10**; a consumer still on 9.x gets
+   a hard `NU1605`.
+2. `Core` resolves `ILoggerFactory` from DI but only depends on `Logging.Abstractions`, so the consumer
+   must bring a logging implementation or the provider throws at `GetRequiredService`.
+3. PowerShell's `>` redirect writes UTF-16, so a license key captured that way arrives with embedded
+   NULs and is reported as *malformed* — a wrong-encoding file masquerading as a bad signature.
+
+### An assertion that could not exist
+
+The harness first tried to prove "these came from packages, not projects" by inspecting
+`Assembly.Location`. That check can never pass: the SDK copies package assemblies into `bin/`, so the
+path is identical either way. **The package-not-project guarantee is structural, not testable** — a
+single added `ProjectReference` would defeat the harness with every check still green. Recorded in the
+`.csproj` and README as the actual guard, rather than papered over with an assertion that looks like
+protection and is not.
+
+### A broken test, not a broken product
+
+The enforcement checks initially failed whenever a license *was* available, because `ProLicenseGate`
+falls back to `NEOREPORTS_LICENSE_KEY` by design: with a key exported, the Pro calls correctly
+succeed. "No license registered" is not the state "no license available". The variable is now cleared
+around those checks and restored after, which keeps them meaningful in both modes instead of skipping
+them in the mode where a regression would be most expensive.

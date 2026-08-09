@@ -1,0 +1,4 @@
+<Project>
+  <!-- Empty on purpose: stops the walk-up to build/Directory.Packages.props, so the versions below
+       are the ones a customer would type, not the ones this repo happens to build with. -->
+</Project>

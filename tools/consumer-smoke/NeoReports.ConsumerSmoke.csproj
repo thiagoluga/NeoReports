@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>NeoReports.ConsumerSmoke</RootNamespace>
+    <!-- Not part of NeoReports.sln and never packed: this is a verification harness, not a product. -->
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <!--
+    PackageReference, never ProjectReference. The whole value of this project is that it resolves the
+    published artifacts from nuget.org — the same bytes a customer downloads — rather than whatever
+    happens to be in the working tree. A single ProjectReference here would silently turn it back into
+    a build of local source and it would keep passing while the published package was broken.
+
+    The version is pinned rather than floating so a run states exactly which release it verified.
+    Bump it when a new version ships; a mismatch between this and the latest tag is the signal that a
+    release has not been smoke-tested yet.
+  -->
+  <ItemGroup>
+    <PackageReference Include="NeoReports.Core" Version="2.0.0" />
+    <PackageReference Include="NeoReports.Destinations.Local" Version="2.0.0" />
+    <PackageReference Include="NeoReports.Licensing" Version="2.0.0" />
+    <!-- The commercial packages under test (PolyForm Small Business). -->
+    <PackageReference Include="NeoReports.Xlsx.Pro" Version="2.0.0" />
+    <PackageReference Include="NeoReports.Sources.Join.Pro" Version="2.0.0" />
+    <PackageReference Include="NeoReports.QueryBuilder.Pro" Version="2.0.0" />
+  </ItemGroup>
+
+  <!--
+    Only the DI container implementation, which the published packages depend on the *Abstractions* of
+    but deliberately do not carry themselves — the host chooses it. Pinned to 10.0.10 to match what
+    NeoReports.Core 2.0.0 requires: an earlier 9.x here is a hard NU1605 downgrade error, which is
+    worth knowing, because it is the first thing a consumer still on Microsoft.Extensions 9.x will hit.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.10" />
+    <!-- NeoReports.Core resolves ILoggerFactory from DI but only depends on Logging.Abstractions,
+         so a consumer has to bring a logging implementation. Finding that out here is the point. -->
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.10" />
+  </ItemGroup>
+
+</Project>
