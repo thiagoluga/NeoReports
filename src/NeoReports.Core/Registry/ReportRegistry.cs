@@ -35,4 +35,11 @@ public sealed class ReportRegistry : IMutableReportRegistry
 
     /// <inheritdoc />
     public bool Unregister(string name) => _reports.TryRemove(name, out _);
+
+    /// <inheritdoc />
+    public void Replace(CompiledReport report)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+        _reports[report.Name] = report;
+    }
 }

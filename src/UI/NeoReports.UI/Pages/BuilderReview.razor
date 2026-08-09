@@ -18,7 +18,7 @@
     {
         <Banner Variant="info" Icon="info-circle">
             <b>Saving replaces "@Wizard.EditingOriginalName".</b>
-            <span style="font-size:12px">There is no in-place update — saving deletes the current report and re-creates it under this configuration. Run history stays intact (jobs aren't tied to the report record).</span>
+            <span style="font-size:12px">The change is applied in one step — if the engine rejects it, the report keeps running exactly as it does now. Run history stays intact (jobs aren't tied to the report record).</span>
         </Banner>
     }
     @if (!Wizard.EngineAvailable)
@@ -40,7 +40,7 @@
        POST /api/reports. *@
     <Card Title="Configuration summary">
         <div>
-            <div class="sum-row"><CatTile Sm="true" Kind="teal" Icon="database" /><span class="lbl">Source</span><span class="val">@if (!string.IsNullOrEmpty(Wizard.SourceRef)){<b>@Wizard.SourceRef</b> <span class="mono muted" style="font-size:11px">· registered source (@Wizard.SourceType)</span>}else{<b>@Wizard.SourceType</b> <span class="mono muted" style="font-size:11px">· @(string.IsNullOrWhiteSpace(Wizard.ConnectionStringVariable) ? "no connection string set" : $"${{{Wizard.ConnectionStringVariable}}}")</span>}</span><button class="edit-link" @onclick="@(() => Nav.NavigateTo("builder?resume=true"))">edit</button></div>
+            <div class="sum-row"><CatTile Sm="true" Kind="teal" Icon="database" /><span class="lbl">Source</span><span class="val">@if (!string.IsNullOrEmpty(Wizard.SourceRef)){<b>@Wizard.SourceRef</b> <span class="mono muted" style="font-size:11px">· registered source (@Wizard.SourceType)</span>}else{<b>@Wizard.SourceType</b> <span class="mono muted" style="font-size:11px">· @Wizard.ConnectionSummary</span>}</span><button class="edit-link" @onclick="@(() => Nav.NavigateTo("builder?resume=true"))">edit</button></div>
             <div class="sum-row"><CatTile Sm="true" Kind="gray" Icon="columns" /><span class="lbl">Columns</span><span class="val">@ColumnNames.Length selected · <span class="mono muted" style="font-size:11px">@string.Join(", ", ColumnNames)</span></span><button class="edit-link" @onclick="@(() => Nav.NavigateTo("builder/configure"))">edit</button></div>
             <div class="sum-row"><CatTile Sm="true" Kind="teal" Icon="file-text" /><span class="lbl">Formats</span><span class="val"><span class="pipeline-chips" style="gap:4px">@foreach (var f in Wizard.Formats){<Chip Kind="format" Ext="@f">@f.ToUpper()</Chip>}</span></span><button class="edit-link" @onclick="@(() => Nav.NavigateTo("builder/format"))">edit</button></div>
             <div class="sum-row"><CatTile Sm="true" Kind="info" Icon="cloud-upload" /><span class="lbl">Destinations</span><span class="val">@if (string.IsNullOrWhiteSpace(Wizard.DestinationType)){<span class="mono muted" style="font-size:12px">none</span>}else{<span class="pipeline-chips" style="gap:4px"><span class="chip" style="background:var(--info-bg);color:var(--info-fg)">@Wizard.DestinationType</span></span>@if (!string.IsNullOrWhiteSpace(Wizard.DestinationPath)){<span class="mono muted" style="font-size:11px"> · @Wizard.DestinationPath</span>}}</span><button class="edit-link" @onclick="@(() => Nav.NavigateTo("builder/destination"))">edit</button></div>
@@ -148,43 +148,21 @@
     }
 
     /// <summary>
-    /// Creates a new report, or — in edit mode — replaces the one being edited. There is no
-    /// <c>PUT /api/reports/{name}</c>, only create + delete, so "editing" is validate (to keep a
-    /// bad config from costing the user their existing report; <c>NameTaken</c> is expected here,
-    /// since it's the report's own current name, and intentionally ignored) → delete the original →
-    /// create the replacement.
+    /// Creates a new report, or — in edit mode — replaces the one being edited through
+    /// <c>PUT /api/reports/{name}</c> (ADR D86).
+    /// <para>
+    /// This used to be validate → delete → create from here, which failed in the worst direction:
+    /// a configuration the engine rejected arrived after the original was already deleted, leaving
+    /// the user with no report at all. The engine now compiles the replacement before touching
+    /// anything, so a rejected edit changes nothing.
+    /// </para>
     /// </summary>
     private async Task<ApiCreateResult> PersistAsync()
     {
         string configJson = BuilderConfigMapper.ToConfigJson(Wizard);
-        if (!Wizard.IsEditing)
-            return await Api.TryCreateReportAsync(configJson);
-
-        ApiValidationResult? validation = await Api.TryValidateReportAsync(configJson);
-        if (validation is null)
-            return new ApiCreateResult(ApiCreateOutcome.Unavailable, null, null);
-        if (!validation.Valid)
-            return new ApiCreateResult(ApiCreateOutcome.Invalid, null, validation.Error);
-
-        bool deleted = await Api.TryDeleteReportAsync(Wizard.EditingOriginalName);
-        if (!deleted)
-            return new ApiCreateResult(ApiCreateOutcome.Unavailable, null,
-                $"Could not remove the existing \"{Wizard.EditingOriginalName}\" report to replace it. Nothing was changed.");
-
-        ApiCreateResult created = await Api.TryCreateReportAsync(configJson);
-        if (created.Outcome != ApiCreateOutcome.Created)
-        {
-            // The old report is already gone by this point — the earlier validate call was
-            // specifically meant to make this rare, but say so plainly rather than implying
-            // nothing happened.
-            return created with
-            {
-                Error = $"\"{Wizard.EditingOriginalName}\" was removed but the replacement could not be created: " +
-                        (created.Error ?? DescribeFailure(created.Outcome)) + " Recreate it from the Builder.",
-            };
-        }
-
-        return created;
+        return Wizard.IsEditing
+            ? await Api.TryReplaceReportAsync(Wizard.EditingOriginalName, configJson)
+            : await Api.TryCreateReportAsync(configJson);
     }
 
     private static string DescribeFailure(ApiCreateOutcome outcome) => outcome switch

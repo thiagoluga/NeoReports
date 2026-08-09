@@ -8,6 +8,41 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 
 ## [Unreleased]
 
+### Fixed
+- **Editing a report in the Builder no longer starts from a blank form (ADR D86).** Reported by the
+  maintainer: *Edit* prefilled almost nothing the report actually reads from — source type, query, key
+  column, connection, source properties, destination path were all empty, so editing meant retyping
+  the report from memory. The cause was in the engine, not the UI: no endpoint returned a report's
+  configuration, because D33(c) barred GET responses from echoing property bags and D33(f) deferred
+  editing until there was a secrets round-trip story. There is one now, so every step prefills.
+- **Saving an edit no longer silently deletes what the wizard cannot show.** The Builder now patches
+  the stored document instead of regenerating one from the form, so a JsonLogic `filter`, per-output
+  properties and sections, a column's type / display name / format / culture, and any destination past
+  the first all survive an edit. Previously **every column was rewritten as an untyped `String`** by a
+  form that never displayed the type.
+
+### Added
+- **`GET /api/reports/{name}/config`** returns a config-origin report's stored document with
+  credential-bearing values replaced by the reserved placeholder `${neoreports:redacted}` (`404` for a
+  code-registered report). A `${VAR}` placeholder is not a secret and comes back verbatim.
+- **`PUT /api/reports/{name}`** replaces a report in one step, restoring any `${neoreports:redacted}`
+  from the stored document, so an editor can change a page size without the user retyping a connection
+  string and without the secret ever leaving the host.
+- **`POST /api/reports/validate?for={name}`** dry-runs a document as an *edit* of that report,
+  resolving the placeholder first, so validation means the same thing while editing as while creating.
+- `IReportConfigStore.TryGetAsync` (default-implemented over `ListAsync`; the file-backed store reads
+  the one file) and `IMutableReportRegistry.Replace` (default-implemented as unregister-then-register;
+  `ReportRegistry` overrides it atomically). Both are additive — existing implementations still compile.
+
+### Changed
+- **A rejected edit can no longer destroy the report being edited.** Editing used to be
+  validate → `DELETE` → `POST` driven from the browser, which failed in the worst direction: the engine
+  rejected the replacement *after* the original was already gone. `PUT /reports/{name}` compiles the
+  replacement before touching anything.
+- `ReportConfigEnvironment.Substitute` now rejects the redaction placeholder instead of passing it
+  through as an ordinary string — a report could otherwise go live with the literal
+  `${neoreports:redacted}` as its connection string.
+
 ## [2.0.0] - 2026-08-09
 
 **Major release.** The breaking changes below were held back for exactly this line — see the

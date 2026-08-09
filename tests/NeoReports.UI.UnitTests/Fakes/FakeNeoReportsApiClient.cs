@@ -23,6 +23,9 @@ public sealed class FakeNeoReportsApiClient : INeoReportsApiClient
     public Func<string, CancellationToken, Task<ApiValidationResult?>> ValidateReport { get; set; } = (_, _) => Task.FromResult<ApiValidationResult?>(null);
     public Func<string, CancellationToken, Task<ApiCreateResult>> CreateReport { get; set; } =
         (_, _) => Task.FromResult(new ApiCreateResult(ApiCreateOutcome.Unavailable, null, null));
+    public Func<string, string, CancellationToken, Task<ApiCreateResult>> ReplaceReport { get; set; } =
+        (_, _, _) => Task.FromResult(new ApiCreateResult(ApiCreateOutcome.Unavailable, null, null));
+    public Func<string, CancellationToken, Task<string?>> ReportConfig { get; set; } = (_, _) => Task.FromResult<string?>(null);
     public Func<string, CancellationToken, Task<bool>> DeleteReport { get; set; } = (_, _) => Task.FromResult(false);
     public Func<string, CancellationToken, Task<ApiReportDetail?>> ReportDetail { get; set; } = (_, _) => Task.FromResult<ApiReportDetail?>(null);
     public Func<string, CancellationToken, Task<IReadOnlyList<ApiArtifact>?>> JobArtifacts { get; set; } = (_, _) => Task.FromResult<IReadOnlyList<ApiArtifact>?>(null);
@@ -57,6 +60,8 @@ public sealed class FakeNeoReportsApiClient : INeoReportsApiClient
     public string? LastRunReportName { get; private set; }
     public string? LastDeletedReportName { get; private set; }
     public string? LastCreateReportConfigJson { get; private set; }
+    public (string Name, string ConfigJson)? LastReplaceReport { get; private set; }
+    public (string ConfigJson, string? EditingReportName)? LastValidateReport { get; private set; }
     public string? LastDeletedSourceName { get; private set; }
     public (string Name, string Cron)? LastSetSchedule { get; private set; }
     public (string Source, string Schema, string Table)? LastTablePreview { get; private set; }
@@ -83,14 +88,27 @@ public sealed class FakeNeoReportsApiClient : INeoReportsApiClient
 
     public Task<ApiCapabilities?> TryGetCapabilitiesAsync(CancellationToken cancellationToken = default) => Capabilities(cancellationToken);
 
-    public Task<ApiValidationResult?> TryValidateReportAsync(string configJson, CancellationToken cancellationToken = default) =>
-        ValidateReport(configJson, cancellationToken);
+    public Task<ApiValidationResult?> TryValidateReportAsync(
+        string configJson, string? editingReportName = null, CancellationToken cancellationToken = default)
+    {
+        LastValidateReport = (configJson, editingReportName);
+        return ValidateReport(configJson, cancellationToken);
+    }
 
     public Task<ApiCreateResult> TryCreateReportAsync(string configJson, CancellationToken cancellationToken = default)
     {
         LastCreateReportConfigJson = configJson;
         return CreateReport(configJson, cancellationToken);
     }
+
+    public Task<ApiCreateResult> TryReplaceReportAsync(string name, string configJson, CancellationToken cancellationToken = default)
+    {
+        LastReplaceReport = (name, configJson);
+        return ReplaceReport(name, configJson, cancellationToken);
+    }
+
+    public Task<string?> TryGetReportConfigAsync(string name, CancellationToken cancellationToken = default) =>
+        ReportConfig(name, cancellationToken);
 
     public Task<bool> TryDeleteReportAsync(string name, CancellationToken cancellationToken = default)
     {

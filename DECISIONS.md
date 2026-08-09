@@ -1756,3 +1756,93 @@ falls back to `NEOREPORTS_LICENSE_KEY` by design: with a key exported, the Pro c
 succeed. "No license registered" is not the state "no license available". The variable is now cleared
 around those checks and restored after, which keeps them meaningful in both modes instead of skipping
 them in the mode where a regression would be most expensive.
+
+---
+
+## D86 — Editing a report: the secrets round-trip D33 deferred (2026-08-09)
+
+**Reported by the maintainer:** opening a report's *Edit* in the Builder produced a form that was
+blank for almost everything the report actually reads from — source type, query, key column,
+connection, source properties, destination path — so "edit" meant "retype the report from memory".
+
+The cause was not a UI bug. `GET /reports/{name}` deliberately exposes none of that: **D33(c)** ruled
+that GET responses never echo property bags, because a bag may hold a secret, and **D33(f)** deferred
+report editing outright for exactly that reason — *"needs a secrets round-trip story, future ADR"*.
+The Edit button shipped later against the only endpoint available, which could offer nothing better
+than a blank form and two banners apologising for it. This is that future ADR.
+
+### The round-trip
+
+`GET /reports/{name}/config` returns the **stored** document — the one `IReportConfigStore` already
+persists with `${VAR}` placeholders unresolved — with credential-bearing values replaced by the
+reserved sentinel `${neoreports:redacted}`. `PUT /reports/{name}` swaps the sentinel back for the
+stored value. So an editor can round-trip a property it was never allowed to see, and changing a page
+size no longer costs the user a connection string.
+
+What is *not* redacted: a `${VAR}` placeholder (the secret is in the environment, not the document —
+that is the entire point of D33(d)), and any non-string value. What is: any string under a key whose
+name contains one of a list of credential fragments (`password`, `secret`, `token`, `apikey`,
+`connectionstring`, `auth`, …), plus — value-based, independent of the key name — any URL carrying
+userinfo, because `https://user:pass@host` is a credential under a key as innocent as `url`.
+
+The fragment list **over-matches on purpose**: `oauth2TokenEndpoint` contains "token" and gets hidden
+too. A denylist that fails open ships a literal secret the first time a key name is not on it; this
+one fails closed, and because `Restore` puts the value back untouched, over-matching costs only
+visibility, never correctness. Sections are paired by identity (source; outputs by `format`;
+destinations by `type`), never by array index, so reordering an output in an editor cannot restore a
+secret into the wrong section.
+
+The sentinel sits deliberately **outside** `ReportConfigEnvironment`'s `${NAME}` grammar (a colon is
+not legal in an environment variable name), so it can never be resolved as a variable lookup. It is
+rejected in three places: `POST /reports` (nothing to restore from), `Restore` itself (a sentinel with
+no stored counterpart), and `ReportConfigEnvironment.Substitute`. The last one is the one that
+matters: **a test proved the sentinel would otherwise sail through substitution as an ordinary string**
+and a report would go live with the literal `${neoreports:redacted}` as its connection string. The
+endpoint guards are the first line; the substitution guard is the one that does not depend on any
+particular caller remembering.
+
+### PUT, not delete-then-create
+
+Editing was previously validate → `DELETE` → `POST`, driven from the browser. That fails in the worst
+possible direction: the replacement is rejected *after* the original is already gone, and the user is
+left with no report at all — a case the old code could only apologise for in an error message.
+`PUT /reports/{name}` compiles the replacement before touching anything, so a rejected edit changes
+nothing. `IMutableReportRegistry` gains `Replace` (a default interface method for compatibility;
+`ReportRegistry` overrides it with a single `ConcurrentDictionary` assignment) so the report never
+briefly resolves to nothing. A schedule **override** (`PUT .../schedule`) survives an edit and stays
+effective — editing a definition is not the same act as changing when it runs. Renaming stays out:
+the document's name must match the route.
+
+`IReportConfigStore` gains `TryGetAsync` — reading one report's document previously meant reading
+every stored document.
+
+### The Builder patches the document; it does not regenerate it
+
+`BuilderConfigMapper` now writes the wizard's fields **into** the stored document. The wizard has no
+editor for a JsonLogic `filter`, per-output properties or sections, a column's type / display name /
+format / culture, or a second destination. Regenerating the document from the form — which is what
+"save" used to do — deleted every one of them without a word. In particular **every column would have
+been rewritten as an untyped `String`**, a silent downgrade of the report's output from a form that
+never showed the type in the first place.
+
+Two consequences of the same rule, both found by running the flow rather than by reading it:
+
+- A generic property row the user did not touch keeps its **original JSON type**. Every row in that
+  editor is text, so writing them all back as strings turned `"commandTimeoutSeconds": 90` into
+  `"90"` on every edit. Caught by opening the saved file after a browser run, not by a test.
+- Stored properties and the kept connection are carried over **only while the source is unchanged**.
+  Restoring an old connection into a source nobody pointed it at is the one outcome that would be
+  both invisible and wrong.
+
+The wizard edits the **first** destination and passes the rest through, saying so on the Destination
+step rather than presenting the report as having exactly one. Matching by index rather than by type
+is what makes "change local to s3" mean changing *this* destination.
+
+### Verified end to end
+
+Driven in a browser against `samples/09-web-ui-live`: a report carrying a literal password, a
+JsonLogic filter, a typed column with a display name, a numeric source property and two output
+formats was opened in the Builder — every step prefilled — its page size changed, and saved. The
+stored document came back with the password intact, the filter intact, the column type and display
+name intact, `90` still a number, and the new page size applied. Saving with no changes at all
+reproduces the original document.

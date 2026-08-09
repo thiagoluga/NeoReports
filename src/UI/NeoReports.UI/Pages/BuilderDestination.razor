@@ -14,11 +14,11 @@
         </div>
     </div>
 
-    @if (Wizard.IsEditing && !string.IsNullOrEmpty(Wizard.DestinationType) && string.IsNullOrEmpty(Wizard.DestinationPath))
+    @if (Wizard.IsEditing && Wizard.AdditionalDestinationCount > 0)
     {
-        <Banner Variant="warn" Icon="alert-triangle">
-            <b>Re-enter the path / key template.</b>
-            <span style="font-size:12px">Only the destination type ("@Wizard.DestinationType") was prefilled — the engine never returns a destination's raw properties, even when editing.</span>
+        <Banner Variant="info" Icon="info-circle">
+            <b>@(Wizard.AdditionalDestinationCount) further destination@(Wizard.AdditionalDestinationCount == 1 ? "" : "s") on this report.</b>
+            <span style="font-size:12px">The wizard edits the first one only; the rest are saved back exactly as they are. Edit the configuration document directly to change them.</span>
         </Banner>
     }
 

@@ -16,6 +16,14 @@ public sealed class BuilderTests : NeoReportsTestContext
         Api.Sources = _ => Task.FromResult<IReadOnlyList<ApiSourceView>?>(registered ?? Array.Empty<ApiSourceView>());
     }
 
+    /// <summary>Arms the wizard to open on <paramref name="name"/> with the given stored document (ADR D86).</summary>
+    private void SetupEditing(string name, string configDocument)
+    {
+        Api.ReportConfig = (_, _) => Task.FromResult<string?>(configDocument);
+        var nav = Services.GetRequiredService<NavigationManager>();
+        nav.NavigateTo(nav.GetUriWithQueryParameter("edit", name));
+    }
+
     [Fact]
     public void No_engine_capabilities_shows_demo_mode_banner_and_no_source_pickers()
     {
@@ -126,14 +134,9 @@ public sealed class BuilderTests : NeoReportsTestContext
     [Fact]
     public void Edit_mode_takes_priority_over_a_stray_resume_true_query_param()
     {
-        var detail = new ApiReportDetail(
-            Name: "clientsVip", Columns: [], PageSize: 500, Formats: ["csv"], Destinations: ["local"],
-            FailureStrategy: "abort", RetryMaxAttempts: 1, RetryBackoff: "Constant", RetryBaseDelaySeconds: 1,
-            RetryUseJitter: false, Origin: "config", Deletable: true);
-        Api.ReportDetail = (_, _) => Task.FromResult<ApiReportDetail?>(detail);
         SetupEngineAvailable(["sql"]);
+        SetupEditing("clientsVip", """{"name":"clientsVip","source":{"type":"sql"}}""");
         var nav = Services.GetRequiredService<NavigationManager>();
-        nav.NavigateTo(nav.GetUriWithQueryParameter("edit", "clientsVip"));
         nav.NavigateTo(nav.GetUriWithQueryParameter("resume", true));
 
         Render<Builder>();
@@ -183,17 +186,14 @@ public sealed class BuilderTests : NeoReportsTestContext
         Wizard.SourceProperties.ShouldBeEmpty();
     }
 
+    // A stored document with neither a type nor a ref (only reachable by hand-editing one) must not
+    // fall through to the "sql" default the create path uses — that would silently repoint the
+    // report at a source nobody chose.
     [Fact]
     public void Editing_with_no_source_type_confirmed_yet_disables_Continue()
     {
-        var detail = new ApiReportDetail(
-            Name: "clientsVip", Columns: [], PageSize: 500, Formats: ["csv"], Destinations: ["local"],
-            FailureStrategy: "abort", RetryMaxAttempts: 1, RetryBackoff: "Constant", RetryBaseDelaySeconds: 1,
-            RetryUseJitter: false, Origin: "config", Deletable: true);
-        Api.ReportDetail = (_, _) => Task.FromResult<ApiReportDetail?>(detail);
         SetupEngineAvailable(["sql"]);
-        var nav = Services.GetRequiredService<NavigationManager>();
-        nav.NavigateTo(nav.GetUriWithQueryParameter("edit", "clientsVip"));
+        SetupEditing("clientsVip", """{"name":"clientsVip","source":{"properties":{}}}""");
 
         var cut = Render<Builder>();
         var continueButton = cut.FindAll("button").First(b => b.TextContent.Contains("Continue"));
@@ -225,45 +225,115 @@ public sealed class BuilderTests : NeoReportsTestContext
         Services.GetRequiredService<NavigationManager>().Uri.ShouldEndWith("builder/configure");
     }
 
+    // The bug this whole flow existed to have: opening "Edit" used to land the user on a blank form
+    // for everything the report actually reads from. Every field below was empty before ADR D86.
     [Fact]
-    public void EditName_hydrates_the_wizard_from_an_existing_deletable_report()
+    public void EditName_hydrates_the_whole_wizard_from_the_stored_configuration()
     {
-        var detail = new ApiReportDetail(
-            Name: "clientsVip",
-            Columns: [new ApiReportColumn("Id", "Integer", null, null, false)],
-            PageSize: 500,
-            Formats: ["csv", "xlsx"],
-            Destinations: ["local"],
-            FailureStrategy: "skip-and-log",
-            RetryMaxAttempts: 3,
-            RetryBackoff: "Exponential",
-            RetryBaseDelaySeconds: 2,
-            RetryUseJitter: true,
-            Origin: "config",
-            Deletable: true);
-        Api.ReportDetail = (_, _) => Task.FromResult<ApiReportDetail?>(detail);
         SetupEngineAvailable(["sql"]);
-        var nav = Services.GetRequiredService<NavigationManager>();
-        nav.NavigateTo(nav.GetUriWithQueryParameter("edit", "clientsVip"));
+        SetupEditing("clientsVip", """
+            {
+              "name": "clientsVip",
+              "source": {
+                "type": "sql",
+                "properties": {
+                  "sql": "SELECT Id, Customer FROM Clients ORDER BY Id",
+                  "key": "Id",
+                  "connectionString": "${CLIENTS_DB}"
+                }
+              },
+              "columns": [{ "name": "Id", "type": "Integer" }, { "name": "Customer", "type": "String" }],
+              "outputs": [{ "format": "csv" }, { "format": "xlsx" }],
+              "destinations": [{ "type": "local", "properties": { "path": "./out/{name}.{ext}" } }],
+              "pageSize": 500,
+              "trackProgress": false,
+              "resilience": {
+                "maxAttempts": 3, "backoff": "Exponential", "baseDelaySeconds": 2, "jitter": true,
+                "onFailure": "skip-and-log", "abortWhen": { "consecutiveFailures": 4, "failureRate": 0.25 }
+              },
+              "schedule": { "cron": "0 6 * * 1" }
+            }
+            """);
 
         Render<Builder>();
 
         Wizard.IsEditing.ShouldBeTrue();
         Wizard.EditingOriginalName.ShouldBe("clientsVip");
         Wizard.ReportName.ShouldBe("clientsVip");
+        Wizard.SourceType.ShouldBe("sql");
+        Wizard.SqlQuery.ShouldBe("SELECT Id, Customer FROM Clients ORDER BY Id");
+        Wizard.KeyColumn.ShouldBe("Id");
+        Wizard.ConnectionStringVariable.ShouldBe("CLIENTS_DB");
+        Wizard.ColumnNames.ShouldBe("Id, Customer");
         Wizard.PageSize.ShouldBe(500);
+        Wizard.TrackProgress.ShouldBeFalse();
         Wizard.Formats.SetEquals(["csv", "xlsx"]).ShouldBeTrue();
-        Wizard.SourceType.ShouldBe("");
+        Wizard.DestinationType.ShouldBe("local");
+        Wizard.DestinationPath.ShouldBe("./out/{name}.{ext}");
+        Wizard.RetryMaxAttempts.ShouldBe(3);
+        Wizard.RetryBackoff.ShouldBe("Exponential");
+        Wizard.RetryBaseDelaySeconds.ShouldBe(2);
+        Wizard.RetryJitter.ShouldBeTrue();
+        Wizard.FailureStrategy.ShouldBe("skip-and-log");
+        Wizard.AbortOnConsecutiveFailures.ShouldBeTrue();
+        Wizard.AbortConsecutiveFailures.ShouldBe(4);
+        Wizard.AbortOnTotalFailures.ShouldBeFalse();
+        Wizard.AbortOnFailureRate.ShouldBeTrue();
+        Wizard.AbortFailureRatePercent.ShouldBe(25);
+        Wizard.ScheduleCron.ShouldBe("0 6 * * 1");
     }
 
     [Fact]
-    public void EditName_for_a_non_deletable_report_falls_back_to_a_blank_wizard()
+    public void Editing_a_ref_based_report_takes_the_source_type_from_the_registry()
     {
-        var detail = new ApiReportDetail(
-            Name: "codeReport", Columns: [], PageSize: 1000, Formats: ["csv"], Destinations: [],
-            FailureStrategy: "abort", RetryMaxAttempts: 1, RetryBackoff: "Constant", RetryBaseDelaySeconds: 1,
-            RetryUseJitter: false, Origin: "code", Deletable: false);
-        Api.ReportDetail = (_, _) => Task.FromResult<ApiReportDetail?>(detail);
+        SetupEngineAvailable(["sql"], [new ApiSourceView("clients-db", "postgres", null, 1, null, null, null, null)]);
+        SetupEditing("clientsVip", """
+            {"name":"clientsVip","source":{"ref":"clients-db","properties":{"sql":"SELECT 1","key":"Id"}}}
+            """);
+
+        Render<Builder>();
+
+        // The document carries no type — a ref's type belongs to the registry (D42) — and without it
+        // the Configure step would offer a generic property editor instead of the SQL one.
+        Wizard.SourceRef.ShouldBe("clients-db");
+        Wizard.SourceType.ShouldBe("postgres");
+        Wizard.SqlQuery.ShouldBe("SELECT 1");
+    }
+
+    [Fact]
+    public void Editing_a_report_whose_secrets_were_redacted_keeps_them_without_showing_them()
+    {
+        SetupEngineAvailable(["http"]);
+        SetupEditing("apiFeed", """
+            {
+              "name": "apiFeed",
+              "source": {
+                "type": "http",
+                "properties": {
+                  "url": "https://api.example.com/items",
+                  "bearerToken": "${neoreports:redacted}",
+                  "connectionString": "${neoreports:redacted}"
+                }
+              }
+            }
+            """);
+
+        Render<Builder>();
+
+        Wizard.ConnectionStringRedacted.ShouldBeTrue();
+        Wizard.ConnectionStringVariable.ShouldBe("");
+        // The connection has its own field, so it is never also a row; the other redacted property
+        // stays visible and editable, placeholder and all.
+        Wizard.SourceProperties.Select(row => row.Key).ShouldBe(["url", "bearerToken"]);
+        Wizard.SourceProperties.Single(row => row.Key == "bearerToken").Value.ShouldBe("${neoreports:redacted}");
+    }
+
+    [Fact]
+    public void EditName_for_a_report_with_no_stored_config_falls_back_to_a_blank_wizard()
+    {
+        // Code-registered reports have no document to return (the engine 404s) — a blank "new
+        // report" wizard is the honest outcome, not a form half-filled from somewhere else.
+        Api.ReportConfig = (_, _) => Task.FromResult<string?>(null);
         SetupEngineAvailable(["sql"]);
         var nav = Services.GetRequiredService<NavigationManager>();
         nav.NavigateTo(nav.GetUriWithQueryParameter("edit", "codeReport"));

@@ -64,6 +64,19 @@ public static partial class ReportConfigEnvironment
         if (value is not string text)
             return value;
 
+        // A redaction placeholder (ADR D86) is meaningful only between GET .../config and
+        // PUT /reports/{name}, which resolves it against the stored document. One that reaches
+        // compilation means that resolution did not happen; failing here is what keeps it from
+        // being persisted and used as if it were a literal connection string. The sentinel is
+        // deliberately outside the ${VAR} grammar below, so this is the only thing that can catch it.
+        if (string.Equals(text, ReportConfigSecrets.RedactedValue, StringComparison.Ordinal))
+        {
+            throw new ConfigurationException(
+                $"Property '{propertyKey}' still holds the redaction placeholder " +
+                $"'{ReportConfigSecrets.RedactedValue}'. It can only be resolved by replacing an existing " +
+                "report (PUT /reports/{name}); send the real value instead.");
+        }
+
         Match match = PlaceholderPattern().Match(text);
         if (!match.Success)
             return value;

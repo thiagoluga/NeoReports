@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Primitives;
 using NeoReports.Abstractions;
 using NeoReports.Core;
 using NeoReports.Core.Artifacts;
@@ -126,9 +127,13 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         group.MapPost("/reports/{name}/preview", PreviewReportAsync);
         group.MapGet("/reports", ListReports);
         group.MapGet("/reports/{name}", GetReportDetailAsync);
+        group.MapGet("/reports/{name}/config", GetReportConfigAsync);
         group.MapPost("/reports", (HttpContext http, [FromServices] IMutableReportRegistry registry,
                 [FromServices] IReportConfigStore configStore, CancellationToken cancellationToken) =>
             CreateReportAsync(http, registry, configStore, rootServices, cancellationToken));
+        group.MapPut("/reports/{name}", (string name, HttpContext http, [FromServices] IMutableReportRegistry registry,
+                [FromServices] IReportConfigStore configStore, CancellationToken cancellationToken) =>
+            ReplaceReportAsync(name, http, registry, configStore, rootServices, cancellationToken));
         group.MapPost("/reports/validate", (HttpContext http, [FromServices] IReportRegistry registry,
                 CancellationToken cancellationToken) =>
             ValidateReportAsync(http, registry, rootServices, cancellationToken));
@@ -369,6 +374,53 @@ public static class NeoReportsEndpointRouteBuilderExtensions
     }
 
     /// <summary>
+    /// Returns the stored configuration document for a config-origin report, with credential-bearing
+    /// property values replaced by <see cref="ReportConfigSecrets.RedactedValue"/> (ADR D86).
+    /// <para>
+    /// This is the one place a property bag leaves the engine, and it is what makes editing possible
+    /// at all: <c>GET /reports/{name}</c> deliberately exposes none of the source's configuration
+    /// (D33(c)), so an editor built on it could only ever offer the user a blank form. Sending the
+    /// placeholder back on <c>PUT</c> restores the stored value, so a secret still never leaves the
+    /// host — which is precisely the round-trip story D33(f) deferred report editing for.
+    /// </para>
+    /// </summary>
+    private static async Task<IResult> GetReportConfigAsync(
+        string name, HttpContext http, [FromServices] IReportRegistry registry, CancellationToken cancellationToken)
+    {
+        if (registry.Find(name) is null)
+            return Results.NotFound(new { error = $"No report named '{name}' is registered." });
+
+        IReportConfigStore? configStore = http.RequestServices.GetService<IReportConfigStore>();
+        string? document = configStore is not null && DynamicReportName.IsValid(name)
+            ? await configStore.TryGetAsync(name, cancellationToken).ConfigureAwait(false)
+            : null;
+
+        if (document is null)
+        {
+            // Code-registered reports have no document to return — their definition lives in the
+            // host's source, which is also where it has to be changed.
+            return Results.NotFound(new
+            {
+                error = $"Report '{name}' is code-registered and has no stored configuration document.",
+            });
+        }
+
+        try
+        {
+            return Results.Text(ReportConfigSecrets.Redact(document), "application/json");
+        }
+        catch (ConfigurationException ex)
+        {
+            // A document that no longer parses is a corrupt store, not a bad request — say so
+            // rather than handing the client half a configuration it would silently save back.
+            return Results.Problem(
+                title: $"The stored configuration for '{name}' could not be read.",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+    }
+
+    /// <summary>
     /// Resolves a report's effective schedule for display: the override store and recurring
     /// scheduler are both optional (ADR D41) — a host that never called <c>AddScheduling</c>/a Jobs
     /// recurring scheduler simply shows "not scheduled" for every report, never a fabricated value.
@@ -422,6 +474,19 @@ public static class NeoReportsEndpointRouteBuilderExtensions
 
         if (registry.Contains(config.Name))
             return Results.Conflict(new { error = $"A report named '{config.Name}' already exists." });
+
+        // A redaction placeholder only means anything against a stored document to restore from
+        // (ADR D86), and a create has none. Rejected rather than passed through, which would
+        // otherwise persist the literal sentinel as if it were a connection string.
+        if (ReportConfigSecrets.ContainsRedactedValue(document))
+        {
+            return Results.BadRequest(new
+            {
+                error = $"This configuration contains the redaction placeholder '{ReportConfigSecrets.RedactedValue}', " +
+                        "which can only be resolved when replacing an existing report (PUT /reports/{name}). " +
+                        "Send the real value instead.",
+            });
+        }
 
         if (config.Schedule is not null && http.RequestServices.GetService<IRecurringReportScheduler>() is null)
         {
@@ -483,6 +548,125 @@ public static class NeoReportsEndpointRouteBuilderExtensions
             ApiUrl(http, $"/reports/{config.Name}"), new ReportCreatedResponse(config.Name, columns));
     }
 
+    /// <summary>
+    /// Replaces a config-origin report's definition in place (ADR D86), resolving any
+    /// <see cref="ReportConfigSecrets.RedactedValue"/> the client sent back against the stored
+    /// document.
+    /// <para>
+    /// Editing used to be delete-then-create from the client, which fails in the worst possible
+    /// direction: a configuration the engine rejects arrives *after* the original is already gone,
+    /// and the user is left with no report at all. Here nothing is mutated until the replacement has
+    /// compiled, so a rejected edit leaves the existing report exactly as it was.
+    /// </para>
+    /// </summary>
+    private static async Task<IResult> ReplaceReportAsync(
+        string name,
+        HttpContext http,
+        IMutableReportRegistry registry,
+        IReportConfigStore configStore,
+        IServiceProvider rootServices,
+        CancellationToken cancellationToken)
+    {
+        CompiledReport? existing = registry.Find(name);
+        if (existing is null)
+            return Results.NotFound(new { error = $"No report named '{name}' is registered." });
+
+        string? stored = DynamicReportName.IsValid(name)
+            ? await configStore.TryGetAsync(name, cancellationToken).ConfigureAwait(false)
+            : null;
+
+        if (stored is null)
+        {
+            return Results.Conflict(new
+            {
+                error = $"Report '{name}' is code-registered and cannot be changed at runtime.",
+            });
+        }
+
+        string document = await ReadBodyAsync(http, cancellationToken).ConfigureAwait(false);
+
+        ReportConfig config;
+        try
+        {
+            document = ReportConfigSecrets.Restore(document, stored);
+            config = new JsonReportConfigParser().Parse(document);
+        }
+        catch (ConfigurationException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+
+        if (!string.Equals(config.Name, name, StringComparison.Ordinal))
+        {
+            return Results.BadRequest(new
+            {
+                error = $"The configuration is named '{config.Name}' but the route targets '{name}'. " +
+                        "A report cannot be renamed in place — delete it and create the new name.",
+            });
+        }
+
+        IRecurringReportScheduler? scheduler = http.RequestServices.GetService<IRecurringReportScheduler>();
+        if (config.Schedule is not null && scheduler is null)
+        {
+            return Results.BadRequest(new
+            {
+                error = "This report declares a schedule, but no recurring scheduler is registered on this host. " +
+                        "Register one (e.g. AddNeoReportsInMemoryJobs/AddNeoReportsHangfireJobs) or omit 'schedule'.",
+            });
+        }
+
+        CompiledReport compiled;
+        try
+        {
+            ReportConfig substituted = ReportConfigEnvironment.Substitute(config);
+            compiled = ReportConfigCompiler.Compile(substituted, rootServices);
+        }
+        catch (ConfigurationException ex)
+        {
+            // Nothing has been touched yet, which is the entire point of compiling first.
+            return Results.BadRequest(new { error = ex.Message });
+        }
+
+        registry.Replace(compiled);
+
+        try
+        {
+            // Same rule as create: the ORIGINAL document is persisted, ${VAR} placeholders intact.
+            await configStore.SaveAsync(name, document, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Put the previous definition back rather than leaving the process running a report the
+            // next restart will not rehydrate.
+            registry.Replace(existing);
+            return Results.Problem(
+                title: "Failed to persist the dynamic report.",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+
+        // A runtime schedule override still wins (ADR D41): editing a definition is not the same act
+        // as changing when it runs, so an override set through PUT /reports/{name}/schedule survives
+        // the edit and stays effective. Without an override, the declared schedule takes effect
+        // immediately — including its removal, which has to unregister the recurring job.
+        if (scheduler is not null)
+        {
+            IScheduleOverrideStore? overrides = http.RequestServices.GetService<IScheduleOverrideStore>();
+            ScheduleOverrideEntry? overrideEntry = overrides is null
+                ? null
+                : await overrides.GetAsync(name, cancellationToken).ConfigureAwait(false);
+
+            string? effectiveCron = EffectiveSchedule.Resolve(compiled.Schedule, overrideEntry);
+            if (effectiveCron is null)
+                await scheduler.RemoveRecurringAsync(name, cancellationToken).ConfigureAwait(false);
+            else
+                await scheduler.RegisterRecurringAsync(name, effectiveCron, cancellationToken).ConfigureAwait(false);
+        }
+
+        var columns = compiled.Schema.Columns.Select(c => c.Name).ToArray();
+        return Results.Ok(new ReportCreatedResponse(name, columns));
+    }
+
     private static async Task<IResult> ValidateReportAsync(
         HttpContext http, IReportRegistry registry, IServiceProvider rootServices, CancellationToken cancellationToken)
     {
@@ -493,6 +677,20 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         string? name = null;
         try
         {
+            // ?for={name} dry-runs an *edit* of an existing report: redaction placeholders (ADR D86)
+            // are resolved against that report's stored document first, so the Builder's "Validate"
+            // button means the same thing while editing as it does while creating. Without this the
+            // placeholder would reach a provider as a literal connection string and fail for a
+            // reason that has nothing to do with the configuration under test.
+            if (http.Request.Query.TryGetValue("for", out StringValues editing)
+                && editing.ToString() is { Length: > 0 } editingName
+                && DynamicReportName.IsValid(editingName)
+                && http.RequestServices.GetService<IReportConfigStore>() is { } store
+                && await store.TryGetAsync(editingName, cancellationToken).ConfigureAwait(false) is { } stored)
+            {
+                document = ReportConfigSecrets.Restore(document, stored);
+            }
+
             ReportConfig config = new JsonReportConfigParser().Parse(document);
             name = config.Name;
 

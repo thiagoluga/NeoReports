@@ -31,6 +31,32 @@ public sealed class BuilderState
     public string ConnectionStringVariable { get; set; } = "";
 
     /// <summary>
+    /// True while editing a report whose stored <c>connectionString</c> the engine would not show
+    /// (ADR D86 redacts it, because unlike a <c>${VAR}</c> placeholder its literal value may be the
+    /// secret itself). The connection is kept as-is on save unless
+    /// <see cref="ConnectionStringVariable"/> is filled in to replace it — so editing a page size
+    /// does not cost the user their connection.
+    /// </summary>
+    public bool ConnectionStringRedacted { get; set; }
+
+    /// <summary>
+    /// Whether the hidden connection string is actually still in play. Pointing the report at a
+    /// different source discards it: restoring the old connection into the new source is the one
+    /// outcome nobody asked for, and it would happen invisibly.
+    /// </summary>
+    public bool ConnectionStringKept =>
+        ConnectionStringRedacted && string.Equals(LoadedSourceIdentity, SourceIdentity, StringComparison.Ordinal);
+
+    /// <summary>
+    /// One line describing the connection, for the recap and review summaries. A kept-but-hidden
+    /// connection has to read differently from no connection at all — "no connection string set" on
+    /// a report that has one is the kind of wrong that gets acted on.
+    /// </summary>
+    public string ConnectionSummary => !string.IsNullOrWhiteSpace(ConnectionStringVariable)
+        ? $"${{{ConnectionStringVariable}}}"
+        : ConnectionStringKept ? "connection kept · not shown" : "no connection string set";
+
+    /// <summary>
     /// Source type ids that ride the ADO/keyset source family (<c>AdoKeysetSource</c>,
     /// <c>NeoReports.Sources.Common</c>'s <c>AdoConfigProperties</c>) and therefore use the
     /// dedicated <see cref="SqlQuery"/>/<see cref="KeyColumn"/> fields below, instead of the
@@ -136,8 +162,37 @@ public sealed class BuilderState
     public bool IsEditing { get; set; }
 
     /// <summary>The report name being edited, captured before <see cref="ReportName"/> can be
-    /// changed on the Review step — the name actually deleted on save. Empty outside edit mode.</summary>
+    /// changed on the Review step — the name actually replaced on save. Empty outside edit mode.</summary>
     public string EditingOriginalName { get; set; } = "";
+
+    /// <summary>
+    /// The report's stored configuration document as <c>GET /api/reports/{name}/config</c> returned
+    /// it (ADR D86), or <c>null</c> when creating. Saving an edit **patches** this document rather
+    /// than regenerating one from the fields below, so everything the wizard has no editor for —
+    /// a JsonLogic filter, per-output properties or sections, a column's format/culture, a second
+    /// destination — survives an edit instead of being silently dropped by a form that never knew
+    /// about it.
+    /// </summary>
+    public string? OriginalDocument { get; set; }
+
+    /// <summary>
+    /// Identifies the source the loaded document described, so the patch can tell "the user changed
+    /// the page size" from "the user pointed this report at a different source". Properties from the
+    /// stored document are only carried over while this still matches <see cref="SourceIdentity"/>;
+    /// an HTTP source's <c>url</c> has no business surviving a switch to Postgres.
+    /// </summary>
+    public string LoadedSourceIdentity { get; set; } = "";
+
+    /// <summary>
+    /// How many destinations beyond the first the loaded document declared. The wizard edits only
+    /// the first; the rest ride along untouched, and this is what lets the Destination step say so
+    /// rather than present the report as having exactly one.
+    /// </summary>
+    public int AdditionalDestinationCount { get; set; }
+
+    /// <summary>The source currently selected, in the same shape as <see cref="LoadedSourceIdentity"/>.</summary>
+    public string SourceIdentity =>
+        string.IsNullOrWhiteSpace(SourceRef) ? $"type:{SourceType}" : $"ref:{SourceRef.Trim()}";
 
     /// <summary>Reset everything (when starting a new report).</summary>
     public void Reset()
@@ -148,6 +203,7 @@ public sealed class BuilderState
         SourceType = "sql";
         SourceRef = "";
         ConnectionStringVariable = "";
+        ConnectionStringRedacted = false;
         SqlQuery = "";
         KeyColumn = "Id";
         SourceProperties = [];
@@ -171,5 +227,8 @@ public sealed class BuilderState
         EngineAvailable = false;
         IsEditing = false;
         EditingOriginalName = "";
+        OriginalDocument = null;
+        LoadedSourceIdentity = "";
+        AdditionalDestinationCount = 0;
     }
 }

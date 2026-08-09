@@ -273,10 +273,31 @@ public interface INeoReportsApiClient
     /// itself isn't reachable — a rejected/invalid config still returns a result with
     /// <see cref="ApiValidationResult.Valid"/> <c>false</c>.
     /// </summary>
-    Task<ApiValidationResult?> TryValidateReportAsync(string configJson, CancellationToken cancellationToken = default);
+    /// <param name="editingReportName">
+    /// When set, validates the document as an *edit* of that report: the engine resolves any
+    /// redaction placeholder (ADR D86) against its stored configuration first, so a config the user
+    /// never touched does not fail validation on a value they were never shown.
+    /// </param>
+    Task<ApiValidationResult?> TryValidateReportAsync(
+        string configJson, string? editingReportName = null, CancellationToken cancellationToken = default);
 
     /// <summary>Registers a report at runtime from a config document.</summary>
     Task<ApiCreateResult> TryCreateReportAsync(string configJson, CancellationToken cancellationToken = default);
+
+    /// <summary>Replaces an existing config-origin report in place (<c>PUT /api/reports/{name}</c>, ADR D86).</summary>
+    /// <param name="name">The report to replace.</param>
+    /// <param name="configJson">The full replacement configuration document.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<ApiCreateResult> TryReplaceReportAsync(string name, string configJson, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The report's stored configuration document, with credential-bearing values redacted
+    /// (<c>GET /api/reports/{name}/config</c>, ADR D86), or <c>null</c> when the report has none —
+    /// a code-registered report, or an unreachable engine.
+    /// </summary>
+    /// <param name="name">The report name.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<string?> TryGetReportConfigAsync(string name, CancellationToken cancellationToken = default);
 
     /// <summary>Removes a runtime-registered report. Returns whether the engine accepted the request.</summary>
     Task<bool> TryDeleteReportAsync(string name, CancellationToken cancellationToken = default);
@@ -568,13 +589,17 @@ internal sealed class NeoReportsApiClient(
         }
     }
 
-    public async Task<ApiValidationResult?> TryValidateReportAsync(string configJson, CancellationToken cancellationToken = default)
+    public async Task<ApiValidationResult?> TryValidateReportAsync(
+        string configJson, string? editingReportName = null, CancellationToken cancellationToken = default)
     {
         var apiBase = ApiBase;
+        string path = string.IsNullOrWhiteSpace(editingReportName)
+            ? "reports/validate"
+            : $"reports/validate?for={Uri.EscapeDataString(editingReportName)}";
         try
         {
             using var content = new StringContent(configJson, Encoding.UTF8, "application/json");
-            using var response = await http.PostAsync(new Uri(apiBase, "reports/validate"), content, cancellationToken)
+            using var response = await http.PostAsync(new Uri(apiBase, path), content, cancellationToken)
                 .ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
                 return null;
@@ -616,6 +641,55 @@ internal sealed class NeoReportsApiClient(
         {
             logger.LogWarning(ex, "POST {ApiBase}reports failed.", Sanitize(apiBase.ToString()));
             return new ApiCreateResult(ApiCreateOutcome.Unavailable, null, null);
+        }
+    }
+
+    public async Task<ApiCreateResult> TryReplaceReportAsync(
+        string name, string configJson, CancellationToken cancellationToken = default)
+    {
+        var apiBase = ApiBase;
+        try
+        {
+            using var content = new StringContent(configJson, Encoding.UTF8, "application/json");
+            using var response = await http.PutAsync(
+                new Uri(apiBase, $"reports/{Uri.EscapeDataString(name)}"), content, cancellationToken).ConfigureAwait(false);
+
+            if (response.IsSuccessStatusCode)
+                return new ApiCreateResult(ApiCreateOutcome.Created, name, null);
+
+            string? error = await TryReadErrorAsync(response, cancellationToken).ConfigureAwait(false);
+            // A 409 here is not "name taken" (the name is this report's own) but "this report is
+            // code-registered", which is a different message entirely — hence Invalid, not NameTaken.
+            ApiCreateOutcome outcome = response.StatusCode switch
+            {
+                HttpStatusCode.BadRequest or HttpStatusCode.Conflict => ApiCreateOutcome.Invalid,
+                _ => ApiCreateOutcome.Unavailable,
+            };
+            return new ApiCreateResult(outcome, null, error);
+        }
+        catch (Exception ex) when (IsTransient(ex))
+        {
+            logger.LogWarning(ex, "PUT {ApiBase}reports/{Name} failed.", Sanitize(apiBase.ToString()), Sanitize(name));
+            return new ApiCreateResult(ApiCreateOutcome.Unavailable, null, null);
+        }
+    }
+
+    public async Task<string?> TryGetReportConfigAsync(string name, CancellationToken cancellationToken = default)
+    {
+        var apiBase = ApiBase;
+        try
+        {
+            using var response = await http.GetAsync(
+                new Uri(apiBase, $"reports/{Uri.EscapeDataString(name)}/config"), cancellationToken).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+                return null;
+
+            return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsTransient(ex))
+        {
+            logger.LogWarning(ex, "GET {ApiBase}reports/{Name}/config failed.", Sanitize(apiBase.ToString()), Sanitize(name));
+            return null;
         }
     }
 
