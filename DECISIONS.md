@@ -1893,6 +1893,15 @@ the fragment list — `Authorization` always matched via `auth`, but `Cookie` an
 nothing. `key` is treated as credential-shaped **only as a query parameter**: as a property-bag key
 it is the ADO keyset column, and hiding it would blind an editor to its own report's pagination.
 
+A follow-up review pass over that fix raised one non-security consequence worth recording rather
+than fixing: `key` and `code` are generic query-parameter names, so `?code=US` or `?key=name` on an
+ordinary paging URL now shows as the placeholder too — in the field an editor most wants to see.
+Narrowing them (say, only redacting when the value is long enough to be a credential) was considered
+and **rejected**: a length guess is exactly the fail-open heuristic this module refuses everywhere
+else, and short API keys exist. The cost stays visibility only — `Restore` returns the value
+untouched, and the Configure step already explains the placeholder — so the fail-closed side of the
+trade wins. `sig` and `sv` are unambiguous and need no such qualification.
+
 **Dropped: "PUT lets a caller reuse a credential they cannot read."** The claim is true — `Restore`
 re-attaches a stored secret to whatever document the client sends, so an editor can point a report's
 SQL or URL somewhere new while keeping a connection string they never saw. It is not a regression,
