@@ -365,7 +365,7 @@ public static partial class ReportConfigSecrets
         // A section without a property bag has nothing to redact or restore, so it is filtered out
         // rather than iterated and skipped — the occurrence counter below then counts only the
         // sections this walk actually yields, which is what Restore pairs against.
-        var sections = array
+        IEnumerable<(JsonObject Section, JsonObject Bag)> sections = array
             .OfType<JsonObject>()
             .Where(section => Member(section, PropertiesMember) is JsonObject)
             .Select(section => (Section: section, Bag: (JsonObject)Member(section, PropertiesMember)!));
