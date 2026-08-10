@@ -51,9 +51,17 @@ public static partial class ReportConfigSecrets
     private static readonly string[] SecretKeyFragments =
     [
         "password", "passwd", "pwd", "passphrase", "secret", "token", "apikey", "api_key",
-        "accesskey", "access_key", "privatekey", "private_key", "credential", "connectionstring",
-        "connection_string", "signature", "auth", "sas",
+        "api-key", "accesskey", "access_key", "privatekey", "private_key", "credential",
+        "connectionstring", "connection_string", "signature", "auth", "sas", "cookie", "session",
     ];
+
+    // Query-parameter names that carry a credential without matching a fragment above: Azure SAS
+    // ("sv"/"sig"), Google's "?key=", OAuth's "?code=". AWS/GCS pre-signed URLs are already covered
+    // ("X-Amz-Signature" contains "signature", "AWSAccessKeyId" contains "accesskey").
+    //
+    // "key" is credential-shaped only as a QUERY parameter. As a property-bag key it is the ADO
+    // keyset column, which is why it is deliberately absent from the fragment list.
+    private static readonly string[] CredentialQueryParameters = ["sig", "sv", "code", "key"];
 
     // Whole-value ${VAR} placeholders, the same shape ReportConfigEnvironment resolves. A value in
     // this form is not a secret — the secret lives in the environment — so it is returned as-is and
@@ -284,10 +292,29 @@ public static partial class ReportConfigSecrets
         if (IsSecretKey(key))
             return true;
 
-        // Value-based, and independent of the key name: a URL carrying userinfo
-        // ("https://user:pass@host/…") is a credential wherever it is spelled, including under a key
-        // as innocuous as "url".
-        return Uri.TryCreate(text, UriKind.Absolute, out Uri? uri) && !string.IsNullOrEmpty(uri.UserInfo);
+        // Value-based, and independent of the key name: a URL can be the credential itself, and the
+        // keys it lives under are the most innocuous ones there are — "url", "baseUrl",
+        // "instanceUrl", all required properties of the shipped HTTP-family sources. Two shapes:
+        // userinfo ("https://user:pass@host/…"), and a signed or keyed query, which is the entire
+        // point of an Azure SAS or an S3/GCS pre-signed URL.
+        return Uri.TryCreate(text, UriKind.Absolute, out Uri? uri)
+            && (!string.IsNullOrEmpty(uri.UserInfo) || HasCredentialQueryParameter(uri));
+    }
+
+    private static bool HasCredentialQueryParameter(Uri uri)
+    {
+        string query = uri.Query;
+        if (query.Length <= 1)
+            return false;
+
+        foreach (string parameter in query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            string name = parameter.Split('=', 2)[0];
+            if (IsSecretKey(name) || CredentialQueryParameters.Contains(name, StringComparer.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
     }
 
     private static bool IsRedacted(JsonNode? value) =>

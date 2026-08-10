@@ -114,6 +114,57 @@ public class ReportConfigSecretsTests
             .ShouldBe("https://api.example.com/items");
     }
 
+    // A signed or keyed URL is the credential — that is the whole point of a SAS or a pre-signed
+    // URL — and it lives under "url"/"baseUrl"/"instanceUrl", the required properties of every
+    // shipped HTTP-family source and the most innocuous key names there are.
+    [Theory]
+    [InlineData("https://acct.blob.core.windows.net/c/d.json?sv=2023-01-01&sig=Ab3%2FsecretSig%3D")]
+    [InlineData("https://bucket.s3.amazonaws.com/k?X-Amz-Signature=deadbeef&X-Amz-Expires=900")]
+    [InlineData("https://sheets.googleapis.com/v4/spreadsheets/1/values/A1?key=AIzaSyLiveKey")]
+    [InlineData("https://api.example.com/items?access_token=live-abc")]
+    [InlineData("https://login.example.com/callback?code=authorization-code")]
+    public void A_url_whose_query_carries_a_credential_is_redacted(string url)
+    {
+        string document = """{"source":{"properties":{"url":"URL"}}}""".Replace("URL", url, StringComparison.Ordinal);
+
+        Properties(ReportConfigSecrets.Redact(document), "source").GetProperty("url").GetString()
+            .ShouldBe(ReportConfigSecrets.RedactedValue);
+    }
+
+    [Fact]
+    public void A_url_whose_query_is_ordinary_is_left_alone()
+    {
+        // Over-matching costs only visibility, but a URL is the field an editor most needs to see,
+        // so an ordinary query must not trip the rule.
+        const string url = "https://api.example.com/items?page=2&pageSize=100&orderBy=id";
+        string document = """{"source":{"properties":{"url":"URL"}}}""".Replace("URL", url, StringComparison.Ordinal);
+
+        Properties(ReportConfigSecrets.Redact(document), "source").GetProperty("url").GetString().ShouldBe(url);
+    }
+
+    [Theory]
+    [InlineData("Cookie")]
+    [InlineData("X-Api-Key")]
+    [InlineData("sessionId")]
+    public void Credential_header_names_the_fragment_list_used_to_miss_are_redacted(string header)
+    {
+        // "Authorization" always matched (via "auth"); these did not, and a header bag is walked
+        // into by name, so each one was a plaintext credential in the response.
+        string document = """{"source":{"properties":{"headers":{"HEADER":"live-value"}}}}"""
+            .Replace("HEADER", header, StringComparison.Ordinal);
+
+        Properties(ReportConfigSecrets.Redact(document), "source").GetProperty("headers")
+            .GetProperty(header).GetString().ShouldBe(ReportConfigSecrets.RedactedValue);
+    }
+
+    [Fact]
+    public void The_keyset_key_property_is_still_not_treated_as_a_credential()
+    {
+        // "key" is credential-shaped only as a query parameter. As a property-bag key it is the ADO
+        // keyset column — redacting it would hide the report's pagination from its own editor.
+        Properties(ReportConfigSecrets.Redact(Document), "source").GetProperty("key").GetString().ShouldBe("Id");
+    }
+
     [Fact]
     public void A_member_spelled_with_different_casing_is_still_walked()
     {

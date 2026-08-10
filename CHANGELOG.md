@@ -36,7 +36,11 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   code-registered report). A `${VAR}` placeholder is not a secret and comes back verbatim. Redaction
   walks nested objects and arrays — an HTTP source's `headers.Authorization` and a merge-join
   source's child `connectionString` are both inside nested values — and a key whose *name* looks like
-  a credential hides its whole subtree rather than being descended into.
+  a credential hides its whole subtree rather than being descended into. A URL is redacted when it
+  carries userinfo **or** a credential-shaped query parameter — an Azure SAS, an S3/GCS pre-signed
+  URL and a `?key=`/`?access_token=` endpoint are the credential, and they live under `url` /
+  `baseUrl` / `instanceUrl`. `Cookie`, `X-Api-Key` and `sessionId` now match the key list too;
+  `Authorization` always did, via `auth`.
 - **`PUT /api/reports/{name}`** replaces a report in one step, restoring any `${neoreports:redacted}`
   from the stored document, so an editor can change a page size without the user retyping a connection
   string and without the secret ever leaving the host.

@@ -1873,6 +1873,38 @@ throws.
   left the registry holding the new definition while the store held the old, so the edit applied
   until the next restart and then silently reverted.
 
+### What the security review changed, and what it deliberately did not
+
+A `/security-review` pass over the finished branch produced **no finding above the reporting bar**.
+Two candidates were raised and both were filtered out below the confidence threshold; one of them is
+worth recording, along with why the other was dropped.
+
+**Closed anyway (rated Low, not a finding): a URL can be the credential.** The value-based rule only
+tested `Uri.UserInfo`, so `https://user:pass@host` was hidden but an Azure SAS (`…?sv=…&sig=…`), an
+S3/GCS pre-signed URL, or `…?key=<google api key>` was not — and those live under `url`, `baseUrl`
+and `instanceUrl`, the required properties of every shipped HTTP-family source and the most
+innocuous key names in the document. The reviewer rated this Low because no privilege boundary is
+crossed (one `RequireAuthorization` policy covers the whole route group, so anyone who can GET the
+config can already PUT it), which is correct. It was fixed regardless: this file's stated contract is
+*fail closed, over-match on purpose*, and a credential-by-construction URL escaping it under the
+product's only bag-echoing endpoint contradicts that contract. The rule now also redacts an absolute
+URI whose query carries a credential-shaped parameter, and `cookie`, `session` and `api-key` joined
+the fragment list — `Authorization` always matched via `auth`, but `Cookie` and `X-Api-Key` matched
+nothing. `key` is treated as credential-shaped **only as a query parameter**: as a property-bag key
+it is the ADO keyset column, and hiding it would blind an editor to its own report's pagination.
+
+**Dropped: "PUT lets a caller reuse a credential they cannot read."** The claim is true — `Restore`
+re-attaches a stored secret to whatever document the client sends, so an editor can point a report's
+SQL or URL somewhere new while keeping a connection string they never saw. It is not a regression,
+because the pre-existing `POST /reports` path already grants exactly this, twice over: a `${VAR}`
+placeholder is returned unredacted by design, so anyone can `POST` a new report reusing it with
+arbitrary SQL; and a D42 `source.ref` resolves its connection from the registry with overlay-wins
+report-local properties, which `GET /sources` already lets a caller enumerate by name. The residual
+delta — retargeting a *literal* inline secret — is a strict subset of what the same authenticated
+caller could always do. This is the management API's established trust model (D26), recorded here
+rather than fixed: **`POST`/`PUT`/`DELETE /reports` are credential-use-equivalent and should be
+gated with the authorization one would give the secret itself.**
+
 ### Verified end to end
 
 Driven in a browser against `samples/09-web-ui-live`: a report carrying a literal password, a

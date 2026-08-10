@@ -43,6 +43,13 @@ the user having to retype a connection string, and without the secret ever leavi
 same thing while editing as it does while creating. `POST /reports` rejects the placeholder outright:
 there is no stored document to resolve it against.
 
+> **`POST`/`PUT`/`DELETE /reports` are credential-use-equivalent.** Redaction protects a secret's
+> *value*, not its *authority*: a caller who sends the placeholder back can point the report's query
+> or URL somewhere new while reusing a connection string they were never shown. The same is already
+> true of a `${VAR}` placeholder (returned unredacted by design) and of a `${VAR}`-free registered
+> source referenced by name (ADR D42) — so this is the API's trust model, not a property of editing.
+> Gate the write endpoints with the authorization you would give the credentials themselves.
+
 ## Usage
 
 ```csharp
