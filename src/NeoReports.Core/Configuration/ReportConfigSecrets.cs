@@ -307,14 +307,10 @@ public static partial class ReportConfigSecrets
         if (query.Length <= 1)
             return false;
 
-        foreach (string parameter in query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
-        {
-            string name = parameter.Split('=', 2)[0];
-            if (IsSecretKey(name) || CredentialQueryParameters.Contains(name, StringComparer.OrdinalIgnoreCase))
-                return true;
-        }
-
-        return false;
+        return query.TrimStart('?')
+            .Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Select(parameter => parameter.Split('=', 2)[0])
+            .Any(name => IsSecretKey(name) || CredentialQueryParameters.Contains(name, StringComparer.OrdinalIgnoreCase));
     }
 
     private static bool IsRedacted(JsonNode? value) =>
@@ -366,11 +362,16 @@ public static partial class ReportConfigSecrets
         JsonArray? storedArray = stored is null ? null : Member(stored, arrayName) as JsonArray;
         var seen = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (JsonNode? element in array)
-        {
-            if (element is not JsonObject section || Member(section, PropertiesMember) is not JsonObject bag)
-                continue;
+        // A section without a property bag has nothing to redact or restore, so it is filtered out
+        // rather than iterated and skipped — the occurrence counter below then counts only the
+        // sections this walk actually yields, which is what Restore pairs against.
+        var sections = array
+            .OfType<JsonObject>()
+            .Where(section => Member(section, PropertiesMember) is JsonObject)
+            .Select(section => (Section: section, Bag: (JsonObject)Member(section, PropertiesMember)!));
 
+        foreach ((JsonObject section, JsonObject bag) in sections)
+        {
             string identity = Identity(section, identityKey) ?? string.Empty;
             seen.TryGetValue(identity, out int occurrence);
             seen[identity] = occurrence + 1;
