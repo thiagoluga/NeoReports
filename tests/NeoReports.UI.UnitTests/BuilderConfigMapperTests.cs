@@ -9,6 +9,7 @@ namespace NeoReports.UI.UnitTests;
 public class BuilderConfigMapperTests
 {
     private const string PropertiesMember = "properties";
+    private const string SourceMember = "source";
 
     private static readonly string[] IdCustomerAmountColumns = { "Id", "Customer", "Amount" };
     private static readonly string[] CsvXlsxFormats = { "csv", "xlsx" };
@@ -473,20 +474,97 @@ public class BuilderConfigMapperTests
     }
 
     [Fact]
-    public void An_edited_generic_property_becomes_the_text_the_user_typed()
+    public void An_edited_numeric_property_stays_a_number()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"type":"http","properties":{"pageSize":90,"retries":true}}}
+            """).ShouldBeTrue();
+        state.SourceProperties.Single(row => row.Key == "pageSize").Value = "120";
+        state.SourceProperties.Single(row => row.Key == "retries").Value = "false";
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        // Only untouched rows kept their kind before, so the very 90 → "90" coercion the round-trip
+        // fixed came back the moment someone edited the value.
+        JsonElement properties = doc.RootElement.GetProperty(SourceMember).GetProperty(PropertiesMember);
+        properties.GetProperty("pageSize").ValueKind.ShouldBe(JsonValueKind.Number);
+        properties.GetProperty("pageSize").GetInt32().ShouldBe(120);
+        properties.GetProperty("retries").ValueKind.ShouldBe(JsonValueKind.False);
+    }
+
+    [Fact]
+    public void An_edited_string_property_stays_a_string_even_when_it_looks_numeric()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"type":"http","properties":{"accountId":"00090"}}}
+            """).ShouldBeTrue();
+        state.SourceProperties.Single().Value = "12345";
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        // The kind is carried from the stored value, never guessed from the text — otherwise an
+        // all-digits account id or PIN would silently become a number and lose its leading zeros.
+        doc.RootElement.GetProperty(SourceMember).GetProperty(PropertiesMember).GetProperty("accountId")
+            .GetString().ShouldBe("12345");
+    }
+
+    [Fact]
+    public void An_edited_numeric_property_becomes_text_when_the_new_value_is_not_a_number()
     {
         var state = new BuilderState();
         BuilderConfigMapper.Hydrate(state, """
             {"name":"feed","source":{"type":"http","properties":{"pageSize":90}}}
             """).ShouldBeTrue();
-        state.SourceProperties.Single().Value = "120";
+        state.SourceProperties.Single().Value = "${PAGE_SIZE}";
 
         using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
 
-        // Typed values are text — the editor has no type picker, and guessing would make a password
-        // of "12345" into a number.
-        doc.RootElement.GetProperty("source").GetProperty("properties").GetProperty("pageSize")
-            .GetString().ShouldBe("120");
+        // Keeping the kind must not mangle a value that genuinely changed shape — an env placeholder
+        // is a string, and the engine resolves it at compile time.
+        doc.RootElement.GetProperty(SourceMember).GetProperty(PropertiesMember).GetProperty("pageSize")
+            .GetString().ShouldBe("${PAGE_SIZE}");
+    }
+
+    [Fact]
+    public void An_edit_keeps_the_failure_rate_minimum_batches_the_wizard_cannot_show()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"type":"http"},
+             "resilience":{"onFailure":"skip-and-log",
+                           "abortWhen":{"failureRate":0.25,"failureRateMinimumBatches":50}}}
+            """).ShouldBeTrue();
+        state.PageSize = 250;
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        // ADR D78's minimum sample is a real field the compiler honours and the wizard has no
+        // control for; rebuilding abortWhen from the form silently reset it to 10 on every edit.
+        JsonElement abortWhen = doc.RootElement.GetProperty("resilience").GetProperty("abortWhen");
+        abortWhen.GetProperty("failureRate").GetDouble().ShouldBe(0.25);
+        abortWhen.GetProperty("failureRateMinimumBatches").GetInt32().ShouldBe(50);
+    }
+
+    [Fact]
+    public void Turning_the_failure_rate_threshold_off_drops_its_minimum_batches_too()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"type":"http"},
+             "resilience":{"onFailure":"skip-and-log",
+                           "abortWhen":{"failureRate":0.25,"failureRateMinimumBatches":50}}}
+            """).ShouldBeTrue();
+        state.AbortOnFailureRate = false;
+        state.AbortOnTotalFailures = true;
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        // The minimum only qualifies failureRate; carrying it past the threshold it qualifies would
+        // leave a setting behind with nothing to apply to.
+        doc.RootElement.GetProperty("resilience").GetProperty("abortWhen")
+            .TryGetProperty("failureRateMinimumBatches", out _).ShouldBeFalse();
     }
 
     [Fact]

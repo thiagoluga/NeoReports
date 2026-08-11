@@ -42,6 +42,16 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   keep the ADO keyset column visible had excluded every key-shaped name along with it.
 - **The Review step no longer reports "Destinations: none"** for a report that still has others; the
   wizard edits the first destination and the rest are kept, which the summary now states.
+- **A credential stored as a JSON number or boolean is redacted too.** `"apiKey": 8675309123456` was
+  returned in plaintext because the value was read as text first; a credential-named key now hides
+  whatever it holds.
+- **`POST /api/reports/validate?for={name}` requires the document to be that report**, the same check
+  `PUT` enforces — otherwise an arbitrary document could be compiled with another report's credentials.
+- **`abortWhen.failureRateMinimumBatches` (ADR D78) survives an edit.** The wizard has no control for
+  it, and rebuilding the resilience block from the form silently reset it to the default.
+- **An edited source property keeps its JSON kind.** Editing `90` turned it into `"90"`; only
+  untouched rows were protected. The kind is carried from the stored value, never guessed from the
+  text, so an all-digits account id stays a string.
 
 ### Added
 - **`GET /api/reports/{name}/config`** returns a config-origin report's stored document with

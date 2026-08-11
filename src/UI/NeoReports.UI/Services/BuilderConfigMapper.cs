@@ -59,7 +59,7 @@ public static class BuilderConfigMapper
         Set(root, "outputs", BuildOutputs(state, Get(root, "outputs") as JsonArray));
         Set(root, "destinations", BuildDestinations(state, Get(root, "destinations") as JsonArray));
         Set(root, "pageSize", state.PageSize);
-        Set(root, "resilience", BuildResilience(state));
+        Set(root, "resilience", BuildResilience(state, Get(root, "resilience") as JsonObject));
         Set(root, "schedule", string.IsNullOrWhiteSpace(state.ScheduleCron)
             ? null
             : new JsonObject { ["cron"] = state.ScheduleCron.Trim() });
@@ -321,7 +321,7 @@ public static class BuilderConfigMapper
             if (unchanged)
                 SetNode(properties, key, stored?.DeepClone());
             else
-                SetNode(properties, key, EditedValue(row));
+                SetNode(properties, key, EditedValue(row, stored));
         }
 
         return properties;
@@ -424,22 +424,38 @@ public static class BuilderConfigMapper
     /// rejects it at compile time with a message about that property, which is a better outcome than
     /// this layer silently discarding an edit it could not make sense of.
     /// </remarks>
-    private static JsonNode? EditedValue(PropertyRow row)
+    private static JsonNode? EditedValue(PropertyRow row, JsonNode? stored)
     {
-        if (!row.IsStructured)
-            return JsonValue.Create(row.Value);
+        if (row.IsStructured)
+        {
+            try
+            {
+                return JsonNode.Parse(row.Value, documentOptions: ParseOptions);
+            }
+            catch (JsonException)
+            {
+                return JsonValue.Create(row.Value);
+            }
+        }
 
-        try
+        // An edited scalar keeps the kind it had, when the new text still is one: changing a page
+        // size from 90 to 120 must not turn the property into the string "120". Only untouched rows
+        // were protected before, so the very coercion the round-trip fixed came back the moment
+        // someone edited the value.
+        if (stored is JsonValue previous && previous.TryGetValue(out string? _) is false)
         {
-            return JsonNode.Parse(row.Value, documentOptions: ParseOptions);
+            if (previous.TryGetValue(out long _) && long.TryParse(row.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out long asLong))
+                return JsonValue.Create(asLong);
+            if (previous.TryGetValue(out double _) && double.TryParse(row.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double asDouble))
+                return JsonValue.Create(asDouble);
+            if (previous.TryGetValue(out bool _) && bool.TryParse(row.Value, out bool asBool))
+                return JsonValue.Create(asBool);
         }
-        catch (JsonException)
-        {
-            return JsonValue.Create(row.Value);
-        }
+
+        return JsonValue.Create(row.Value);
     }
 
-    private static JsonObject BuildResilience(BuilderState state)
+    private static JsonObject BuildResilience(BuilderState state, JsonObject? original)
     {
         var resilience = new JsonObject
         {
@@ -462,6 +478,16 @@ public static class BuilderConfigMapper
             abortWhen["totalFailures"] = state.AbortTotalFailures;
         if (state.AbortOnFailureRate)
             abortWhen["failureRate"] = state.AbortFailureRatePercent / 100.0;
+
+        // failureRateMinimumBatches (ADR D78) is a real field the compiler honours and the wizard has
+        // no control for. Rebuilding abortWhen from the form alone silently reset it to the default
+        // on every edit — the one field that escaped this file's own patch-don't-regenerate rule.
+        if (Get(original ?? [], "abortWhen") is JsonObject storedAbortWhen
+            && Get(storedAbortWhen, "failureRateMinimumBatches") is { } minimumBatches
+            && abortWhen.ContainsKey("failureRate"))
+        {
+            Set(abortWhen, "failureRateMinimumBatches", minimumBatches.DeepClone());
+        }
 
         if (abortWhen.Count > 0)
             resilience["abortWhen"] = abortWhen;

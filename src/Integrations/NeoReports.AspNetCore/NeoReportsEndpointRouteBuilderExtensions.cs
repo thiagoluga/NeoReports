@@ -698,6 +698,7 @@ public static class NeoReportsEndpointRouteBuilderExtensions
             return Results.BadRequest(new { error = "Report configuration document is empty." });
 
         string? name = null;
+        string? editingFor = null;
         try
         {
             // ?for={name} dry-runs an *edit* of an existing report: redaction placeholders (ADR D86)
@@ -711,11 +712,26 @@ public static class NeoReportsEndpointRouteBuilderExtensions
                 && http.RequestServices.GetService<IReportConfigStore>() is { } store
                 && await store.TryGetAsync(editingName, cancellationToken).ConfigureAwait(false) is { } stored)
             {
+                editingFor = editingName;
                 document = ReportConfigSecrets.Restore(document, stored);
             }
 
             ReportConfig config = new JsonReportConfigParser().Parse(document);
             name = config.Name;
+
+            // ?for= means "dry-run an edit of this report", so the document has to BE that report —
+            // the same check PUT enforces. Without it an arbitrary document could be compiled with
+            // another report's restored credentials, which is not what a dry run is for.
+            if (editingFor is not null && !string.Equals(config.Name, editingFor, StringComparison.Ordinal))
+            {
+                return Results.Ok(new ValidateReportResponse(
+                    Valid: false,
+                    Error: $"The configuration is named '{config.Name}' but '?for=' targets '{editingFor}'. " +
+                           "Validating an edit requires the document to be the report being edited.",
+                    Name: config.Name,
+                    Columns: null,
+                    NameTaken: registry.Contains(config.Name)));
+            }
 
             if (!DynamicReportName.IsValid(config.Name))
             {

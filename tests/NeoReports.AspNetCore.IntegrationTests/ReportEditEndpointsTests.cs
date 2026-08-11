@@ -255,6 +255,25 @@ public class ReportEditEndpointsTests : IDisposable
     }
 
     [Fact]
+    public async Task Validate_for_rejects_a_document_that_is_not_the_report_it_targets()
+    {
+        using var host = await StartAsync();
+        HttpClient client = await CreateSalesAsync(host);
+
+        // "?for=" means "dry-run an edit of this report", so the document has to BE that report —
+        // the same check PUT enforces. Without it an arbitrary document could be compiled with
+        // another report's restored credentials, which is not what a dry run is for.
+        string foreign = (await client.GetStringAsync("/api/reports/sales/config"))
+            .Replace("\"name\":\"sales\"", "\"name\":\"somethingElse\"", StringComparison.Ordinal);
+
+        JsonElement result = await (await SendJsonAsync(client, HttpMethod.Post, "/api/reports/validate?for=sales", foreign))
+            .Content.ReadFromJsonAsync<JsonElement>(Json);
+
+        result.GetProperty("valid").GetBoolean().ShouldBeFalse();
+        result.GetProperty("error").GetString()!.ShouldContain("targets 'sales'");
+    }
+
+    [Fact]
     public async Task Put_rejects_a_document_whose_name_does_not_match_the_route()
     {
         using var host = await StartAsync();

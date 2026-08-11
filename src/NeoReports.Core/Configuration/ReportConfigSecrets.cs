@@ -385,10 +385,15 @@ public static partial class ReportConfigSecrets
 
     private static bool ShouldRedact(string key, JsonNode? value)
     {
-        // A JSON null is a null JsonNode, never a JsonValue, so reaching here with a successful
-        // string read means `text` is non-null.
-        if (value is not JsonValue jsonValue || !jsonValue.TryGetValue(out string? text))
+        if (value is not JsonValue jsonValue)
             return false;
+
+        // A credential-named key hides whatever it holds, string or not. Reading it as text first
+        // and giving up when that fails let `"apiKey": 8675309123456` through in plaintext — a
+        // numeric token is still a token, and the generous key matching above exists precisely so
+        // the shape of the value never has to be guessed.
+        if (!jsonValue.TryGetValue(out string? text))
+            return IsSecretKey(key);
 
         if (EnvironmentPlaceholder().IsMatch(text))
             return false;

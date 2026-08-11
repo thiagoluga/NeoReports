@@ -177,6 +177,28 @@ public class ReportConfigSecretsTests
             .ShouldBe(ReportConfigSecrets.RedactedValue);
     }
 
+    [Theory]
+    [InlineData("8675309123456")]
+    [InlineData("true")]
+    [InlineData("12.5")]
+    public void A_credential_named_key_hides_a_non_string_value_too(string literal)
+    {
+        // Reading the value as text first and giving up when that failed let a numeric token
+        // through in plaintext. A number under "apiKey" is still a token; the generous key matching
+        // exists so the shape of the value never has to be guessed.
+        string document = """{"source":{"properties":{"apiKey":LITERAL}}}"""
+            .Replace("LITERAL", literal, StringComparison.Ordinal);
+
+        Properties(ReportConfigSecrets.Redact(document), "source").GetProperty("apiKey").GetString()
+            .ShouldBe(ReportConfigSecrets.RedactedValue);
+    }
+
+    [Fact]
+    public void An_ordinary_non_string_value_is_still_left_alone()
+    {
+        Properties(ReportConfigSecrets.Redact(Document), "source").GetProperty("pageSize").GetInt32().ShouldBe(500);
+    }
+
     [Fact]
     public void The_keyset_key_property_is_still_not_treated_as_a_credential()
     {

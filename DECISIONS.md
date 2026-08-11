@@ -1939,6 +1939,28 @@ caller could always do. This is the management API's established trust model (D2
 rather than fixed: **`POST`/`PUT`/`DELETE /reports` are credential-use-equivalent and should be
 gated with the authorization one would give the secret itself.**
 
+### The third review pass
+
+A second `/code-review` after the addressing redesign found four more, two of them disclosure or
+authorization:
+
+- **A credential stored as a number was returned in plaintext.** `ShouldRedact` read the value as
+  text first and gave up when that failed, so `"apiKey": 8675309123456` sailed past the deliberately
+  generous key matching. A numeric token is still a token; a credential-named key now hides whatever
+  it holds, whatever the JSON kind.
+- **`POST /reports/validate?for={name}` did not require the document to be that report** — the check
+  `PUT` enforces. An arbitrary document could be compiled with another report's restored credentials.
+  It returns no data, so nothing leaked, but "dry-run an edit of X" has to mean a document that *is*
+  X, and the inconsistency with `PUT` was the tell.
+- **`failureRateMinimumBatches` (ADR D78) was reset on every edit.** `BuildResilience` rebuilt
+  `abortWhen` from the form, and the wizard has no control for the minimum sample — the one field
+  that escaped this ADR's own patch-don't-regenerate rule. It is now carried through, and dropped
+  only when the threshold it qualifies is switched off.
+- **An edited scalar property lost its JSON kind**, re-introducing the `90` → `"90"` coercion the
+  round-trip had fixed for *untouched* rows only. An edited row now keeps the kind the stored value
+  had when the new text still fits it, and stays a string otherwise — the kind is carried, never
+  guessed from the text, so an all-digits account id does not silently become a number.
+
 ### Verified end to end
 
 Driven in a browser against `samples/09-web-ui-live`: a report carrying a literal password, a
