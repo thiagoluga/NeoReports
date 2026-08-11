@@ -25,7 +25,8 @@ public sealed class FakeNeoReportsApiClient : INeoReportsApiClient
         (_, _) => Task.FromResult(new ApiCreateResult(ApiCreateOutcome.Unavailable, null, null));
     public Func<string, string, CancellationToken, Task<ApiCreateResult>> ReplaceReport { get; set; } =
         (_, _, _) => Task.FromResult(new ApiCreateResult(ApiCreateOutcome.Unavailable, null, null));
-    public Func<string, CancellationToken, Task<string?>> ReportConfig { get; set; } = (_, _) => Task.FromResult<string?>(null);
+    public Func<string, CancellationToken, Task<ApiConfigResult>> ReportConfig { get; set; } =
+        (_, _) => Task.FromResult(new ApiConfigResult(ApiConfigOutcome.NotFound, null));
     public Func<string, CancellationToken, Task<bool>> DeleteReport { get; set; } = (_, _) => Task.FromResult(false);
     public Func<string, CancellationToken, Task<ApiReportDetail?>> ReportDetail { get; set; } = (_, _) => Task.FromResult<ApiReportDetail?>(null);
     public Func<string, CancellationToken, Task<IReadOnlyList<ApiArtifact>?>> JobArtifacts { get; set; } = (_, _) => Task.FromResult<IReadOnlyList<ApiArtifact>?>(null);
@@ -107,7 +108,7 @@ public sealed class FakeNeoReportsApiClient : INeoReportsApiClient
         return ReplaceReport(name, configJson, cancellationToken);
     }
 
-    public Task<string?> TryGetReportConfigAsync(string name, CancellationToken cancellationToken = default) =>
+    public Task<ApiConfigResult> TryGetReportConfigAsync(string name, CancellationToken cancellationToken = default) =>
         ReportConfig(name, cancellationToken);
 
     public Task<bool> TryDeleteReportAsync(string name, CancellationToken cancellationToken = default)

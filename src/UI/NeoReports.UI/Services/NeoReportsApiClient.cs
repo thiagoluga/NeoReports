@@ -56,6 +56,26 @@ public enum ApiCreateOutcome
 /// <summary>Result of <see cref="INeoReportsApiClient.TryCreateReportAsync"/>.</summary>
 public sealed record ApiCreateResult(ApiCreateOutcome Outcome, string? Name, string? Error);
 
+/// <summary>Outcome of a <c>GET /api/reports/{name}/config</c> call.</summary>
+public enum ApiConfigOutcome
+{
+    /// <summary>200 — the stored configuration document was returned.</summary>
+    Ok,
+
+    /// <summary>404 — the report has no stored document: it is code-registered, or gone.</summary>
+    NotFound,
+
+    /// <summary>The engine wasn't reachable, or failed to read the document.</summary>
+    Unavailable,
+}
+
+/// <summary>
+/// Result of <see cref="INeoReportsApiClient.TryGetReportConfigAsync"/>. "Not editable" and "could
+/// not load" are separate outcomes on purpose — collapsing them turned a transient failure into a
+/// silently blank create wizard.
+/// </summary>
+public sealed record ApiConfigResult(ApiConfigOutcome Outcome, string? Document);
+
 /// <summary>A single output column, as returned by <c>GET /api/reports/{name}</c>.</summary>
 public sealed record ApiReportColumn(string Name, string Type, string? DisplayName, string? Format, bool Nullable);
 
@@ -292,12 +312,11 @@ public interface INeoReportsApiClient
 
     /// <summary>
     /// The report's stored configuration document, with credential-bearing values redacted
-    /// (<c>GET /api/reports/{name}/config</c>, ADR D86), or <c>null</c> when the report has none —
-    /// a code-registered report, or an unreachable engine.
+    /// (<c>GET /api/reports/{name}/config</c>, ADR D86).
     /// </summary>
     /// <param name="name">The report name.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task<string?> TryGetReportConfigAsync(string name, CancellationToken cancellationToken = default);
+    Task<ApiConfigResult> TryGetReportConfigAsync(string name, CancellationToken cancellationToken = default);
 
     /// <summary>Removes a runtime-registered report. Returns whether the engine accepted the request.</summary>
     Task<bool> TryDeleteReportAsync(string name, CancellationToken cancellationToken = default);
@@ -680,22 +699,29 @@ internal sealed class NeoReportsApiClient(
         }
     }
 
-    public async Task<string?> TryGetReportConfigAsync(string name, CancellationToken cancellationToken = default)
+    public async Task<ApiConfigResult> TryGetReportConfigAsync(string name, CancellationToken cancellationToken = default)
     {
         var apiBase = ApiBase;
         try
         {
             using var response = await http.GetAsync(
                 new Uri(apiBase, $"reports/{Uri.EscapeDataString(name)}/config"), cancellationToken).ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode)
-                return null;
 
-            return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            // 404 is "this report has no stored document" — a real answer. Anything else is a failure
+            // to get one, and the caller has to be able to tell them apart.
+            if (response.StatusCode == HttpStatusCode.NotFound)
+                return new ApiConfigResult(ApiConfigOutcome.NotFound, null);
+            if (!response.IsSuccessStatusCode)
+                return new ApiConfigResult(ApiConfigOutcome.Unavailable, null);
+
+            return new ApiConfigResult(
+                ApiConfigOutcome.Ok,
+                await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
         }
         catch (Exception ex) when (IsTransient(ex))
         {
             logger.LogWarning(ex, "GET {ApiBase}reports/{Name}/config failed.", Sanitize(apiBase.ToString()), Sanitize(name));
-            return null;
+            return new ApiConfigResult(ApiConfigOutcome.Unavailable, null);
         }
     }
 

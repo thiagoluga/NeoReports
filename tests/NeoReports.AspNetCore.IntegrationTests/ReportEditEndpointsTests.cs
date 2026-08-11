@@ -274,6 +274,51 @@ public class ReportEditEndpointsTests : IDisposable
     }
 
     [Fact]
+    public async Task Validate_for_does_not_report_the_reports_own_name_as_taken()
+    {
+        using var host = await StartAsync();
+        HttpClient client = await CreateSalesAsync(host);
+
+        string redacted = await client.GetStringAsync("/api/reports/sales/config");
+
+        JsonElement result = await (await SendJsonAsync(client, HttpMethod.Post, "/api/reports/validate?for=sales", redacted))
+            .Content.ReadFromJsonAsync<JsonElement>(Json);
+
+        // Its own name is not taken by anyone else; reporting it as taken put "name already taken"
+        // under every successful edit validation in the Builder.
+        result.GetProperty("valid").GetBoolean().ShouldBeTrue();
+        result.GetProperty("nameTaken").GetBoolean().ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Validate_without_for_still_reports_an_existing_name_as_taken()
+    {
+        using var host = await StartAsync();
+        HttpClient client = await CreateSalesAsync(host);
+
+        JsonElement result = await (await SendJsonAsync(client, HttpMethod.Post, "/api/reports/validate", Original))
+            .Content.ReadFromJsonAsync<JsonElement>(Json);
+
+        result.GetProperty("nameTaken").GetBoolean().ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task A_corrupt_stored_document_is_a_500_on_put_not_a_400_blamed_on_the_client()
+    {
+        using var host = await StartAsync();
+        HttpClient client = await CreateSalesAsync(host);
+
+        var store = host.Services.GetRequiredService<IReportConfigStore>();
+        await store.SaveAsync("sales", "{ this is not json", CancellationToken.None);
+
+        HttpResponseMessage response = await SendJsonAsync(client, HttpMethod.Put, "/api/reports/sales", Original);
+
+        // GET .../config already answers this exact condition with a 500; PUT reported it as a bad
+        // request, blaming the caller for a document on disk they never sent.
+        response.StatusCode.ShouldBe(HttpStatusCode.InternalServerError);
+    }
+
+    [Fact]
     public async Task Put_rejects_a_document_whose_name_does_not_match_the_route()
     {
         using var host = await StartAsync();

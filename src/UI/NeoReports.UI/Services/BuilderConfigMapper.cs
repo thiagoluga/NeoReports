@@ -263,6 +263,7 @@ public static class BuilderConfigMapper
         // The connection has its own field on the Configure step, so the carried-over value never
         // survives on its own: it is re-derived below, from that field or from the "keep what is
         // stored" flag. Leaving it in place would make naming a new variable a silent no-op.
+        JsonNode? carriedConnection = Get(carried, ConnectionStringProperty);
         Remove(carried, ConnectionStringProperty);
 
         JsonObject properties = state.UsesAdoSqlShape
@@ -271,8 +272,12 @@ public static class BuilderConfigMapper
 
         if (usesRef)
         {
-            // A registered source supplies the connection; sending one here would shadow it.
-            Remove(properties, ConnectionStringProperty);
+            // A registered source supplies the connection, so the wizard offers no field for one —
+            // but a report-local overlay is legitimate configuration (D42: report-local wins), and
+            // deleting a stored one repointed the report at the registry's connection without saying
+            // so. Kept as it arrived; never invented, since there is no field to invent it from.
+            if (carriedConnection is not null && !HasMember(properties, ConnectionStringProperty))
+                SetNode(properties, ConnectionStringProperty, carriedConnection.DeepClone());
         }
         else if (!HasMember(properties, ConnectionStringProperty))
         {

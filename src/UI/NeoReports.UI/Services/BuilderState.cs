@@ -207,6 +207,15 @@ public sealed class BuilderState
     /// </summary>
     public int AdditionalOutputCount { get; set; }
 
+    /// <summary>
+    /// True while editing when the source now selected is not the one the stored document described.
+    /// Everything the previous source carried — its properties and its connection — is deliberately
+    /// dropped in that case, so the Configure step has to say what the user now has to supply.
+    /// </summary>
+    public bool SourceChanged =>
+        !string.IsNullOrEmpty(LoadedSourceIdentity)
+        && !string.Equals(LoadedSourceIdentity, SourceIdentity, StringComparison.Ordinal);
+
     /// <summary>The source currently selected, in the same shape as <see cref="LoadedSourceIdentity"/>.</summary>
     public string SourceIdentity =>
         string.IsNullOrWhiteSpace(SourceRef) ? $"type:{SourceType}" : $"ref:{SourceRef.Trim()}";

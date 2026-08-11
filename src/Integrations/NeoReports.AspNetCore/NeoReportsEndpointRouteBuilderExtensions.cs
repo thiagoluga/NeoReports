@@ -583,6 +583,20 @@ public static class NeoReportsEndpointRouteBuilderExtensions
             });
         }
 
+        // Checked before Restore merges the two, so a corrupt document on disk is not reported as a
+        // bad request — the same condition GET .../config already answers with a 500.
+        try
+        {
+            ReportConfigSecrets.EnsureReadable(stored);
+        }
+        catch (ConfigurationException ex)
+        {
+            return Results.Problem(
+                title: $"The stored configuration for '{name}' could not be read.",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+
         string document = await ReadBodyAsync(http, cancellationToken).ConfigureAwait(false);
 
         ReportConfig config;
@@ -747,14 +761,18 @@ public static class NeoReportsEndpointRouteBuilderExtensions
             CompiledReport compiled = ReportConfigCompiler.Compile(substituted, rootServices);
             var columns = compiled.Schema.Columns.Select(c => c.Name).ToArray();
 
+            // Its own name is not "taken" when the dry run IS an edit of that report — reporting it
+            // as taken put "name already taken" under every successful edit validation.
             return Results.Ok(new ValidateReportResponse(
-                Valid: true, Error: null, Name: config.Name, Columns: columns, NameTaken: registry.Contains(config.Name)));
+                Valid: true, Error: null, Name: config.Name, Columns: columns,
+                NameTaken: registry.Contains(config.Name) && !string.Equals(config.Name, editingFor, StringComparison.Ordinal)));
         }
         catch (ConfigurationException ex)
         {
             return Results.Ok(new ValidateReportResponse(
                 Valid: false, Error: ex.Message, Name: name, Columns: null,
-                NameTaken: name is not null && registry.Contains(name)));
+                NameTaken: name is not null && registry.Contains(name)
+                    && !string.Equals(name, editingFor, StringComparison.Ordinal)));
         }
     }
 

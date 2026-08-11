@@ -40,11 +40,21 @@
             <Button Variant="outline" Size="sm" Icon="circle-check" Loading="_validating" OnClick="ValidateAsync">Validate</Button>
         </Action>
         <ChildContent>
-        @if (Wizard.IsEditing && Wizard.ConnectionStringKept)
+        @* Only where the connection field actually is: a ref-based source has none, so the banner
+           would point at a control that is not on the page. *@
+        @if (Wizard.IsEditing && Wizard.ConnectionStringKept && string.IsNullOrEmpty(Wizard.SourceRef))
         {
             <Banner Variant="info" Icon="lock">
                 <b>The stored connection is kept.</b>
                 <span style="font-size:12px">Its value is not shown — the engine holds back anything that could be the secret itself. Leave the field below blank to keep it, or name an environment variable to replace it.</span>
+            </Banner>
+        }
+        @if (Wizard.IsEditing && Wizard.SourceChanged && string.IsNullOrEmpty(Wizard.SourceRef)
+             && string.IsNullOrWhiteSpace(Wizard.ConnectionStringVariable))
+        {
+            <Banner Variant="warn" Icon="alert-triangle">
+                <b>Set a connection for the new source.</b>
+                <span style="font-size:12px">You changed the source from what "@Wizard.EditingOriginalName" was reading, so its stored connection was not carried over — restoring it into a different source is not something the engine can assume. Name an environment variable below; saving without one is rejected.</span>
             </Banner>
         }
         <div class="col" style="gap:12px">

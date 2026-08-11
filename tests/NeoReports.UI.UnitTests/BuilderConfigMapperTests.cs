@@ -711,6 +711,41 @@ public class BuilderConfigMapperTests
     }
 
     [Fact]
+    public void A_ref_based_report_keeps_its_report_local_connection_overlay()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"ref":"sales-db","properties":{
+              "sql":"SELECT 1","connectionString":"${neoreports:redacted}"}}}
+            """, _ => "sql").ShouldBeTrue();
+        state.PageSize = 250;
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        // A registered source supplies the connection, so the wizard offers no field — but a
+        // report-local overlay is legitimate config (D42: report-local wins), and deleting a stored
+        // one repointed the report at the registry's connection without saying so.
+        doc.RootElement.GetProperty(SourceMember).GetProperty(PropertiesMember)
+            .GetProperty("connectionString").GetString().ShouldBe("${neoreports:redacted}");
+    }
+
+    [Fact]
+    public void A_ref_based_report_without_an_overlay_still_gets_no_connection_invented()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"ref":"sales-db","properties":{"sql":"SELECT 1"}}}
+            """, _ => "sql").ShouldBeTrue();
+        state.ConnectionStringVariable = "SALES_DB";
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        // Sending one here would shadow the registry's; there is no field for it either.
+        doc.RootElement.GetProperty(SourceMember).GetProperty(PropertiesMember)
+            .TryGetProperty("connectionString", out _).ShouldBeFalse();
+    }
+
+    [Fact]
     public void Switching_the_source_drops_the_stored_properties_and_the_kept_connection()
     {
         var state = HydratedState();

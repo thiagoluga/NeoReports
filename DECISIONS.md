@@ -1983,6 +1983,30 @@ its address and always will; two different bags naming the same one is now a 400
   rejected request carrying a usable message, and mapping it to *Unavailable* threw that message away
   and blamed the network.
 
+### The fifth review pass
+
+None of these five touched the secrets mechanism itself, which the pass traced end to end without
+breaking; all five were in what surrounds it.
+
+- **A `ref`-based report's report-local connection overlay was deleted on save.** The wizard offers no
+  connection field for a registered source, so the save path dropped any `connectionString` — but a
+  report-local overlay is legitimate configuration under D42 (report-local wins), and deleting it
+  silently repointed the report at the registry's connection. A stored one is now kept as it arrived;
+  one is still never invented, since there is no field to invent it from. The matching "the stored
+  connection is kept" banner also stopped rendering for `ref` sources, where it pointed at a control
+  that is not on the page.
+- **A failed `GET .../config` was indistinguishable from "not editable"**, so Edit degraded to a blank
+  create wizard with no message — inviting the user to retype a whole report over a working one. This
+  is the same conflation `_sourcesLoaded` had just been added to fix one function above, which is the
+  more useful observation: the fix was applied to the instance, not to the pattern.
+- **A corrupt *stored* document was a 400 on `PUT`** while `GET .../config` answered the identical
+  condition with a 500 — blaming the caller for a file they never sent.
+- **`validate?for=` reported the report's own name as taken**, putting "name already taken" under
+  every successful edit validation.
+- **Changing the source mid-edit left no way forward**: the old credential is correctly dropped, but
+  nothing said so, and the save failed with a generic compile error. The Configure step now says what
+  has to be supplied.
+
 ### Verified end to end
 
 Driven in a browser against `samples/09-web-ui-live`: a report carrying a literal password, a

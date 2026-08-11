@@ -110,6 +110,15 @@ public static partial class ReportConfigSecrets
     public static bool ContainsRedactedValue(string document) =>
         PropertyBagSlots(ParseObject(document)).Any(slot => ContainsRedactedNode(slot.Bag));
 
+    /// <summary>
+    /// Throws when <paramref name="document"/> is not a readable configuration document. Lets a
+    /// caller tell a corrupt *stored* document from a bad request body before <see cref="Restore"/>
+    /// merges the two and reports both the same way.
+    /// </summary>
+    /// <param name="document">The document to check.</param>
+    /// <exception cref="ConfigurationException">Thrown when the document is missing or not a JSON object.</exception>
+    public static void EnsureReadable(string document) => ParseObject(document);
+
     /// <summary>True when <paramref name="text"/> is a redaction placeholder, addressed or not.</summary>
     /// <param name="text">The value to test.</param>
     public static bool IsRedactedPlaceholder(string? text) =>

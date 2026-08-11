@@ -64,6 +64,16 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   dropped the stored properties.
 - **A `404` when saving an edit shows the engine's message**, not "the engine is not reachable" — a
   report deleted from another tab is a rejected request, not a network failure.
+- **A `ref`-based report keeps its report-local connection overlay.** The wizard offers no connection
+  field for a registered source, so saving deleted any `connectionString` — silently repointing the
+  report at the registry's connection, though D42 makes a report-local overlay win.
+- **A failed configuration load says so** instead of silently becoming a blank create wizard.
+- **A corrupt stored document is a `500` on `PUT`**, matching what `GET .../config` already returns
+  for the same condition, rather than a `400` blaming the caller.
+- **`validate?for={name}` no longer reports that report's own name as taken**, which put "name already
+  taken" under every successful edit validation.
+- **Changing the source mid-edit now says the connection must be re-supplied**, rather than failing at
+  save with a generic compile error.
 
 ### Added
 - **`GET /api/reports/{name}/config`** returns a config-origin report's stored document with

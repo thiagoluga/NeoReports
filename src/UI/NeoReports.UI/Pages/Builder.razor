@@ -28,6 +28,13 @@
             <span style="font-size:12px">Every step is prefilled from the report's stored configuration. Values the engine holds back — connection strings, API tokens — are kept as they are unless you replace them.</span>
         </Banner>
     }
+    @if (_configUnavailable)
+    {
+        <Banner Variant="danger" Icon="alert-triangle">
+            <b>Could not load that report's configuration.</b>
+            <span style="font-size:12px">Nothing was prefilled, so this is a blank new report — saving it would not edit the one you came from. Go back and try again.</span>
+        </Banner>
+    }
     @if (!Wizard.EngineAvailable)
     {
         <Banner Variant="info" Icon="info-circle">
@@ -95,6 +102,9 @@
 
     /// <summary>Whether the registered-source list actually loaded, as opposed to failing to.</summary>
     private bool _sourcesLoaded;
+
+    /// <summary>Set when an edit was asked for and the report's configuration could not be read.</summary>
+    private bool _configUnavailable;
 
     /// <summary>
     /// Set by ReportDetail's "Edit" button (<c>?edit=name</c>) — hydrates the wizard from that
@@ -176,10 +186,15 @@
     {
         Wizard.Reset();
 
-        string? document = await Api.TryGetReportConfigAsync(name);
-        // No stored document means a code-registered report (or a gone one), which is not editable
-        // here at all — falls back to a blank "new report" wizard rather than a half-filled form.
-        if (document is null || !BuilderConfigMapper.Hydrate(Wizard, document, RegisteredSourceType))
+        ApiConfigResult config = await Api.TryGetReportConfigAsync(name);
+
+        // "Could not load it" is not "it is not editable" — the same conflation _sourcesLoaded fixes
+        // above. Silently degrading to a blank create wizard on a transient failure would invite the
+        // user to type a whole report over a working one.
+        _configUnavailable = config.Outcome is ApiConfigOutcome.Unavailable
+            || (config.Document is not null && !BuilderConfigMapper.Hydrate(Wizard, config.Document, RegisteredSourceType));
+
+        if (_configUnavailable || config.Document is null)
             return;
 
         Wizard.IsEditing = true;

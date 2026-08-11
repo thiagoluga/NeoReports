@@ -19,7 +19,7 @@ public sealed class BuilderTests : NeoReportsTestContext
     /// <summary>Arms the wizard to open on <paramref name="name"/> with the given stored document (ADR D86).</summary>
     private void SetupEditing(string name, string configDocument)
     {
-        Api.ReportConfig = (_, _) => Task.FromResult<string?>(configDocument);
+        Api.ReportConfig = (_, _) => Task.FromResult(new ApiConfigResult(ApiConfigOutcome.Ok, configDocument));
         var nav = Services.GetRequiredService<NavigationManager>();
         nav.NavigateTo(nav.GetUriWithQueryParameter("edit", name));
     }
@@ -359,11 +359,27 @@ public sealed class BuilderTests : NeoReportsTestContext
     }
 
     [Fact]
+    public void A_failed_config_load_says_so_instead_of_silently_offering_a_blank_wizard()
+    {
+        SetupEngineAvailable(["sql"]);
+        Api.ReportConfig = (_, _) => Task.FromResult(new ApiConfigResult(ApiConfigOutcome.Unavailable, null));
+        var nav = Services.GetRequiredService<NavigationManager>();
+        nav.NavigateTo(nav.GetUriWithQueryParameter("edit", "clientsVip"));
+
+        var cut = Render<Builder>();
+
+        // "Could not load it" is not "it is not editable". Degrading silently would invite the user
+        // to retype a whole report over one that is working.
+        cut.Markup.ShouldContain("Could not load that report's configuration.");
+        Wizard.IsEditing.ShouldBeFalse();
+    }
+
+    [Fact]
     public void EditName_for_a_report_with_no_stored_config_falls_back_to_a_blank_wizard()
     {
         // Code-registered reports have no document to return (the engine 404s) — a blank "new
         // report" wizard is the honest outcome, not a form half-filled from somewhere else.
-        Api.ReportConfig = (_, _) => Task.FromResult<string?>(null);
+        Api.ReportConfig = (_, _) => Task.FromResult(new ApiConfigResult(ApiConfigOutcome.NotFound, null));
         SetupEngineAvailable(["sql"]);
         var nav = Services.GetRequiredService<NavigationManager>();
         nav.NavigateTo(nav.GetUriWithQueryParameter("edit", "codeReport"));
