@@ -73,7 +73,10 @@ public class ReportConfigSecretsTests
     {
         string redacted = ReportConfigSecrets.Redact(Document);
 
-        Properties(redacted, "destination").GetProperty("accessKey").GetString().ShouldBe(ReportConfigSecrets.RedactedValue);
+        // A section's placeholder carries the address it came from, so restoring never has to guess
+        // which stored section an incoming one is.
+        Properties(redacted, "destination").GetProperty("accessKey").GetString()
+            .ShouldBe("${neoreports:redacted:destinations[0]}");
         Properties(redacted, "destination").GetProperty("bucket").GetString().ShouldBe("reports");
         Properties(redacted, "output").GetProperty("delimiter").GetString().ShouldBe(";");
     }
@@ -157,6 +160,23 @@ public class ReportConfigSecretsTests
             .GetProperty(header).GetString().ShouldBe(ReportConfigSecrets.RedactedValue);
     }
 
+    // Excluding the bare substring "key" to protect the ADO keyset column left every other
+    // key-shaped name in plaintext — including Azure Storage's accountKey, which is the account.
+    [Theory]
+    [InlineData("accountKey")]
+    [InlineData("sharedKey")]
+    [InlineData("licenseKey")]
+    [InlineData("apiKey")]
+    [InlineData("accessKey")]
+    [InlineData("privateKey")]
+    public void Any_key_shaped_name_other_than_the_bare_keyset_column_is_redacted(string key)
+    {
+        string document = """{"source":{"properties":{"KEY":"literal"}}}""".Replace("KEY", key, StringComparison.Ordinal);
+
+        Properties(ReportConfigSecrets.Redact(document), "source").GetProperty(key).GetString()
+            .ShouldBe(ReportConfigSecrets.RedactedValue);
+    }
+
     [Fact]
     public void The_keyset_key_property_is_still_not_treated_as_a_credential()
     {
@@ -201,16 +221,16 @@ public class ReportConfigSecretsTests
     }
 
     [Fact]
-    public void Restore_pairs_outputs_and_destinations_by_identity_not_by_position()
+    public void A_reordered_section_still_restores_its_own_secret()
     {
         const string stored = """
             {"destinations":[{"type":"local","properties":{"path":"./out"}},
                              {"type":"s3","properties":{"accessKey":"AKIAEXAMPLE"}}]}
             """;
-        // The editor reordered them; matching by index would restore the S3 key into the local
-        // destination, which is both wrong and invisible.
+        // The editor moved the S3 destination to the front. The placeholder names the slot it came
+        // from, so where it sits now is irrelevant.
         const string reordered = """
-            {"destinations":[{"type":"s3","properties":{"accessKey":"${neoreports:redacted}"}},
+            {"destinations":[{"type":"s3","properties":{"accessKey":"${neoreports:redacted:destinations[1]}"}},
                              {"type":"local","properties":{"path":"./out"}}]}
             """;
 
@@ -389,11 +409,12 @@ public class ReportConfigSecretsTests
 
     // ---- Sections that share an identity --------------------------------------------------------
 
+    // Two S3 buckets in one report is legal, and neither the type nor the position is a reliable
+    // identity. Two earlier designs guessed at one and both crossed the wires; these are the exact
+    // scenarios that defeated them.
     [Fact]
-    public void Restore_pairs_repeated_section_ids_by_occurrence_not_by_first_match()
+    public void Two_sections_of_the_same_type_each_keep_their_own_secret()
     {
-        // Nothing stops a report writing to two S3 buckets. Pairing on identity alone would restore
-        // bucket A's access key into bucket B — silently, with both sections looking ordinary.
         const string stored = """
             {"destinations":[{"type":"s3","properties":{"bucket":"alpha","accessKey":"KEY-ALPHA"}},
                              {"type":"s3","properties":{"bucket":"beta","accessKey":"KEY-BETA"}}]}
@@ -405,6 +426,81 @@ public class ReportConfigSecretsTests
             .GetProperty("destinations").EnumerateArray().Select(d => d.Clone()).ToArray();
         destinations[0].GetProperty("properties").GetProperty("accessKey").GetString().ShouldBe("KEY-ALPHA");
         destinations[1].GetProperty("properties").GetProperty("accessKey").GetString().ShouldBe("KEY-BETA");
+    }
+
+    [Fact]
+    public void Retyping_an_earlier_section_does_not_shift_a_later_ones_secret()
+    {
+        const string stored = """
+            {"destinations":[{"type":"s3","properties":{"bucket":"alpha","accessKey":"KEY-ALPHA"}},
+                             {"type":"s3","properties":{"bucket":"beta","accessKey":"KEY-BETA"}}]}
+            """;
+        // Destination #1 became "local"; #2 is untouched and still carries its own address. Counting
+        // occurrences of "s3" would now make #2 the FIRST one and hand it bucket alpha's key.
+        const string edited = """
+            {"destinations":[{"type":"local","properties":{"path":"./out"}},
+                             {"type":"s3","properties":{"bucket":"beta","accessKey":"${neoreports:redacted:destinations[1]}"}}]}
+            """;
+
+        using JsonDocument doc = JsonDocument.Parse(ReportConfigSecrets.Restore(edited, stored));
+        JsonElement[] destinations = doc.RootElement.GetProperty("destinations").EnumerateArray().ToArray();
+        destinations[1].GetProperty("properties").GetProperty("accessKey").GetString().ShouldBe("KEY-BETA");
+    }
+
+    [Fact]
+    public void Removing_an_earlier_section_does_not_shift_a_later_ones_secret()
+    {
+        const string stored = """
+            {"destinations":[{"type":"local","properties":{"path":"./out"}},
+                             {"type":"s3","properties":{"accessKey":"KEY-BETA"}}]}
+            """;
+        const string edited = """
+            {"destinations":[{"type":"s3","properties":{"accessKey":"${neoreports:redacted:destinations[1]}"}}]}
+            """;
+
+        using JsonDocument doc = JsonDocument.Parse(ReportConfigSecrets.Restore(edited, stored));
+        doc.RootElement.GetProperty("destinations").EnumerateArray().Single()
+            .GetProperty("properties").GetProperty("accessKey").GetString().ShouldBe("KEY-BETA");
+    }
+
+    [Fact]
+    public void A_section_without_a_property_bag_does_not_shift_the_addresses_after_it()
+    {
+        // The address is the raw array index, so a section the walk skips still counts. Pairing that
+        // filtered one side and not the other rejected an untouched edit with a confusing 400.
+        const string stored = """
+            {"destinations":[{"type":"s3"},{"type":"s3","properties":{"accessKey":"KEY-BETA"}}]}
+            """;
+
+        string restored = ReportConfigSecrets.Restore(ReportConfigSecrets.Redact(stored), stored);
+
+        JsonDocument.Parse(restored).RootElement.GetProperty("destinations").EnumerateArray().Last()
+            .GetProperty("properties").GetProperty("accessKey").GetString().ShouldBe("KEY-BETA");
+    }
+
+    [Fact]
+    public void A_placeholder_addressing_a_section_that_no_longer_exists_is_rejected()
+    {
+        const string stored = """{"destinations":[{"type":"s3","properties":{"accessKey":"KEY"}}]}""";
+        const string incoming = """
+            {"destinations":[{"type":"s3","properties":{"accessKey":"${neoreports:redacted:destinations[7]}"}}]}
+            """;
+
+        Should.Throw<ConfigurationException>(() => ReportConfigSecrets.Restore(incoming, stored))
+            .Message.ShouldContain("destinations[7]");
+    }
+
+    [Theory]
+    [InlineData("${neoreports:redacted:outputs[nope]}")]
+    [InlineData("${neoreports:redacted:columns[0]}")]
+    [InlineData("${neoreports:redacted:}")]
+    public void A_malformed_or_out_of_scope_address_is_rejected(string sentinel)
+    {
+        const string stored = """{"source":{"properties":{"connectionString":"real"}}}""";
+        string incoming = """{"source":{"properties":{"connectionString":"SENTINEL"}}}"""
+            .Replace("SENTINEL", sentinel, StringComparison.Ordinal);
+
+        Should.Throw<ConfigurationException>(() => ReportConfigSecrets.Restore(incoming, stored));
     }
 
     [Fact]

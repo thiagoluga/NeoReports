@@ -29,6 +29,19 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 - **A failed `PUT` save rolls the registry back whatever the failure was.** It previously caught only
   `IOException`/`UnauthorizedAccessException`; any other store failure left the running report and the
   persisted one disagreeing, so the edit applied until the next restart and then silently reverted.
+- **Editing one output or destination can no longer hand another one its credential.** The redaction
+  placeholder now carries the address it came from (`${neoreports:redacted:destinations[1]}`) instead
+  of being matched back by section id and position — a report may legitimately declare two `s3`
+  destinations, and removing, reordering or retyping any earlier section used to shift the match onto
+  the wrong one. It also removes a spurious 400 on untouched edits of a report whose stored sections
+  do not all carry a property bag.
+- **An object-valued source property survives being edited.** An HTTP source's `headers` is an object;
+  the one-line property editor showed it as JSON text and wrote it back as a JSON *string*, breaking
+  the source and hiding any placeholder inside it from the guards.
+- **`accountKey`, `sharedKey` and `licenseKey` are redacted.** Excluding the bare substring `key` to
+  keep the ADO keyset column visible had excluded every key-shaped name along with it.
+- **The Review step no longer reports "Destinations: none"** for a report that still has others; the
+  wizard edits the first destination and the rest are kept, which the summary now states.
 
 ### Added
 - **`GET /api/reports/{name}/config`** returns a config-origin report's stored document with

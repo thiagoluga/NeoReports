@@ -217,6 +217,44 @@ public class ReportEditEndpointsTests : IDisposable
     }
 
     [Fact]
+    public async Task Removing_one_section_does_not_hand_another_its_credential()
+    {
+        using var host = await StartAsync();
+        HttpClient client = host.GetTestClient();
+
+        // Two sections of the same kind in one report is legal — two S3 buckets, two CSV outputs with
+        // different writer options. This is the end-to-end shape of the bug two earlier pairing
+        // designs had: touch the first section, and the second silently inherits the first's secret.
+        string document = Original
+            .Replace("\"sales\"", "\"twoOutputs\"", StringComparison.Ordinal)
+            .Replace(
+                "[ { \"format\": \"csv\" } ]",
+                "[ { \"format\": \"csv\", \"properties\": { \"apiKey\": \"KEY-ALPHA\" } }," +
+                "  { \"format\": \"csv\", \"properties\": { \"apiKey\": \"KEY-BETA\" } } ]",
+                StringComparison.Ordinal);
+        (await SendJsonAsync(client, HttpMethod.Post, "/api/reports", document)).StatusCode.ShouldBe(HttpStatusCode.Created);
+
+        string redacted = await client.GetStringAsync("/api/reports/twoOutputs/config");
+        redacted.ShouldContain("${neoreports:redacted:outputs[1]}");
+
+        // Drop the first output. Counting occurrences would now make the survivor the *first* csv and
+        // resolve its placeholder against KEY-ALPHA.
+        string edited = redacted.Replace(
+            "{\"format\":\"csv\",\"properties\":{\"apiKey\":\"${neoreports:redacted:outputs[0]}\"}},",
+            string.Empty,
+            StringComparison.Ordinal);
+        edited.ShouldNotBe(redacted, "the output the test removes must have been found");
+
+        (await SendJsonAsync(client, HttpMethod.Put, "/api/reports/twoOutputs", edited)).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        var store = host.Services.GetRequiredService<IReportConfigStore>();
+        using JsonDocument stored = JsonDocument.Parse((await store.TryGetAsync("twoOutputs", CancellationToken.None))!);
+        JsonElement[] outputs = stored.RootElement.GetProperty("outputs").EnumerateArray().ToArray();
+        outputs.Length.ShouldBe(1);
+        outputs[0].GetProperty("properties").GetProperty("apiKey").GetString().ShouldBe("KEY-BETA");
+    }
+
+    [Fact]
     public async Task Put_rejects_a_document_whose_name_does_not_match_the_route()
     {
         using var host = await StartAsync();

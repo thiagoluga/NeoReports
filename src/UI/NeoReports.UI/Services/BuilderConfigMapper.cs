@@ -23,6 +23,16 @@ public static class BuilderConfigMapper
     /// <summary>The engine's placeholder for a value it would not show (ADR D86); sent back verbatim to keep it.</summary>
     public const string RedactedValue = "${neoreports:redacted}";
 
+    /// <summary>
+    /// A section's placeholder carries the address it came from (<c>${neoreports:redacted:outputs[0]}</c>),
+    /// so recognising one is a prefix test, not an equality test.
+    /// </summary>
+    /// <param name="text">The value to test.</param>
+    public static bool IsRedactedPlaceholder(string? text) =>
+        text is not null
+        && (string.Equals(text, RedactedValue, StringComparison.Ordinal)
+            || (text.StartsWith("${neoreports:redacted:", StringComparison.Ordinal) && text.EndsWith('}')));
+
     private const string PropertiesMember = "properties";
     private const string ConnectionStringProperty = "connectionString";
 
@@ -168,7 +178,17 @@ public static class BuilderConfigMapper
             // editable text, so replacing it replaces the value and leaving it keeps the stored one.
             state.SourceProperties = properties
                 .Where(pair => !string.Equals(pair.Key, ConnectionStringProperty, StringComparison.OrdinalIgnoreCase))
-                .Select(pair => new PropertyRow { Key = pair.Key, Value = pair.Value?.ToString() ?? "" })
+                .Select(pair => new PropertyRow
+                {
+                    Key = pair.Key,
+                    Value = pair.Value?.ToString() ?? "",
+                    // An HTTP source's "headers" is an object; the editor is a one-line text box, so
+                    // it shows the JSON. Flagged rather than rendered as an ordinary string so the
+                    // save path parses it back instead of writing the whole subtree as a JSON
+                    // *string* — which silently broke the source and hid any placeholder inside it
+                    // from every guard, since none of them look inside a larger string.
+                    IsStructured = pair.Value is JsonObject or JsonArray,
+                })
                 .ToList();
         }
 
@@ -177,8 +197,8 @@ public static class BuilderConfigMapper
         // shown (there is nothing honest to show — the engine held it back precisely because it may
         // be the secret itself).
         string? connection = (Get(properties, ConnectionStringProperty) as JsonValue)?.ToString();
-        if (string.Equals(connection, RedactedValue, StringComparison.Ordinal))
-            state.ConnectionStringRedacted = true;
+        if (IsRedactedPlaceholder(connection))
+            state.ConnectionStringSentinel = connection;
         else if (connection is not null && connection.StartsWith("${", StringComparison.Ordinal) && connection.EndsWith('}'))
             state.ConnectionStringVariable = connection[2..^1];
     }
@@ -258,7 +278,7 @@ public static class BuilderConfigMapper
             if (!string.IsNullOrWhiteSpace(state.ConnectionStringVariable))
                 Set(properties, ConnectionStringProperty, $"${{{state.ConnectionStringVariable.Trim()}}}");
             else if (state.ConnectionStringKept)
-                Set(properties, ConnectionStringProperty, RedactedValue);
+                Set(properties, ConnectionStringProperty, state.ConnectionStringSentinel);
         }
 
         return properties;
@@ -301,7 +321,7 @@ public static class BuilderConfigMapper
             if (unchanged)
                 SetNode(properties, key, stored?.DeepClone());
             else
-                Set(properties, key, JsonValue.Create(row.Value));
+                SetNode(properties, key, EditedValue(row));
         }
 
         return properties;
@@ -391,6 +411,32 @@ public static class BuilderConfigMapper
             destinations.Add(extra?.DeepClone());
 
         return destinations.Count > 0 ? destinations : null;
+    }
+
+    /// <summary>
+    /// The node an edited row becomes. A row that was rendered from an object or array is parsed
+    /// back, so editing an HTTP source's <c>headers</c> keeps it an object rather than turning the
+    /// whole subtree into a JSON string — which broke the source and, worse, hid any placeholder
+    /// inside it from guards that only ever compare whole values.
+    /// </summary>
+    /// <remarks>
+    /// Unparseable text from a structured row is still sent as the string the user typed. The engine
+    /// rejects it at compile time with a message about that property, which is a better outcome than
+    /// this layer silently discarding an edit it could not make sense of.
+    /// </remarks>
+    private static JsonNode? EditedValue(PropertyRow row)
+    {
+        if (!row.IsStructured)
+            return JsonValue.Create(row.Value);
+
+        try
+        {
+            return JsonNode.Parse(row.Value, documentOptions: ParseOptions);
+        }
+        catch (JsonException)
+        {
+            return JsonValue.Create(row.Value);
+        }
     }
 
     private static JsonObject BuildResilience(BuilderState state)

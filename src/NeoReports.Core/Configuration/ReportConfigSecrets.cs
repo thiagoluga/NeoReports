@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -14,11 +15,19 @@ namespace NeoReports.Core.Configuration;
 /// <para>
 /// D33(c) settled that GET responses never echo property bags, because a bag may hold a secret;
 /// D33(f) deferred report editing for exactly that reason ("needs a secrets round-trip story").
-/// This is that story. A redacted value is replaced by the reserved sentinel
-/// <see cref="RedactedValue"/>, and <see cref="Restore"/> puts the stored value back when the
-/// sentinel comes home unchanged — so an editor can round-trip a property it was never allowed to
-/// see, and the alternative (making the user retype a connection string to change a page size) goes
-/// away without a secret ever leaving the host.
+/// This is that story. A redacted value is replaced by a reserved sentinel, and <see cref="Restore"/>
+/// puts the stored value back when the sentinel comes home unchanged — so an editor can round-trip a
+/// property it was never allowed to see, and the alternative (making the user retype a connection
+/// string to change a page size) goes away without a secret ever leaving the host.
+/// </para>
+/// <para>
+/// <b>The sentinel carries the address it came from</b> — <c>${neoreports:redacted:destinations[1]}</c>
+/// — so restoring never has to guess which stored section an incoming one corresponds to. Two earlier
+/// designs did guess, and both were wrong: pairing by section id alone put one S3 bucket's access key
+/// into another, and pairing by id-then-occurrence did the same as soon as an earlier section's type
+/// changed and shifted the count. There is no reliable identity to pair on — a report may declare two
+/// destinations of the same type to different buckets — so the address is carried instead of inferred.
+/// The source is a singleton and needs no address.
 /// </para>
 /// <para>
 /// The sentinel deliberately does not match <see cref="ReportConfigEnvironment"/>'s
@@ -30,13 +39,17 @@ namespace NeoReports.Core.Configuration;
 public static partial class ReportConfigSecrets
 {
     /// <summary>
-    /// The placeholder a redacted value is replaced by. Reserved: <c>POST /reports</c> rejects it
-    /// outright (there is nothing to restore from), and <c>PUT /reports/{name}</c> swaps it back for
-    /// the stored value.
+    /// The placeholder a redacted <c>source.properties</c> value is replaced by. Reserved:
+    /// <c>POST /reports</c> rejects it outright (there is nothing to restore from), and
+    /// <c>PUT /reports/{name}</c> swaps it back for the stored value.
     /// </summary>
     public const string RedactedValue = "${neoreports:redacted}";
 
     private const string PropertiesMember = "properties";
+    private const string AddressedPrefix = "${neoreports:redacted:";
+    private const string OutputsMember = "outputs";
+    private const string DestinationsMember = "destinations";
+    private const string SourceMember = "source";
 
     private static readonly JsonDocumentOptions ParseOptions = new()
     {
@@ -50,17 +63,23 @@ public static partial class ReportConfigSecrets
     // costs only visibility, never correctness, because Restore puts the value back untouched.
     private static readonly string[] SecretKeyFragments =
     [
-        "password", "passwd", "pwd", "passphrase", "secret", "token", "apikey", "api_key",
-        "api-key", "accesskey", "access_key", "privatekey", "private_key", "credential",
+        "password", "passwd", "pwd", "passphrase", "secret", "token", "key", "credential",
         "connectionstring", "connection_string", "signature", "auth", "sas", "cookie", "session",
     ];
 
+    // "key" as a whole word is the ADO keyset column, not a credential — hiding it would blind an
+    // editor to its own report's pagination. Every other name CONTAINING "key" is credential-shaped
+    // (apiKey, accessKey, privateKey, accountKey, sharedKey, licenseKey), which is why the fragment
+    // list carries the bare substring and this is the single exception carved out of it.
+    private const string KeysetColumnProperty = "key";
+
     // Query-parameter names that carry a credential without matching a fragment above: Azure SAS
-    // ("sv"/"sig"), Google's "?key=", OAuth's "?code=". AWS/GCS pre-signed URLs are already covered
-    // ("X-Amz-Signature" contains "signature", "AWSAccessKeyId" contains "accesskey").
+    // ("sv"/"sig"), OAuth's "?code=", Google's "?key=". AWS/GCS pre-signed URLs are already covered
+    // ("X-Amz-Signature" contains "signature", "AWSAccessKeyId" contains "key").
     //
-    // "key" is credential-shaped only as a QUERY parameter. As a property-bag key it is the ADO
-    // keyset column, which is why it is deliberately absent from the fragment list.
+    // "key" is listed here even though the fragment list carries the substring, because the keyset
+    // carve-out in IsSecretKey suppresses the bare word — and that carve-out is about property-bag
+    // keys, not query parameters, where "?key=" is Google's API key and nothing else.
     private static readonly string[] CredentialQueryParameters = ["sig", "sv", "code", "key"];
 
     // Whole-value ${VAR} placeholders, the same shape ReportConfigEnvironment resolves. A value in
@@ -71,7 +90,7 @@ public static partial class ReportConfigSecrets
 
     /// <summary>
     /// Returns <paramref name="document"/> with every credential-bearing property value replaced by
-    /// <see cref="RedactedValue"/>, at any depth inside a property bag.
+    /// a redaction placeholder, at any depth inside a property bag.
     /// </summary>
     /// <param name="document">The stored configuration document.</param>
     /// <exception cref="ConfigurationException">Thrown when the document is not valid JSON.</exception>
@@ -79,30 +98,43 @@ public static partial class ReportConfigSecrets
     {
         JsonObject root = ParseObject(document);
 
-        foreach (JsonObject bag in PropertyBags(root))
-            RedactMembers(bag);
+        foreach ((JsonObject bag, string? address) in PropertyBagSlots(root))
+            RedactMembers(bag, SentinelFor(address));
 
         return root.ToJsonString();
     }
 
-    /// <summary>True when any property value in the document is the redaction sentinel, at any depth.</summary>
+    /// <summary>True when any property value in the document is a redaction placeholder, at any depth.</summary>
     /// <param name="document">The configuration document to inspect.</param>
     /// <exception cref="ConfigurationException">Thrown when the document is not valid JSON.</exception>
     public static bool ContainsRedactedValue(string document) =>
-        PropertyBags(ParseObject(document)).Any(ContainsRedactedNode);
+        PropertyBagSlots(ParseObject(document)).Any(slot => ContainsRedactedNode(slot.Bag));
+
+    /// <summary>True when <paramref name="text"/> is a redaction placeholder, addressed or not.</summary>
+    /// <param name="text">The value to test.</param>
+    public static bool IsRedactedPlaceholder(string? text) =>
+        text is not null
+        && (string.Equals(text, RedactedValue, StringComparison.Ordinal)
+            || (text.StartsWith(AddressedPrefix, StringComparison.Ordinal) && text.EndsWith('}')));
 
     /// <summary>
-    /// True when a parsed property-bag value holds the redaction sentinel, at any depth. The parser
+    /// True when a parsed property-bag value holds a redaction placeholder, at any depth. The parser
     /// keeps nested objects and arrays as a <see cref="JsonElement"/>, so a check that only compared
-    /// strings would miss a sentinel inside <c>headers</c> or a child source — which is exactly how
-    /// one reached disk during development.
+    /// strings would miss a placeholder inside <c>headers</c> or a child source — which is exactly
+    /// how one reached disk during development.
     /// </summary>
     /// <param name="value">A property-bag value as <c>IReadOnlyDictionary&lt;string, object?&gt;</c> holds it.</param>
+    /// <remarks>
+    /// Deliberately a <b>substring</b> test on strings, unlike <see cref="IsRedactedPlaceholder"/>.
+    /// This is the last-resort guard before compilation, and a placeholder can end up embedded in a
+    /// larger string — an editor that rewrites a nested object as JSON text carries one along inside
+    /// it. Restoring still requires an exact match; only rejecting is this permissive.
+    /// </remarks>
     public static bool HoldsRedactedValue(object? value) => value switch
     {
-        string text => string.Equals(text, RedactedValue, StringComparison.Ordinal),
-        JsonElement { ValueKind: JsonValueKind.String } element =>
-            string.Equals(element.GetString(), RedactedValue, StringComparison.Ordinal),
+        string text => text.Contains(RedactedValue, StringComparison.Ordinal)
+            || text.Contains(AddressedPrefix, StringComparison.Ordinal),
+        JsonElement { ValueKind: JsonValueKind.String } element => HoldsRedactedValue(element.GetString()),
         JsonElement { ValueKind: JsonValueKind.Object } element =>
             element.EnumerateObject().Any(property => HoldsRedactedValue(property.Value)),
         JsonElement { ValueKind: JsonValueKind.Array } element =>
@@ -111,22 +143,22 @@ public static partial class ReportConfigSecrets
     };
 
     /// <summary>
-    /// Returns <paramref name="document"/> with every <see cref="RedactedValue"/> replaced by the
-    /// value the same property holds in <paramref name="storedDocument"/>, at any depth.
+    /// Returns <paramref name="document"/> with every redaction placeholder replaced by the value it
+    /// addresses in <paramref name="storedDocument"/>, at any depth.
     /// </summary>
     /// <param name="document">The incoming document, as edited by the client.</param>
     /// <param name="storedDocument">The document currently persisted for this report.</param>
     /// <exception cref="ConfigurationException">
-    /// Thrown when either document is not valid JSON, or when a sentinel has no counterpart to
-    /// restore from — better a rejected edit than one that silently drops a credential.
+    /// Thrown when either document is not valid JSON, or when a placeholder addresses nothing —
+    /// better a rejected edit than one that silently drops a credential.
     /// </exception>
     public static string Restore(string document, string storedDocument)
     {
         JsonObject root = ParseObject(document);
         JsonObject stored = ParseObject(storedDocument);
 
-        foreach ((JsonObject bag, JsonObject? storedBag, string section) in PairedPropertyBags(root, stored))
-            RestoreMembers(bag, storedBag, section);
+        foreach ((JsonObject bag, string? _) in PropertyBagSlots(root))
+            RestoreMembers(bag, stored, []);
 
         return root.ToJsonString();
     }
@@ -147,17 +179,25 @@ public static partial class ReportConfigSecrets
         }
     }
 
+    private static string SentinelFor(string? address) =>
+        address is null ? RedactedValue : AddressedPrefix + address + "}";
+
+    private static string? AddressOf(string sentinel) =>
+        string.Equals(sentinel, RedactedValue, StringComparison.Ordinal)
+            ? null
+            : sentinel[AddressedPrefix.Length..^1];
+
     // A property-bag value is not always a scalar. An HTTP source declares "headers" as an object —
     // Authorization lives in there — and a merge-join source nests whole child sources, each with
     // its own "properties" and connection string. A walk that stopped at the top level handed both
     // back in plaintext, which is the one outcome this file exists to prevent.
-    private static void RedactMembers(JsonObject owner)
+    private static void RedactMembers(JsonObject owner, string sentinel)
     {
         foreach (string key in owner.Select(pair => pair.Key).ToArray())
-            Replace(owner, key, RedactValue(key, owner[key]));
+            Replace(owner, key, RedactValue(key, owner[key], sentinel));
     }
 
-    private static JsonNode? RedactValue(string key, JsonNode? value)
+    private static JsonNode? RedactValue(string key, JsonNode? value, string sentinel)
     {
         switch (value)
         {
@@ -165,10 +205,10 @@ public static partial class ReportConfigSecrets
             // "credentials": { "user": …, "pass": … } is a credential whatever its inner keys happen
             // to be called, and guessing at them is the failure mode this design exists to avoid.
             case JsonObject or JsonArray when IsSecretKey(key):
-                return RedactedValue;
+                return sentinel;
 
             case JsonObject nested:
-                RedactMembers(nested);
+                RedactMembers(nested, sentinel);
                 return nested;
 
             // Elements inherit the enclosing key: an array under "tokens" is judged the way a single
@@ -177,7 +217,7 @@ public static partial class ReportConfigSecrets
                 for (var i = 0; i < array.Count; i++)
                 {
                     JsonNode? original = array[i];
-                    JsonNode? redacted = RedactValue(key, original);
+                    JsonNode? redacted = RedactValue(key, original, sentinel);
                     if (!ReferenceEquals(original, redacted))
                         array[i] = redacted;
                 }
@@ -185,53 +225,61 @@ public static partial class ReportConfigSecrets
                 return array;
 
             default:
-                return ShouldRedact(key, value) ? RedactedValue : value;
+                return ShouldRedact(key, value) ? sentinel : value;
         }
     }
 
-    private static void RestoreMembers(JsonObject bag, JsonObject? storedBag, string section)
+    private static void RestoreMembers(JsonObject bag, JsonObject stored, IReadOnlyList<object> path)
     {
         foreach (string key in bag.Select(pair => pair.Key).ToArray())
-        {
-            JsonNode? stored = storedBag is null ? null : Member(storedBag, key);
-            bool storedExists = storedBag is not null && HasMember(storedBag, key);
+            Replace(bag, key, RestoreValue(bag[key], stored, [.. path, key]));
+    }
 
-            Replace(bag, key, RestoreValue(bag[key], stored, storedExists, $"The '{section}' property '{key}'", $"{section}.{key}"));
+    // Inside a property bag an array is ordered data, so an element's address is its index. Elements
+    // go through the same RestoreValue as members, which is what makes a redacted *scalar* element
+    // work — `"mirrors": ["…", "…"]` with a credential in one of them.
+    private static void RestoreElements(JsonArray array, JsonObject stored, IReadOnlyList<object> path)
+    {
+        for (var i = 0; i < array.Count; i++)
+        {
+            JsonNode? restored = RestoreValue(array[i], stored, [.. path, i]);
+            if (!ReferenceEquals(array[i], restored))
+                array[i] = restored;
         }
     }
 
     /// <summary>
-    /// Returns the value to keep at one position: the stored counterpart when the incoming value is
-    /// the sentinel, otherwise the incoming value with its children restored in place.
+    /// Returns the value to keep at one position: the value the placeholder addresses in the stored
+    /// document when the incoming value is a placeholder, otherwise the incoming value with its
+    /// children restored in place.
     /// </summary>
     /// <param name="value">The incoming value.</param>
-    /// <param name="stored">The stored counterpart, or <c>null</c> when there is none (or it is a JSON null).</param>
-    /// <param name="storedExists">Whether a stored counterpart is present at all — a stored JSON null is not "missing".</param>
-    /// <param name="sentinelLabel">How to name this position, as a sentence opener, if the sentinel cannot be resolved.</param>
-    /// <param name="childSection">Section label to pass down to children.</param>
-    private static JsonNode? RestoreValue(
-        JsonNode? value, JsonNode? stored, bool storedExists, string sentinelLabel, string childSection)
+    /// <param name="stored">The whole stored document — a placeholder names the slot it came from.</param>
+    /// <param name="path">Where inside its bag this value sits, as member names and array indices.</param>
+    private static JsonNode? RestoreValue(JsonNode? value, JsonObject stored, IReadOnlyList<object> path)
     {
-        if (IsRedacted(value))
+        if (value is JsonValue sentinelValue
+            && sentinelValue.TryGetValue(out string? text)
+            && IsRedactedPlaceholder(text))
         {
-            if (!storedExists)
+            if (!TryResolveStored(stored, AddressOf(text!), path, out JsonNode? original))
             {
                 throw new ConfigurationException(
-                    $"{sentinelLabel} was sent as a redacted placeholder, but the stored configuration has " +
-                    "no value to restore for it. Send the real value instead.");
+                    $"The property at '{Describe(AddressOf(text!), path)}' was sent as a redacted placeholder, " +
+                    "but the stored configuration has no value to restore for it. Send the real value instead.");
             }
 
-            return stored?.DeepClone();
+            return original?.DeepClone();
         }
 
         switch (value)
         {
             case JsonObject nested:
-                RestoreMembers(nested, stored as JsonObject, childSection);
+                RestoreMembers(nested, stored, path);
                 break;
 
             case JsonArray array:
-                RestoreElements(array, stored as JsonArray, childSection);
+                RestoreElements(array, stored, path);
                 break;
 
             default:
@@ -241,31 +289,85 @@ public static partial class ReportConfigSecrets
         return value;
     }
 
-    // Inside a property bag an array is ordered data, not a set of identified sections, so index is
-    // the only pairing available; an editor that reorders one has to send the real values.
-    //
-    // Elements go through the same RestoreValue as members, which is what makes a redacted *scalar*
-    // element work — `"mirrors": ["…", "…"]` with a credential in one of them. Descending only into
-    // object elements left that one holding the literal sentinel, and it got persisted: found by
-    // round-tripping a real report, after every flat-bag test had passed.
-    private static void RestoreElements(JsonArray array, JsonArray? storedArray, string section)
+    /// <summary>
+    /// Follows a placeholder's address to its stored property bag and then <paramref name="path"/>
+    /// inside it. Returns <c>false</c> when any step is missing; a stored JSON <c>null</c> resolves
+    /// successfully to <c>null</c>, which is not the same thing.
+    /// </summary>
+    private static bool TryResolveStored(
+        JsonObject stored, string? address, IReadOnlyList<object> path, out JsonNode? value)
     {
-        for (var i = 0; i < array.Count; i++)
-        {
-            bool storedExists = storedArray is not null && i < storedArray.Count;
-            JsonNode? stored = storedExists ? storedArray![i] : null;
-            JsonNode? restored = RestoreValue(array[i], stored, storedExists, $"The element '{section}[{i}]'", $"{section}[{i}]");
+        value = null;
 
-            if (!ReferenceEquals(array[i], restored))
-                array[i] = restored;
+        JsonObject? bag = StoredBagAt(stored, address);
+        if (bag is null)
+            return false;
+
+        JsonNode? node = bag;
+        foreach (object step in path)
+        {
+            switch (step)
+            {
+                case string key when node is JsonObject owner && HasMember(owner, key):
+                    node = Member(owner, key);
+                    break;
+
+                case int index when node is JsonArray array && index >= 0 && index < array.Count:
+                    node = array[index];
+                    break;
+
+                default:
+                    return false;
+            }
         }
+
+        value = node;
+        return true;
+    }
+
+    // The address is the stored slot, not the incoming one: an editor may remove, insert, reorder or
+    // retype sections, and the placeholder still names where its value came from.
+    private static JsonObject? StoredBagAt(JsonObject stored, string? address)
+    {
+        if (address is null)
+            return Member(stored, SourceMember) is JsonObject source
+                ? Member(source, PropertiesMember) as JsonObject
+                : null;
+
+        int open = address.IndexOf('[', StringComparison.Ordinal);
+        if (open < 0 || !address.EndsWith(']')
+            || !int.TryParse(address[(open + 1)..^1], NumberStyles.None, CultureInfo.InvariantCulture, out int index))
+        {
+            return null;
+        }
+
+        string arrayName = address[..open];
+        if (!string.Equals(arrayName, OutputsMember, StringComparison.Ordinal)
+            && !string.Equals(arrayName, DestinationsMember, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return Member(stored, arrayName) is JsonArray sections
+            && index < sections.Count
+            && sections[index] is JsonObject section
+                ? Member(section, PropertiesMember) as JsonObject
+                : null;
+    }
+
+    private static string Describe(string? address, IReadOnlyList<object> path)
+    {
+        string root = address ?? SourceMember;
+        return path.Aggregate(root, (current, step) =>
+            step is int index ? $"{current}[{index}]" : $"{current}.{step}");
     }
 
     private static bool ContainsRedactedNode(JsonNode? value) => value switch
     {
         JsonObject nested => nested.Any(pair => ContainsRedactedNode(pair.Value)),
         JsonArray array => array.Any(ContainsRedactedNode),
-        _ => IsRedacted(value),
+        JsonValue scalar => scalar.TryGetValue(out string? text) && IsRedactedPlaceholder(text),
+        _ => false,
     };
 
     // Re-assigning the very node already sitting at that key would reparent it, which JsonNode does
@@ -277,7 +379,8 @@ public static partial class ReportConfigSecrets
     }
 
     private static bool IsSecretKey(string key) =>
-        SecretKeyFragments.Any(fragment => key.Contains(fragment, StringComparison.OrdinalIgnoreCase));
+        !string.Equals(key, KeysetColumnProperty, StringComparison.OrdinalIgnoreCase)
+        && SecretKeyFragments.Any(fragment => key.Contains(fragment, StringComparison.OrdinalIgnoreCase));
 
     private static bool ShouldRedact(string key, JsonNode? value)
     {
@@ -313,79 +416,32 @@ public static partial class ReportConfigSecrets
             .Any(name => IsSecretKey(name) || CredentialQueryParameters.Contains(name, StringComparer.OrdinalIgnoreCase));
     }
 
-    private static bool IsRedacted(JsonNode? value) =>
-        value is JsonValue jsonValue
-        && jsonValue.TryGetValue(out string? text)
-        && string.Equals(text, RedactedValue, StringComparison.Ordinal);
-
-    private static IEnumerable<JsonObject> PropertyBags(JsonObject root) =>
-        PairedPropertyBags(root, stored: null).Select(pair => pair.Bag);
-
-    // Walks the three places a config document holds a free-form property bag, pairing each with its
-    // counterpart in `stored` when one is given. Section names double as the label in restore errors.
-    private static IEnumerable<(JsonObject Bag, JsonObject? Stored, string Section)> PairedPropertyBags(
-        JsonObject root, JsonObject? stored)
+    /// <summary>
+    /// The three places a config document holds a free-form property bag, each with the address a
+    /// placeholder found in it carries. The source is a singleton and needs none; sections carry
+    /// their raw array index, so a section without a bag does not shift the ones after it.
+    /// </summary>
+    private static IEnumerable<(JsonObject Bag, string? Address)> PropertyBagSlots(JsonObject root)
     {
-        if (Member(root, "source") is JsonObject source && Member(source, PropertiesMember) is JsonObject sourceBag)
-        {
-            JsonObject? storedBag = stored is not null
-                && Member(stored, "source") is JsonObject storedSource
-                    ? Member(storedSource, PropertiesMember) as JsonObject
-                    : null;
+        if (Member(root, SourceMember) is JsonObject source && Member(source, PropertiesMember) is JsonObject sourceBag)
+            yield return (sourceBag, null);
 
-            yield return (sourceBag, storedBag, "source");
-        }
-
-        foreach ((JsonObject Bag, JsonObject? Stored, string Section) output in SectionBags(root, stored, "outputs", "format"))
+        foreach ((JsonObject Bag, string? Address) output in SectionSlots(root, OutputsMember))
             yield return output;
 
-        foreach ((JsonObject Bag, JsonObject? Stored, string Section) destination in SectionBags(root, stored, "destinations", "type"))
+        foreach ((JsonObject Bag, string? Address) destination in SectionSlots(root, DestinationsMember))
             yield return destination;
     }
 
-    /// <summary>
-    /// Pairs each section with its stored counterpart by identity (an output's <c>format</c>, a
-    /// destination's <c>type</c>) and then by occurrence: the nth section carrying a given id pairs
-    /// with the nth stored section carrying it.
-    /// </summary>
-    /// <remarks>
-    /// Identity alone is not a key — nothing stops a report declaring two <c>s3</c> destinations to
-    /// different buckets. Matching on first-by-identity would restore bucket A's access key into
-    /// bucket B on any edit, silently and with both sections looking perfectly ordinary.
-    /// </remarks>
-    private static IEnumerable<(JsonObject Bag, JsonObject? Stored, string Section)> SectionBags(
-        JsonObject root, JsonObject? stored, string arrayName, string identityKey)
+    private static IEnumerable<(JsonObject Bag, string? Address)> SectionSlots(JsonObject root, string arrayName)
     {
         if (Member(root, arrayName) is not JsonArray array)
             yield break;
 
-        JsonArray? storedArray = stored is null ? null : Member(stored, arrayName) as JsonArray;
-        var seen = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-
-        // A section without a property bag has nothing to redact or restore, so it is filtered out
-        // rather than iterated and skipped — the occurrence counter below then counts only the
-        // sections this walk actually yields, which is what Restore pairs against.
-        IEnumerable<(JsonObject Section, JsonObject Bag)> sections = array
-            .OfType<JsonObject>()
-            .Where(section => Member(section, PropertiesMember) is JsonObject)
-            .Select(section => (Section: section, Bag: (JsonObject)Member(section, PropertiesMember)!));
-
-        foreach ((JsonObject section, JsonObject bag) in sections)
+        for (var i = 0; i < array.Count; i++)
         {
-            string identity = Identity(section, identityKey) ?? string.Empty;
-            seen.TryGetValue(identity, out int occurrence);
-            seen[identity] = occurrence + 1;
-
-            JsonObject? storedSection = storedArray?
-                .OfType<JsonObject>()
-                .Where(candidate => string.Equals(Identity(candidate, identityKey) ?? string.Empty, identity, StringComparison.OrdinalIgnoreCase))
-                .Skip(occurrence)
-                .FirstOrDefault();
-
-            yield return (
-                bag,
-                storedSection is null ? null : Member(storedSection, PropertiesMember) as JsonObject,
-                $"{arrayName}[{identity}]");
+            if (array[i] is JsonObject section && Member(section, PropertiesMember) is JsonObject bag)
+                yield return (bag, $"{arrayName}[{i}]");
         }
     }
 
@@ -394,9 +450,6 @@ public static partial class ReportConfigSecrets
     // slip past redaction because JsonObject's own indexer is ordinal.
     private static JsonNode? Member(JsonObject owner, string name) =>
         owner.FirstOrDefault(pair => string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase)).Value;
-
-    private static string? Identity(JsonObject section, string identityKey) =>
-        Member(section, identityKey) is JsonValue value && value.TryGetValue(out string? text) ? text : null;
 
     private static bool HasMember(JsonObject owner, string name) =>
         owner.Any(pair => string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase));

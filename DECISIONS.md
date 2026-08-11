@@ -1799,12 +1799,19 @@ fragment now hides its entire subtree rather than being descended into: `"creden
 credential whatever its inner keys are called, and guessing at them is the fail-open behaviour the
 list exists to avoid.
 
-Sections pair by identity (outputs by `format`, destinations by `type`) **and then by occurrence** —
-the nth section with a given id pairs with the nth stored one. Identity alone is not a key: nothing
-stops a report writing to two `s3` buckets, and first-match pairing would restore bucket A's access
-key into bucket B on any edit, silently, with both sections looking perfectly ordinary. Inside a bag
-an array is ordered data rather than identified sections, so index is the only pairing available
-there.
+**The placeholder carries the address it came from** — `${neoreports:redacted:destinations[1]}` —
+so restoring never has to work out which stored section an incoming one corresponds to. Two earlier
+designs did work it out, and both were wrong. Pairing by section id alone put one S3 bucket's access
+key into another. Pairing by id-then-occurrence fixed that case and broke a different one: changing
+an earlier section's type shifts the count, so the *next* same-typed section inherits the previous
+one's secret — same silent wire-crossing, one trigger further along. There is no reliable identity to
+pair on, because a report may legitimately declare two destinations of the same type to different
+buckets, so the address is carried rather than inferred. The source is a singleton and needs none.
+
+That also removes a second defect from the occurrence design: it filtered the incoming sections to
+those carrying a property bag before counting, but not the stored ones, so a stored section without a
+bag made an otherwise untouched edit fail with a confusing 400. The address is the raw array index,
+which nothing can shift.
 
 The sentinel sits deliberately **outside** `ReportConfigEnvironment`'s `${NAME}` grammar (a colon is
 not legal in an environment variable name), so it can never be resolved as a variable lookup. It is
@@ -1872,6 +1879,24 @@ throws.
   `IReportConfigStore` is an interface and a custom one can fail with anything; any other exception
   left the registry holding the new definition while the store held the old, so the edit applied
   until the next restart and then silently reverted.
+
+### The second review pass
+
+A `/code-review` run after the security work found five more, and the first two were the same
+wire-crossing class arriving through new triggers — which is what moved the design from *pairing* to
+*addressing* (above) rather than patching a third heuristic. The other three:
+
+- **An object-valued property could not survive being edited.** An HTTP source's `headers` is an
+  object; the generic editor is a one-line text box, so it arrives as JSON text, and editing it wrote
+  the whole subtree back as a JSON **string** — breaking the source, and hiding any placeholder inside
+  it from every guard, since none of them look inside a larger string. Structured rows are now flagged
+  on the way in and parsed back on the way out, and `HoldsRedactedValue` — the last-resort guard, not
+  the restore path — became a substring test so an embedded placeholder is still rejected.
+- **`accountKey` and friends were in plaintext.** Excluding the bare substring `key` to protect the
+  ADO keyset column excluded every key-shaped name with it: `accountKey` (an Azure Storage account),
+  `sharedKey`, `licenseKey`. The fragment list now carries `key` and carves out the single exact word.
+- **"Destinations: none" was a lie** on a report with more than one: picking None drops the slot the
+  wizard edits, and the rest ride along as designed — the Review summary now says so.
 
 ### What the security review changed, and what it deliberately did not
 

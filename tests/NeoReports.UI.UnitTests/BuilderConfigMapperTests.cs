@@ -546,6 +546,58 @@ public class BuilderConfigMapperTests
     }
 
     [Fact]
+    public void An_edited_object_valued_property_stays_an_object()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"type":"http","properties":{"headers":{"Accept":"text/csv"}}}}
+            """).ShouldBeTrue();
+        state.SourceProperties.Single().Value = """{"Accept":"application/json"}""";
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        // The editor is a one-line text box, so an object arrives as JSON text. Writing that back as
+        // a JSON *string* broke the source outright — and hid any placeholder inside it from every
+        // guard, since none of them look inside a larger string.
+        JsonElement headers = doc.RootElement.GetProperty("source").GetProperty(PropertiesMember).GetProperty("headers");
+        headers.ValueKind.ShouldBe(JsonValueKind.Object);
+        headers.GetProperty("Accept").GetString().ShouldBe("application/json");
+    }
+
+    [Fact]
+    public void An_edited_object_valued_property_keeps_a_nested_placeholder_recognisable()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"type":"http","properties":{
+              "headers":{"Accept":"text/csv","Authorization":"${neoreports:redacted}"}}}}
+            """).ShouldBeTrue();
+        state.SourceProperties.Single().Value =
+            """{"Accept":"application/json","Authorization":"${neoreports:redacted}"}""";
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        // Parsed back as an object, the placeholder is a whole value again — so Restore resolves it
+        // and the compile-time guard can see it. Embedded in a JSON string it was invisible to both.
+        doc.RootElement.GetProperty("source").GetProperty(PropertiesMember).GetProperty("headers")
+            .GetProperty("Authorization").GetString().ShouldBe("${neoreports:redacted}");
+    }
+
+    [Fact]
+    public void An_addressed_placeholder_on_the_connection_is_sent_back_verbatim()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"type":"http","properties":{"connectionString":"${neoreports:redacted}"}}}
+            """).ShouldBeTrue();
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        doc.RootElement.GetProperty("source").GetProperty(PropertiesMember)
+            .GetProperty("connectionString").GetString().ShouldBe("${neoreports:redacted}");
+    }
+
+    [Fact]
     public void Switching_the_source_drops_the_stored_properties_and_the_kept_connection()
     {
         var state = HydratedState();

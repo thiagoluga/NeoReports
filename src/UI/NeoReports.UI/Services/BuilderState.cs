@@ -31,13 +31,16 @@ public sealed class BuilderState
     public string ConnectionStringVariable { get; set; } = "";
 
     /// <summary>
-    /// True while editing a report whose stored <c>connectionString</c> the engine would not show
-    /// (ADR D86 redacts it, because unlike a <c>${VAR}</c> placeholder its literal value may be the
-    /// secret itself). The connection is kept as-is on save unless
-    /// <see cref="ConnectionStringVariable"/> is filled in to replace it — so editing a page size
-    /// does not cost the user their connection.
+    /// The exact placeholder the engine returned for the stored <c>connectionString</c>, or <c>null</c>
+    /// when it was not held back. Kept verbatim rather than as a flag because a placeholder carries the
+    /// address it came from (ADR D86) and has to go back exactly as it arrived. The connection is kept
+    /// on save unless <see cref="ConnectionStringVariable"/> is filled in to replace it — so editing a
+    /// page size does not cost the user their connection.
     /// </summary>
-    public bool ConnectionStringRedacted { get; set; }
+    public string? ConnectionStringSentinel { get; set; }
+
+    /// <summary>Whether the stored connection string is one the engine held back.</summary>
+    public bool ConnectionStringRedacted => ConnectionStringSentinel is not null;
 
     /// <summary>
     /// Whether the hidden connection string is actually still in play. Pointing the report at a
@@ -217,7 +220,7 @@ public sealed class BuilderState
         SourceType = "sql";
         SourceRef = "";
         ConnectionStringVariable = "";
-        ConnectionStringRedacted = false;
+        ConnectionStringSentinel = null;
         SqlQuery = "";
         KeyColumn = "Id";
         SourceProperties = [];

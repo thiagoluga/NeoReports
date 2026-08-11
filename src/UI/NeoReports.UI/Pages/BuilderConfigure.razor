@@ -77,7 +77,7 @@
                     <span class="muted mono" style="font-size:11px;display:block;margin-bottom:6px">Common for "@Wizard.SourceType": @PropertyHintFor(Wizard.SourceType)</span>
                     @if (HasRedactedProperty)
                     {
-                        <span class="muted" style="font-size:11px;display:block;margin-bottom:6px">A value shown as <span class="mono">@BuilderConfigMapper.RedactedValue</span> is one the engine held back. Leave it to keep the stored value; overwrite it to replace it.</span>
+                        <span class="muted" style="font-size:11px;display:block;margin-bottom:6px">A value starting with <span class="mono">${neoreports:redacted</span> is one the engine held back. Leave it to keep the stored value; overwrite it to replace it.</span>
                     }
                     <PropertyListEditor Rows="Wizard.SourceProperties" KeyPlaceholder="url" ValuePlaceholder="https://api.example.com" />
                 </div>
@@ -201,7 +201,7 @@
     private ApiValidationResult? _validationResult;
 
     private bool HasRedactedProperty => Wizard.SourceProperties
-        .Any(row => string.Equals(row.Value, BuilderConfigMapper.RedactedValue, StringComparison.Ordinal));
+        .Any(row => BuilderConfigMapper.IsRedactedPlaceholder(row.Value));
 
     protected override void OnInitialized()
     {
