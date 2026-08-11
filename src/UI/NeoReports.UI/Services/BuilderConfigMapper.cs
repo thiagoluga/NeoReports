@@ -442,7 +442,7 @@ public static class BuilderConfigMapper
         // size from 90 to 120 must not turn the property into the string "120". Only untouched rows
         // were protected before, so the very coercion the round-trip fixed came back the moment
         // someone edited the value.
-        if (stored is JsonValue previous && previous.TryGetValue(out string? _) is false)
+        if (stored is JsonValue previous && !previous.TryGetValue(out string? _))
         {
             if (previous.TryGetValue(out long _) && long.TryParse(row.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out long asLong))
                 return JsonValue.Create(asLong);
