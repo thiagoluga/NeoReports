@@ -676,6 +676,41 @@ public class BuilderConfigMapperTests
     }
 
     [Fact]
+    public void A_format_id_stored_in_a_different_case_is_not_treated_as_a_second_format()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"type":"http"},"outputs":[{"format":"CSV","properties":{"delimiter":";"}}]}
+            """).ShouldBeTrue();
+        state.Formats.Add("csv");
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        // The engine resolves format ids case-insensitively; matching them ordinally here made a
+        // stored "CSV" plus a ticked "csv" checkbox save two CSV outputs.
+        JsonElement[] outputs = doc.RootElement.GetProperty("outputs").EnumerateArray().ToArray();
+        outputs.Length.ShouldBe(1);
+        outputs[0].GetProperty(PropertiesMember).GetProperty("delimiter").GetString().ShouldBe(";");
+    }
+
+    [Fact]
+    public void A_destination_type_stored_in_a_different_case_keeps_its_properties()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"type":"http"},
+             "destinations":[{"type":"S3","properties":{"bucket":"reports","path":"a.csv"}}]}
+            """).ShouldBeTrue();
+        state.DestinationType = "s3";
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        // Ordinal matching treated this as a type change and dropped the stored bucket.
+        doc.RootElement.GetProperty("destinations").EnumerateArray().Single()
+            .GetProperty(PropertiesMember).GetProperty("bucket").GetString().ShouldBe("reports");
+    }
+
+    [Fact]
     public void Switching_the_source_drops_the_stored_properties_and_the_kept_connection()
     {
         var state = HydratedState();

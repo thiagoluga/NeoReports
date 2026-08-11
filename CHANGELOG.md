@@ -52,6 +52,18 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 - **An edited source property keeps its JSON kind.** Editing `90` turned it into `"90"`; only
   untouched rows were protected. The kind is carried from the stored value, never guessed from the
   text, so an all-digits account id stays a string.
+- **Two sections cannot both claim the same stored credential.** Duplicating an output or destination
+  block by hand copies its placeholder too, and both copies used to resolve to the same secret. An
+  address may now be claimed by one property bag only; many placeholders *inside* one bag still share
+  it, as they always must.
+- **A transient `GET /api/sources` failure no longer repoints a report.** The Builder cleared
+  `source.ref` when the list came back empty, and a failed call was indistinguishable from an empty
+  one — so a blip converted a registry-backed report into an inline one on save.
+- **Format and destination ids are matched case-insensitively**, the way the engine resolves them; a
+  stored `"CSV"` with `csv` ticked used to save two CSV outputs, and the same on destination types
+  dropped the stored properties.
+- **A `404` when saving an edit shows the engine's message**, not "the engine is not reachable" — a
+  report deleted from another tab is a rejected request, not a network failure.
 
 ### Added
 - **`GET /api/reports/{name}/config`** returns a config-origin report's stored document with

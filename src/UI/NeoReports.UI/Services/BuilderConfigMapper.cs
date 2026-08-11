@@ -113,7 +113,10 @@ public static class BuilderConfigMapper
                 .Select(format => format!)
                 .ToArray();
 
-            state.Formats = formats.ToHashSet(StringComparer.Ordinal);
+            // The engine resolves format and destination ids case-insensitively, so the wizard has to
+            // as well: a stored "CSV" with the "csv" checkbox ticked otherwise counts as two formats
+            // and saves two CSV outputs.
+            state.Formats = formats.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             // The Format step is a set of checkboxes, so it cannot represent "two csv outputs" —
             // nothing stops a config document declaring them, with different writer properties each.
@@ -360,7 +363,7 @@ public static class BuilderConfigMapper
             // entirely by properties the wizard cannot show, and must not be flattened by an edit.
             JsonObject[] stored = original?
                 .OfType<JsonObject>()
-                .Where(output => string.Equals((Get(output, "format") as JsonValue)?.ToString(), format, StringComparison.Ordinal))
+                .Where(output => string.Equals((Get(output, "format") as JsonValue)?.ToString(), format, StringComparison.OrdinalIgnoreCase))
                 .ToArray() ?? [];
 
             if (stored.Length == 0)
@@ -387,7 +390,7 @@ public static class BuilderConfigMapper
         {
             JsonObject? first = original?.OfType<JsonObject>().FirstOrDefault();
             bool sameDestination = first is not null
-                && string.Equals((Get(first, "type") as JsonValue)?.ToString(), state.DestinationType, StringComparison.Ordinal);
+                && string.Equals((Get(first, "type") as JsonValue)?.ToString(), state.DestinationType, StringComparison.OrdinalIgnoreCase);
 
             // On a type switch the stored properties are dropped: an S3 bucket and region are not
             // configuration a local-filesystem destination should inherit.

@@ -116,6 +116,23 @@ public sealed class BuilderReviewTests : NeoReportsTestContext
     }
 
     [Fact]
+    public void Editing_a_report_deleted_elsewhere_shows_the_engines_message_not_a_network_error()
+    {
+        Wizard.IsEditing = true;
+        Wizard.EditingOriginalName = "clientsVip";
+        Api.ReplaceReport = (_, _, _) => Task.FromResult(
+            new ApiCreateResult(ApiCreateOutcome.Invalid, null, "No report named 'clientsVip' is registered."));
+
+        var cut = RenderReview();
+        cut.FindAll("button").First(b => b.TextContent.Contains("Save report")).Click();
+
+        // A 404 is a rejected request carrying a usable message — mapping it to Unavailable threw the
+        // message away and blamed the network for a report someone deleted in another tab.
+        cut.Markup.ShouldContain("No report named 'clientsVip' is registered.");
+        cut.Markup.ShouldNotContain("The engine is not reachable right now.");
+    }
+
+    [Fact]
     public void Editing_saves_through_a_single_replace_call_and_never_deletes()
     {
         Wizard.IsEditing = true;

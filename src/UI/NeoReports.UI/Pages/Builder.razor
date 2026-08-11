@@ -93,6 +93,9 @@
     private IReadOnlyList<string> _engineSources = Array.Empty<string>();
     private IReadOnlyList<ApiSourceView> _registeredSources = Array.Empty<ApiSourceView>();
 
+    /// <summary>Whether the registered-source list actually loaded, as opposed to failing to.</summary>
+    private bool _sourcesLoaded;
+
     /// <summary>
     /// Set by ReportDetail's "Edit" button (<c>?edit=name</c>) — hydrates the wizard from that
     /// report instead of starting blank.
@@ -132,7 +135,13 @@
         }
 
         _engineSources = capabilities.Sources;
-        _registeredSources = await Api.TryListSourcesAsync() ?? Array.Empty<ApiSourceView>();
+
+        // null means the call failed, which is NOT the same as "this host has no registered sources".
+        // Conflating them cleared an edited report's source.ref on a transient blip and saved it back
+        // as an inline source — a silent repointing of what the report reads from.
+        IReadOnlyList<ApiSourceView>? registered = await Api.TryListSourcesAsync();
+        _sourcesLoaded = registered is not null;
+        _registeredSources = registered ?? Array.Empty<ApiSourceView>();
 
         // Loaded after the registered sources on purpose: a ref-based document names a source but
         // not its type (the type belongs to the registry, D42), and the Configure step's editor
@@ -150,7 +159,7 @@
         if (!Wizard.IsEditing && !_engineSources.Contains(Wizard.SourceType))
             Wizard.SourceType = _engineSources.Contains("sql") ? "sql" : _engineSources[0];
 
-        if (!string.IsNullOrEmpty(Wizard.SourceRef) && _registeredSources.All(s => s.Name != Wizard.SourceRef))
+        if (_sourcesLoaded && !string.IsNullOrEmpty(Wizard.SourceRef) && _registeredSources.All(s => s.Name != Wizard.SourceRef))
             Wizard.SourceRef = "";
     }
 

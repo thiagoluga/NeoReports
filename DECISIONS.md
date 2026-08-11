@@ -1961,6 +1961,28 @@ authorization:
   had when the new text still fits it, and stays a string otherwise — the kind is carried, never
   guessed from the text, so an all-digits account id does not silently become a number.
 
+### The fourth review pass
+
+A `/code-review` after the non-string fix found four more, and the first one is worth reading as a
+correction to this ADR's own reasoning above. When the addressed placeholder was introduced I
+considered requiring an address to match the slot it appears in, and rejected it because a legitimate
+removal shifts positions. That was the right rejection of the wrong rule: the address never needed to
+match the *position*, it needed to be claimed by only **one** bag. Duplicating a section by hand —
+which the new banners tell users to do for anything the wizard cannot edit — copies its placeholders
+too, and both copies resolved to the same stored credential. Many placeholders inside one bag share
+its address and always will; two different bags naming the same one is now a 400.
+
+- **A transient `GET /sources` failure repointed a report.** The Builder cleared `source.ref` when the
+  registered-source list came back empty, and a failed call was indistinguishable from an empty one —
+  so a blip converted a registry-backed report into an inline one on save, silently changing what it
+  reads from.
+- **Format and destination ids were matched ordinally** while the engine resolves them
+  case-insensitively: a stored `"format": "CSV"` with the `csv` checkbox ticked counted as two formats
+  and saved two CSV outputs; the same on destination types dropped the stored properties.
+- **A `404` on `PUT` was reported as an unreachable engine.** A report deleted from another tab is a
+  rejected request carrying a usable message, and mapping it to *Unavailable* threw that message away
+  and blamed the network.
+
 ### Verified end to end
 
 Driven in a browser against `samples/09-web-ui-live`: a report carrying a literal password, a

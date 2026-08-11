@@ -501,6 +501,39 @@ public class ReportConfigSecretsTests
     }
 
     [Fact]
+    public void Two_sections_cannot_both_claim_the_same_stored_credential()
+    {
+        const string stored = """{"destinations":[{"type":"s3","properties":{"accessKey":"KEY-ALPHA"}}]}""";
+        // Duplicating a section by hand copies its placeholder too. Resolving both would hand the
+        // second destination a credential the editor cannot see — the outcome the address exists to
+        // prevent, arrived at by duplication instead of by inference.
+        const string duplicated = """
+            {"destinations":[{"type":"s3","properties":{"accessKey":"${neoreports:redacted:destinations[0]}"}},
+                             {"type":"s3","properties":{"accessKey":"${neoreports:redacted:destinations[0]}"}}]}
+            """;
+
+        Should.Throw<ConfigurationException>(() => ReportConfigSecrets.Restore(duplicated, stored))
+            .Message.ShouldContain("destinations[0]");
+    }
+
+    [Fact]
+    public void Several_placeholders_inside_one_section_share_its_address_freely()
+    {
+        // The claim is per bag, not per placeholder: one destination's accessKey and secretKey both
+        // name the same slot, and always will.
+        const string stored = """
+            {"destinations":[{"type":"s3","properties":{"accessKey":"KA","secretKey":"KS","bucket":"b"}}]}
+            """;
+
+        string restored = ReportConfigSecrets.Restore(ReportConfigSecrets.Redact(stored), stored);
+
+        JsonElement properties = JsonDocument.Parse(restored).RootElement
+            .GetProperty("destinations").EnumerateArray().Single().GetProperty("properties");
+        properties.GetProperty("accessKey").GetString().ShouldBe("KA");
+        properties.GetProperty("secretKey").GetString().ShouldBe("KS");
+    }
+
+    [Fact]
     public void A_placeholder_addressing_a_section_that_no_longer_exists_is_rejected()
     {
         const string stored = """{"destinations":[{"type":"s3","properties":{"accessKey":"KEY"}}]}""";

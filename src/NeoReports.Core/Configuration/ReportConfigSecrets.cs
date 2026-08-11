@@ -157,8 +157,14 @@ public static partial class ReportConfigSecrets
         JsonObject root = ParseObject(document);
         JsonObject stored = ParseObject(storedDocument);
 
+        // An address may be claimed by at most one incoming bag. Many placeholders inside one bag
+        // share its address (accessKey and secretKey of the same destination), which is fine; two
+        // *different* bags naming the same one is not — duplicating a section by hand copies its
+        // placeholders too, and resolving both would hand a second destination a credential the
+        // editor cannot see, which is the outcome the address exists to prevent.
+        var claims = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
         foreach ((JsonObject bag, string? _) in PropertyBagSlots(root))
-            RestoreMembers(bag, stored, []);
+            RestoreMembers(bag, new RestoreContext(stored, bag, claims), []);
 
         return root.ToJsonString();
     }
@@ -229,20 +235,25 @@ public static partial class ReportConfigSecrets
         }
     }
 
-    private static void RestoreMembers(JsonObject bag, JsonObject stored, IReadOnlyList<object> path)
+    /// <param name="Stored">The whole stored document — a placeholder names the slot it came from.</param>
+    /// <param name="Bag">The incoming property bag currently being restored.</param>
+    /// <param name="Claims">Which bag has already claimed each address, so no two can share one.</param>
+    private sealed record RestoreContext(JsonObject Stored, JsonObject Bag, Dictionary<string, JsonObject> Claims);
+
+    private static void RestoreMembers(JsonObject owner, RestoreContext context, IReadOnlyList<object> path)
     {
-        foreach (string key in bag.Select(pair => pair.Key).ToArray())
-            Replace(bag, key, RestoreValue(bag[key], stored, [.. path, key]));
+        foreach (string key in owner.Select(pair => pair.Key).ToArray())
+            Replace(owner, key, RestoreValue(owner[key], context, [.. path, key]));
     }
 
     // Inside a property bag an array is ordered data, so an element's address is its index. Elements
     // go through the same RestoreValue as members, which is what makes a redacted *scalar* element
     // work — `"mirrors": ["…", "…"]` with a credential in one of them.
-    private static void RestoreElements(JsonArray array, JsonObject stored, IReadOnlyList<object> path)
+    private static void RestoreElements(JsonArray array, RestoreContext context, IReadOnlyList<object> path)
     {
         for (var i = 0; i < array.Count; i++)
         {
-            JsonNode? restored = RestoreValue(array[i], stored, [.. path, i]);
+            JsonNode? restored = RestoreValue(array[i], context, [.. path, i]);
             if (!ReferenceEquals(array[i], restored))
                 array[i] = restored;
         }
@@ -254,16 +265,18 @@ public static partial class ReportConfigSecrets
     /// children restored in place.
     /// </summary>
     /// <param name="value">The incoming value.</param>
-    /// <param name="stored">The whole stored document — a placeholder names the slot it came from.</param>
+    /// <param name="context">The stored document, the bag being restored, and the addresses claimed so far.</param>
     /// <param name="path">Where inside its bag this value sits, as member names and array indices.</param>
-    private static JsonNode? RestoreValue(JsonNode? value, JsonObject stored, IReadOnlyList<object> path)
+    private static JsonNode? RestoreValue(JsonNode? value, RestoreContext context, IReadOnlyList<object> path)
     {
         if (value is JsonValue sentinelValue
             && sentinelValue.TryGetValue(out string? text)
             && IsRedactedPlaceholder(text))
         {
             string? address = AddressOf(text);
-            if (!TryResolveStored(stored, address, path, out JsonNode? original))
+            ClaimAddress(context, address);
+
+            if (!TryResolveStored(context.Stored, address, path, out JsonNode? original))
             {
                 throw new ConfigurationException(
                     $"The property at '{Describe(address, path)}' was sent as a redacted placeholder, " +
@@ -276,11 +289,11 @@ public static partial class ReportConfigSecrets
         switch (value)
         {
             case JsonObject nested:
-                RestoreMembers(nested, stored, path);
+                RestoreMembers(nested, context, path);
                 break;
 
             case JsonArray array:
-                RestoreElements(array, stored, path);
+                RestoreElements(array, context, path);
                 break;
 
             default:
@@ -288,6 +301,20 @@ public static partial class ReportConfigSecrets
         }
 
         return value;
+    }
+
+    private static void ClaimAddress(RestoreContext context, string? address)
+    {
+        string claimed = address ?? SourceMember;
+        if (context.Claims.TryGetValue(claimed, out JsonObject? owner) && !ReferenceEquals(owner, context.Bag))
+        {
+            throw new ConfigurationException(
+                $"Two different sections both sent a redacted placeholder for '{claimed}'. A section copied " +
+                "from another one needs its own value — the placeholder only stands for the value of the " +
+                "section it came from.");
+        }
+
+        context.Claims[claimed] = context.Bag;
     }
 
     /// <summary>

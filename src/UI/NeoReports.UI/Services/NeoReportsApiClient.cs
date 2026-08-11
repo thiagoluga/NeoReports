@@ -662,9 +662,13 @@ internal sealed class NeoReportsApiClient(
             string? error = await TryReadErrorAsync(response, cancellationToken).ConfigureAwait(false);
             // A 409 here is not "name taken" (the name is this report's own) but "this report is
             // code-registered", which is a different message entirely — hence Invalid, not NameTaken.
+            // A 404 means the report was deleted from somewhere else while this wizard was open; it
+            // is a rejected request carrying a usable message, not an unreachable engine, and mapping
+            // it to Unavailable threw that message away and blamed the network instead.
             ApiCreateOutcome outcome = response.StatusCode switch
             {
-                HttpStatusCode.BadRequest or HttpStatusCode.Conflict => ApiCreateOutcome.Invalid,
+                HttpStatusCode.BadRequest or HttpStatusCode.Conflict or HttpStatusCode.NotFound =>
+                    ApiCreateOutcome.Invalid,
                 _ => ApiCreateOutcome.Unavailable,
             };
             return new ApiCreateResult(outcome, null, error);

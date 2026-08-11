@@ -301,6 +301,36 @@ public sealed class BuilderTests : NeoReportsTestContext
     }
 
     [Fact]
+    public void A_failed_source_list_does_not_silently_convert_a_ref_report_to_an_inline_one()
+    {
+        Api.Capabilities = _ => Task.FromResult<ApiCapabilities?>(new ApiCapabilities(["sql"], ["csv"], ["local"]));
+        Api.Sources = _ => Task.FromResult<IReadOnlyList<ApiSourceView>?>(null); // the call failed
+        SetupEditing("clientsVip", """
+            {"name":"clientsVip","source":{"ref":"clients-db","properties":{"sql":"SELECT 1"}}}
+            """);
+
+        Render<Builder>();
+
+        // "The call failed" is not "this host has no registered sources". Conflating them cleared the
+        // ref on a transient blip, and saving then repointed the report at an inline source with no
+        // warning — a silent change to what it reads from.
+        Wizard.SourceRef.ShouldBe("clients-db");
+    }
+
+    [Fact]
+    public void A_ref_that_no_longer_exists_is_cleared_once_the_list_actually_loaded()
+    {
+        SetupEngineAvailable(["sql"], [new ApiSourceView("other-db", "postgres", null, 0, null, null, null, null)]);
+        SetupEditing("clientsVip", """
+            {"name":"clientsVip","source":{"ref":"deleted-db","properties":{"sql":"SELECT 1"}}}
+            """);
+
+        Render<Builder>();
+
+        Wizard.SourceRef.ShouldBe("");
+    }
+
+    [Fact]
     public void Editing_a_report_whose_secrets_were_redacted_keeps_them_without_showing_them()
     {
         SetupEngineAvailable(["http"]);
