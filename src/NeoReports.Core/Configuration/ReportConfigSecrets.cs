@@ -262,10 +262,11 @@ public static partial class ReportConfigSecrets
             && sentinelValue.TryGetValue(out string? text)
             && IsRedactedPlaceholder(text))
         {
-            if (!TryResolveStored(stored, AddressOf(text!), path, out JsonNode? original))
+            string? address = AddressOf(text);
+            if (!TryResolveStored(stored, address, path, out JsonNode? original))
             {
                 throw new ConfigurationException(
-                    $"The property at '{Describe(AddressOf(text!), path)}' was sent as a redacted placeholder, " +
+                    $"The property at '{Describe(address, path)}' was sent as a redacted placeholder, " +
                     "but the stored configuration has no value to restore for it. Send the real value instead.");
             }
 
