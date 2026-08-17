@@ -93,6 +93,13 @@
                 </div>
                 <div class="field"><span class="label-sm">Page size</span><span class="input num"><input class="mono" type="number" min="1" @bind="Wizard.PageSize" @bind:event="oninput" /></span></div>
             }
+            @if (Wizard.IsEditing && !Wizard.ColumnNamesAreSplittable)
+            {
+                <Banner Variant="warn" Icon="alert-triangle">
+                    <b>A column name contains a comma.</b>
+                    <span style="font-size:12px">This box separates columns with commas, so it cannot represent that name. Leave it exactly as it is and the stored columns are kept untouched; editing it would split that name into two columns.</span>
+                </Banner>
+            }
             <div class="field"><span class="label-sm">Output columns</span><span class="input mono"><input class="mono" @bind="Wizard.ColumnNames" @bind:event="oninput" placeholder="Id, Customer, Amount" style="width:100%" /></span></div>
             <div class="cgr"><span class="lbl">Track progress</span><div class="ctl"><Switch @bind-Value="Wizard.TrackProgress" /><span class="hint">counts the source rows once before each run · enables a real completion percentage</span></div></div>
             @if (!Wizard.TrackProgress)

@@ -517,6 +517,24 @@ public class ReportConfigSecretsTests
     }
 
     [Fact]
+    public void An_unaddressed_placeholder_inside_a_section_cannot_pull_the_sources_credential()
+    {
+        const string stored = """
+            {"source":{"properties":{"connectionString":"Server=db;Password=hunter2"}},
+             "destinations":[{"type":"s3","properties":{"accessKey":"KEY"}}]}
+            """;
+        // The bare form addresses the source and only Redact issues it, so inside a destination it can
+        // only have been written by hand or pasted from the docs — and honouring it would hand that
+        // destination the SOURCE's connection string.
+        const string incoming = """
+            {"destinations":[{"type":"s3","properties":{"connectionString":"${neoreports:redacted}"}}]}
+            """;
+
+        Should.Throw<ConfigurationException>(() => ReportConfigSecrets.Restore(incoming, stored))
+            .Message.ShouldContain("destinations[0]");
+    }
+
+    [Fact]
     public void Several_placeholders_inside_one_section_share_its_address_freely()
     {
         // The claim is per bag, not per placeholder: one destination's accessKey and secretKey both

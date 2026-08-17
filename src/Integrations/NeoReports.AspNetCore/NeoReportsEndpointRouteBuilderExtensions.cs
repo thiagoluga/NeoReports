@@ -721,11 +721,27 @@ public static class NeoReportsEndpointRouteBuilderExtensions
             // placeholder would reach a provider as a literal connection string and fail for a
             // reason that has nothing to do with the configuration under test.
             if (http.Request.Query.TryGetValue("for", out StringValues editing)
-                && editing.ToString() is { Length: > 0 } editingName
-                && DynamicReportName.IsValid(editingName)
-                && http.RequestServices.GetService<IReportConfigStore>() is { } store
-                && await store.TryGetAsync(editingName, cancellationToken).ConfigureAwait(false) is { } stored)
+                && editing.ToString() is { Length: > 0 } editingName)
             {
+                string? stored = DynamicReportName.IsValid(editingName)
+                    && http.RequestServices.GetService<IReportConfigStore>() is { } store
+                        ? await store.TryGetAsync(editingName, cancellationToken).ConfigureAwait(false)
+                        : null;
+
+                // Saying so beats silently skipping the restore: the caller would otherwise get
+                // "still holds the redaction placeholder" about a document they sent correctly, plus a
+                // nameTaken flag, for the single real problem that the report is gone.
+                if (stored is null)
+                {
+                    return Results.Ok(new ValidateReportResponse(
+                        Valid: false,
+                        Error: $"There is no stored configuration for '{editingName}' to validate an edit against. " +
+                               "It may have been deleted, or it is code-registered.",
+                        Name: null,
+                        Columns: null,
+                        NameTaken: false));
+                }
+
                 editingFor = editingName;
                 document = ReportConfigSecrets.Restore(document, stored);
             }

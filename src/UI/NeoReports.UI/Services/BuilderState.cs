@@ -110,6 +110,23 @@ public sealed class BuilderState
     /// <summary>Comma-separated output column names.</summary>
     public string ColumnNames { get; set; } = "Id";
 
+    /// <summary>
+    /// <see cref="ColumnNames"/> as the loaded document produced it, so an untouched list can be
+    /// written back as the stored array instead of re-derived from a box that cannot represent a
+    /// column name containing a comma.
+    /// </summary>
+    public string LoadedColumnNames { get; set; } = "";
+
+    /// <summary>
+    /// False when a stored column name contains a comma, which the single text box cannot round-trip.
+    /// The Configure step warns rather than letting an edit split one column into two.
+    /// </summary>
+    public bool ColumnNamesAreSplittable { get; set; } = true;
+
+    /// <summary>Whether the column box still holds exactly what the loaded document produced.</summary>
+    public bool ColumnNamesUnchanged =>
+        OriginalDocument is not null && string.Equals(ColumnNames, LoadedColumnNames, StringComparison.Ordinal);
+
     /// <summary>Destination type id (e.g. "local", "s3"); empty means no destination configured.</summary>
     public string DestinationType { get; set; } = "";
 
@@ -236,6 +253,8 @@ public sealed class BuilderState
         PageSize = 1000;
         TrackProgress = true;
         ColumnNames = "Id";
+        LoadedColumnNames = "";
+        ColumnNamesAreSplittable = true;
         DestinationType = "";
         DestinationPath = "";
         RetryMaxAttempts = 1;

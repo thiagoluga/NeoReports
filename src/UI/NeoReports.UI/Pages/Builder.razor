@@ -31,8 +31,16 @@
     @if (_configUnavailable)
     {
         <Banner Variant="danger" Icon="alert-triangle">
-            <b>Could not load that report's configuration.</b>
-            <span style="font-size:12px">Nothing was prefilled, so this is a blank new report — saving it would not edit the one you came from. Go back and try again.</span>
+            @if (_configOutcome == ApiConfigOutcome.NotFound)
+            {
+                <b>That report has no stored configuration to edit.</b>
+                <span style="font-size:12px">It was deleted, or it is registered in code — either way there is nothing here to change. Nothing was prefilled, so this is a blank new report.</span>
+            }
+            else
+            {
+                <b>Could not load that report's configuration.</b>
+                <span style="font-size:12px">Nothing was prefilled, so this is a blank new report — saving it would not edit the one you came from. Go back and try again.</span>
+            }
         </Banner>
     }
     @if (!Wizard.EngineAvailable)
@@ -105,6 +113,9 @@
 
     /// <summary>Set when an edit was asked for and the report's configuration could not be read.</summary>
     private bool _configUnavailable;
+
+    /// <summary>Why it could not be read, so the message can say which of the two happened.</summary>
+    private ApiConfigOutcome _configOutcome = ApiConfigOutcome.Ok;
 
     /// <summary>
     /// Set by ReportDetail's "Edit" button (<c>?edit=name</c>) — hydrates the wizard from that
@@ -191,10 +202,14 @@
         // "Could not load it" is not "it is not editable" — the same conflation _sourcesLoaded fixes
         // above. Silently degrading to a blank create wizard on a transient failure would invite the
         // user to type a whole report over a working one.
-        _configUnavailable = config.Outcome is ApiConfigOutcome.Unavailable
-            || (config.Document is not null && !BuilderConfigMapper.Hydrate(Wizard, config.Document, RegisteredSourceType));
+        // NotFound counts too: Edit is only offered for a config-origin report, so a 404 here means it
+        // was deleted or is code-registered — either way the user asked to edit something and must not
+        // be handed a blank create form without a word.
+        _configOutcome = config.Outcome;
+        _configUnavailable = config.Outcome is not ApiConfigOutcome.Ok
+            || !BuilderConfigMapper.Hydrate(Wizard, config.Document!, RegisteredSourceType);
 
-        if (_configUnavailable || config.Document is null)
+        if (_configUnavailable)
             return;
 
         Wizard.IsEditing = true;

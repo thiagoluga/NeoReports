@@ -35,7 +35,7 @@
                 </SelectableCard>
                 @foreach (var d in _engineDestinations.Select(ToDestinationOption))
                 {
-                    <SelectableCard Selected="@(Wizard.DestinationType == d.Id)" OnClick="@(() => Wizard.DestinationType = d.Id)">
+                    <SelectableCard Selected="@(string.Equals(Wizard.DestinationType, d.Id, StringComparison.OrdinalIgnoreCase))" OnClick="@(() => Wizard.DestinationType = d.Id)">
                         <CatTile Kind="@d.Kind" Icon="@d.Icon" />
                         <div class="name mono">@d.Id</div>
                         <div class="conn" style="white-space:normal;font-family:var(--font-sans);font-size:12px">@d.Description</div>

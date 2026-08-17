@@ -2007,6 +2007,29 @@ breaking; all five were in what surrounds it.
   nothing said so, and the save failed with a generic compile error. The Configure step now says what
   has to be supplied.
 
+### The sixth review pass
+
+Two of these six are the ones worth carrying forward.
+
+- **A `ref`-based ADO report whose query lives in the registered definition got an empty overlay.**
+  Those boxes hydrate blank, and the save wrote `"sql": ""` / `"key": ""` into the report-local
+  overlay, which under D42 wins — so the next run failed with *requires a non-empty 'sql' property*
+  from a save that changed only the page size. Blank now means "do not override" for a `ref` source
+  and still means "clear it" for an inline one, where the query is the report's own.
+- **The unaddressed placeholder inside a section pulled the SOURCE's credential.** `AddressOf` returns
+  null for the bare form and null resolves to `source.properties`, so a bare placeholder hand-written
+  into a destination — the only form the README and CHANGELOG document — handed that destination the
+  source's connection string. This is the same wire-crossing the addressed form exists to prevent,
+  reached from the other direction, and it is the *third* distinct route into it. Rejected outright:
+  only `Redact` issues the bare form, and only for the source.
+
+The other four: a column name containing a comma was split in two by the single text box and both
+halves retyped as `String` (an untouched list is now written back as the stored array, and the step
+warns when the box cannot represent a name); `validate?for=` skipped the restore when the report was
+gone, producing a placeholder complaint instead of "that report no longer exists"; a `404` from
+`GET .../config` still degraded to a silent blank wizard; and destination card selection was still an
+ordinal comparison after the rest of the destination matching went case-insensitive.
+
 ### Verified end to end
 
 Driven in a browser against `samples/09-web-ui-live`: a report carrying a literal password, a

@@ -319,6 +319,24 @@ public class ReportEditEndpointsTests : IDisposable
     }
 
     [Fact]
+    public async Task Validate_for_a_report_with_no_stored_document_says_that_plainly()
+    {
+        using var host = await StartAsync();
+        HttpClient client = await CreateSalesAsync(host);
+
+        string redacted = await client.GetStringAsync("/api/reports/sales/config");
+
+        JsonElement result = await (await SendJsonAsync(client, HttpMethod.Post, "/api/reports/validate?for=gone", redacted))
+            .Content.ReadFromJsonAsync<JsonElement>(Json);
+
+        // Skipping the restore silently produced "still holds the redaction placeholder" about a
+        // document the caller sent correctly, for the single real problem that the report is gone.
+        result.GetProperty("valid").GetBoolean().ShouldBeFalse();
+        result.GetProperty("error").GetString()!.ShouldContain("no stored configuration for 'gone'");
+        result.GetProperty("nameTaken").GetBoolean().ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task Put_rejects_a_document_whose_name_does_not_match_the_route()
     {
         using var host = await StartAsync();

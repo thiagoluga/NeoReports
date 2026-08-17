@@ -375,17 +375,18 @@ public sealed class BuilderTests : NeoReportsTestContext
     }
 
     [Fact]
-    public void EditName_for_a_report_with_no_stored_config_falls_back_to_a_blank_wizard()
+    public void EditName_for_a_report_with_no_stored_config_says_so_and_falls_back_to_a_blank_wizard()
     {
-        // Code-registered reports have no document to return (the engine 404s) — a blank "new
-        // report" wizard is the honest outcome, not a form half-filled from somewhere else.
+        // Edit is only offered for a config-origin report, so a 404 here means it was deleted or is
+        // code-registered. A blank wizard is the right state; arriving at it silently is not.
         Api.ReportConfig = (_, _) => Task.FromResult(new ApiConfigResult(ApiConfigOutcome.NotFound, null));
         SetupEngineAvailable(["sql"]);
         var nav = Services.GetRequiredService<NavigationManager>();
         nav.NavigateTo(nav.GetUriWithQueryParameter("edit", "codeReport"));
 
-        Render<Builder>();
+        var cut = Render<Builder>();
 
+        cut.Markup.ShouldContain("has no stored configuration to edit");
         Wizard.IsEditing.ShouldBeFalse();
         Wizard.ReportName.ShouldBe("");
     }

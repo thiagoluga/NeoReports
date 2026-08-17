@@ -746,6 +746,77 @@ public class BuilderConfigMapperTests
     }
 
     [Fact]
+    public void A_ref_report_whose_query_lives_in_the_definition_gets_no_empty_overlay()
+    {
+        var state = new BuilderState();
+        // The query and key live in the registered definition, so these boxes hydrate empty.
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"ref":"sales-db","properties":{}}}
+            """, _ => "sql").ShouldBeTrue();
+        state.PageSize = 250;
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        // Writing "sql": "" here wins over the definition (D42) and the next run fails with "requires
+        // a non-empty 'sql' property" — from a save that changed nothing but the page size.
+        JsonElement properties = doc.RootElement.GetProperty(SourceMember).GetProperty(PropertiesMember);
+        properties.TryGetProperty("sql", out _).ShouldBeFalse();
+        properties.TryGetProperty("key", out _).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void An_inline_ado_report_still_sends_its_own_query_and_key()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"type":"sql","properties":{"sql":"SELECT 1","key":"Id"}}}
+            """).ShouldBeTrue();
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        JsonElement properties = doc.RootElement.GetProperty(SourceMember).GetProperty(PropertiesMember);
+        properties.GetProperty("sql").GetString().ShouldBe("SELECT 1");
+        properties.GetProperty("key").GetString().ShouldBe("Id");
+    }
+
+    [Fact]
+    public void An_untouched_column_list_round_trips_a_name_containing_a_comma()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"type":"http"},
+             "columns":[{"name":"Total, net","type":"Decimal"},{"name":"Id","type":"Integer"}]}
+            """).ShouldBeTrue();
+        state.PageSize = 250;
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        // The box separates columns with commas, so re-deriving from it split this name into two
+        // columns and retyped both as String — the exact downgrade patch-don't-regenerate prevents.
+        JsonElement[] columns = doc.RootElement.GetProperty("columns").EnumerateArray().ToArray();
+        columns.Length.ShouldBe(2);
+        columns[0].GetProperty("name").GetString().ShouldBe("Total, net");
+        columns[0].GetProperty("type").GetString().ShouldBe("Decimal");
+        state.ColumnNamesAreSplittable.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void An_edited_column_list_is_rebuilt_from_the_text()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"type":"http"},"columns":[{"name":"Id","type":"Integer"}]}
+            """).ShouldBeTrue();
+        state.ColumnNames = "Id, Customer";
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        JsonElement[] columns = doc.RootElement.GetProperty("columns").EnumerateArray().ToArray();
+        columns.Select(c => c.GetProperty("name").GetString()).ShouldBe(["Id", "Customer"]);
+        columns[0].GetProperty("type").GetString().ShouldBe("Integer");
+    }
+
+    [Fact]
     public void Switching_the_source_drops_the_stored_properties_and_the_kept_connection()
     {
         var state = HydratedState();

@@ -172,8 +172,8 @@ public static partial class ReportConfigSecrets
         // placeholders too, and resolving both would hand a second destination a credential the
         // editor cannot see, which is the outcome the address exists to prevent.
         var claims = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
-        foreach ((JsonObject bag, string? _) in PropertyBagSlots(root))
-            RestoreMembers(bag, new RestoreContext(stored, bag, claims), []);
+        foreach ((JsonObject bag, string? address) in PropertyBagSlots(root))
+            RestoreMembers(bag, new RestoreContext(stored, bag, address, claims), []);
 
         return root.ToJsonString();
     }
@@ -246,8 +246,10 @@ public static partial class ReportConfigSecrets
 
     /// <param name="Stored">The whole stored document — a placeholder names the slot it came from.</param>
     /// <param name="Bag">The incoming property bag currently being restored.</param>
+    /// <param name="SlotAddress">The address of the slot <paramref name="Bag"/> is, or null for the source.</param>
     /// <param name="Claims">Which bag has already claimed each address, so no two can share one.</param>
-    private sealed record RestoreContext(JsonObject Stored, JsonObject Bag, Dictionary<string, JsonObject> Claims);
+    private sealed record RestoreContext(
+        JsonObject Stored, JsonObject Bag, string? SlotAddress, Dictionary<string, JsonObject> Claims);
 
     private static void RestoreMembers(JsonObject owner, RestoreContext context, IReadOnlyList<object> path)
     {
@@ -314,6 +316,18 @@ public static partial class ReportConfigSecrets
 
     private static void ClaimAddress(RestoreContext context, string? address)
     {
+        // The bare placeholder addresses the source, and only Redact issues it — inside an output or
+        // destination bag it can only have been written by hand or pasted from the docs, and honouring
+        // it would hand that section the SOURCE's credential. That is the wire-crossing the addressed
+        // form exists to prevent, reached from the other direction.
+        if (address is null && context.SlotAddress is not null)
+        {
+            throw new ConfigurationException(
+                $"The unaddressed placeholder '{RedactedValue}' was sent inside '{context.SlotAddress}'. It stands " +
+                $"only for a source property; a section's placeholder names its own slot, as in " +
+                $"'{SentinelFor(context.SlotAddress)}'. Send the real value instead.");
+        }
+
         string claimed = address ?? SourceMember;
         if (context.Claims.TryGetValue(claimed, out JsonObject? owner) && !ReferenceEquals(owner, context.Bag))
         {

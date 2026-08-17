@@ -98,10 +98,21 @@ public static class BuilderConfigMapper
 
         if (Get(root, "columns") is JsonArray columns)
         {
-            state.ColumnNames = string.Join(", ", columns
+            string[] names = columns
                 .OfType<JsonObject>()
                 .Select(column => (Get(column, "name") as JsonValue)?.ToString())
-                .Where(columnName => !string.IsNullOrWhiteSpace(columnName)));
+                .Where(columnName => !string.IsNullOrWhiteSpace(columnName))
+                .Select(columnName => columnName!)
+                .ToArray();
+
+            state.ColumnNames = string.Join(", ", names);
+
+            // One comma-separated box cannot represent a name that itself contains a comma, so an
+            // untouched list is written back as the stored array rather than re-derived from the text
+            // — otherwise "Total, net" came back as two columns, both retyped as untouched String,
+            // which is the exact downgrade the patch-don't-regenerate rule exists to prevent.
+            state.LoadedColumnNames = state.ColumnNames;
+            state.ColumnNamesAreSplittable = !names.Any(columnName => columnName.Contains(',', StringComparison.Ordinal));
         }
 
         if (Get(root, "outputs") is JsonArray outputs)
@@ -267,7 +278,7 @@ public static class BuilderConfigMapper
         Remove(carried, ConnectionStringProperty);
 
         JsonObject properties = state.UsesAdoSqlShape
-            ? AdoSourceProperties(state, carried)
+            ? AdoSourceProperties(state, carried, usesRef)
             : GenericSourceProperties(state, carried);
 
         if (usesRef)
@@ -294,11 +305,27 @@ public static class BuilderConfigMapper
 
     // The SQL family has dedicated editors for its query and key column; every other stored property
     // is carried through untouched, since nothing in the wizard could have changed it.
-    private static JsonObject AdoSourceProperties(BuilderState state, JsonObject carried)
+    private static JsonObject AdoSourceProperties(BuilderState state, JsonObject carried, bool usesRef)
     {
-        Set(carried, "sql", state.SqlQuery);
-        Set(carried, "key", state.KeyColumn);
+        SetOverlay(carried, "sql", state.SqlQuery, usesRef);
+        SetOverlay(carried, "key", state.KeyColumn, usesRef);
         return carried;
+    }
+
+    /// <summary>
+    /// Writes one of the SQL family's own properties. For an inline source the query and key column
+    /// belong to the report, so a cleared box clears the property and the engine rejects the config —
+    /// the honest outcome. For a <c>ref</c>-based source they are an optional overlay over the
+    /// registered definition (D42), where blank means "do not override": writing an empty one there
+    /// wins over a perfectly good stored query and breaks the next run, from a save that changed
+    /// nothing — because a report whose query lives in the definition hydrates these boxes empty.
+    /// </summary>
+    private static void SetOverlay(JsonObject properties, string key, string value, bool usesRef)
+    {
+        if (!usesRef || !string.IsNullOrWhiteSpace(value))
+            Set(properties, key, value);
+        else
+            Remove(properties, key);
     }
 
     // The generic editor shows the whole bag, so its rows are the whole bag: anything the user
@@ -337,6 +364,11 @@ public static class BuilderConfigMapper
 
     private static JsonArray BuildColumns(BuilderState state, JsonArray? original)
     {
+        // Untouched: hand back exactly what was stored. The text box is a lossy view of the array,
+        // and re-deriving from it is only safe once the user has actually said something new.
+        if (original is not null && state.ColumnNamesUnchanged)
+            return original.DeepClone().AsArray();
+
         var columns = new JsonArray();
         foreach (string name in state.ColumnNames.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {

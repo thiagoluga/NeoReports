@@ -74,6 +74,18 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
   taken" under every successful edit validation.
 - **Changing the source mid-edit now says the connection must be re-supplied**, rather than failing at
   save with a generic compile error.
+- **A `ref`-based ADO report keeps the query that lives in its registered definition.** Those boxes
+  hydrate blank, and the save wrote an empty `sql`/`key` overlay — which wins under D42, so the next
+  run failed from a save that changed only the page size.
+- **An unaddressed placeholder inside an output or destination is rejected**, rather than resolving
+  against `source.properties` and handing that section the source's credential.
+- **A column name containing a comma survives an edit.** The single comma-separated box split it in
+  two and retyped both as `String`; an untouched list is now written back as the stored array, and the
+  step warns when the box cannot represent a name.
+- **`validate?for={name}` says when that report has no stored configuration**, instead of complaining
+  about a placeholder the caller sent correctly.
+- **A `404` from `GET .../config` says so** instead of silently becoming a blank create wizard.
+- **Destination card selection matches case-insensitively**, like the rest of the destination matching.
 
 ### Added
 - **`GET /api/reports/{name}/config`** returns a config-origin report's stored document with
