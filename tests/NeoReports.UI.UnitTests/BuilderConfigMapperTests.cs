@@ -765,6 +765,30 @@ public class BuilderConfigMapperTests
     }
 
     [Fact]
+    public void A_ref_report_with_no_properties_member_at_all_gets_no_overlay()
+    {
+        var state = new BuilderState();
+        // Not an empty bag — no bag at all, which is what a report that takes everything from the
+        // registered source stores. Hydrate used to return early here and leave Reset()'s create-wizard
+        // defaults in place, so the non-blank one ("Id") was written back as a keyset-column overlay
+        // that wins over the definition (D42) — again from a save that only touched the page size.
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"ref":"sales-db"}}
+            """, _ => "sql").ShouldBeTrue();
+        state.KeyColumn.ShouldBe("");
+        state.PageSize = 250;
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        JsonElement source = doc.RootElement.GetProperty(SourceMember);
+        if (source.TryGetProperty(PropertiesMember, out JsonElement properties))
+        {
+            properties.TryGetProperty("key", out _).ShouldBeFalse();
+            properties.TryGetProperty("sql", out _).ShouldBeFalse();
+        }
+    }
+
+    [Fact]
     public void An_inline_ado_report_still_sends_its_own_query_and_key()
     {
         var state = new BuilderState();

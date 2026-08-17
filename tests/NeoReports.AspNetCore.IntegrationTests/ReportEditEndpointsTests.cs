@@ -9,6 +9,7 @@ using NeoReports.Abstractions;
 using NeoReports.AspNetCore.DependencyInjection;
 using NeoReports.Core.Configuration;
 using NeoReports.Core.DependencyInjection;
+using NeoReports.Core.Scheduling;
 using NeoReports.Formats.Csv;
 using Shouldly;
 using Xunit;
@@ -214,6 +215,65 @@ public class ReportEditEndpointsTests : IDisposable
         public Task<IReadOnlyList<(string Name, string Document)>> ListAsync(CancellationToken cancellationToken) => _inner.ListAsync(cancellationToken);
 
         public Task<string?> TryGetAsync(string name, CancellationToken cancellationToken) => _inner.TryGetAsync(name, cancellationToken);
+    }
+
+    /// <summary>
+    /// A replaced report's schedule has to reach the scheduler, in both directions. Nothing covered
+    /// this: inverting the branch that chooses between registering and removing left the whole suite
+    /// green, so an edit that added a cron could have quietly never run, and one that removed a cron
+    /// could have gone on firing on the old schedule until the next restart.
+    /// </summary>
+    [Fact]
+    public async Task Replacing_a_report_reconciles_its_schedule_in_both_directions()
+    {
+        var scheduler = new RecordingScheduler();
+        using IHost host = await TestApp.StartAsync(services =>
+        {
+            services.AddSingleton<IRecurringReportScheduler>(scheduler);
+            services.AddDynamicReports(o => o.Directory = _configDir);
+            services.AddSingleton<IConfigSourceProvider>(new FakeConfigSourceProvider(
+                new[] { new object?[] { 1L, "Acme" } }));
+            services.AddSingleton<IWriterFactory>(new CsvWriterFactory(new CsvOptions()));
+        });
+        HttpClient client = await CreateSalesAsync(host);
+
+        string scheduled = Original.Replace(
+            "\"pageSize\": 100", "\"pageSize\": 100,\n  \"schedule\": { \"cron\": \"0 6 * * *\" }", StringComparison.Ordinal);
+        (await SendJsonAsync(client, HttpMethod.Put, "/api/reports/sales", scheduled))
+            .StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        scheduler.Registered.ShouldContain(("sales", "0 6 * * *"));
+
+        // And back: dropping the schedule has to unregister it, not just stop mentioning it.
+        (await SendJsonAsync(client, HttpMethod.Put, "/api/reports/sales", Original))
+            .StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        scheduler.Removed.ShouldContain("sales");
+    }
+
+    private sealed class RecordingScheduler : IRecurringReportScheduler
+    {
+        public List<(string Name, string Cron)> Registered { get; } = [];
+
+        public List<string> Removed { get; } = [];
+
+        public Task RegisterRecurringAsync(string reportName, string cron, CancellationToken cancellationToken)
+        {
+            Registered.Add((reportName, cron));
+            return Task.CompletedTask;
+        }
+
+        public Task RemoveRecurringAsync(string reportName, CancellationToken cancellationToken)
+        {
+            Removed.Add(reportName);
+            return Task.CompletedTask;
+        }
+
+        public Task<DateTimeOffset?> GetNextOccurrenceAsync(string reportName, CancellationToken cancellationToken) =>
+            Task.FromResult<DateTimeOffset?>(null);
+
+        public Task<IReadOnlyList<string>> ListRegisteredNamesAsync(CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<string>>([]);
     }
 
     [Fact]

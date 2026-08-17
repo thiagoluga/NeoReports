@@ -205,9 +205,11 @@
         // NotFound counts too: Edit is only offered for a config-origin report, so a 404 here means it
         // was deleted or is code-registered — either way the user asked to edit something and must not
         // be handed a blank create form without a word.
+        // Ok with no document cannot happen through the client, but matching the document out rather
+        // than asserting it keeps that from becoming a null dereference if it ever does.
         _configOutcome = config.Outcome;
-        _configUnavailable = config.Outcome is not ApiConfigOutcome.Ok
-            || !BuilderConfigMapper.Hydrate(Wizard, config.Document!, RegisteredSourceType);
+        _configUnavailable = config is not { Outcome: ApiConfigOutcome.Ok, Document: { } document }
+            || !BuilderConfigMapper.Hydrate(Wizard, document, RegisteredSourceType);
 
         if (_configUnavailable)
             return;

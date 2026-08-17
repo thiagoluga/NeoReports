@@ -2030,6 +2030,70 @@ gone, producing a placeholder complaint instead of "that report no longer exists
 `GET .../config` still degraded to a silent blank wizard; and destination card selection was still an
 ordinal comparison after the rest of the destination matching went case-insensitive.
 
+### The seventh review pass
+
+Three real ones, and the shape of two of them is the same: **a rule that could only recognise the
+names it was told about.**
+
+- **A credential under a name nobody listed came back in plaintext.** The key matching covers
+  `password`, `token`, `connectionString` and the rest, and the value-based fallback covered URLs —
+  but `"dsn": "Host=db;Username=svc;Password=hunter2"`, `"conn": "…;Pwd=…"` and `"bearer": "eyJ…"`
+  matched neither, so `GET .../config` returned all three in full. The fallback now recognises the
+  *value*: a `keyword=value;…` string carrying a credential keyword (reusing the same key matching on
+  each keyword, so `Password`, `Pwd`, `AccountKey` and `SharedAccessSignature` all land) and a JWT.
+  Key lists cannot be completed; value shapes can be recognised.
+- **A section's address sent inside the source bag relocated a credential.** The sixth pass rejected
+  the bare form inside a section; this is its mirror, and it moved `destinations[0]`'s stored
+  `secretKey` into `source.properties`. Both are now one rule: a placeholder must have been issued
+  for the same *collection* it now sits in. The index may still differ — that is the whole reason the
+  address is carried, so a reordered or deduplicated section keeps its own value — but the collection
+  may not, because `Redact` never issues an address across collections. The first attempt at this was
+  a strict slot-equality check, and the reorder tests caught it immediately: they are the cases the
+  address mechanism was built for.
+- **Hydrate left the create wizard's defaults in place when the document had no `source.properties`.**
+  A `ref`-based report stores none, and `Reset()`'s `KeyColumn = "Id"` was then written back as a
+  report-local keyset overlay that wins over the registered definition (D42) — the same silent-repoint
+  as the sixth pass's empty overlay, from the *non-blank* default rather than the blank one. Hydrate
+  now assigns the fields it owns whether or not the bag is there; inheriting a create default into a
+  loaded document is never right.
+
+`ReconcileScheduleAsync` also had no coverage at all: inverting the branch that chooses between
+registering and removing left the whole suite green, so an edit that added a cron could have quietly
+never run. Now covered in both directions.
+
+### What the second security review changed
+
+The attack-path pass found one thing the line-by-line passes did not, and it is the sharper kind of
+finding: **a control defeated by an equivalent spelling, not by a missing check.**
+
+`Claims` was keyed on the address *text* while the lookup parsed it as a *number* under
+`NumberStyles.None`, which accepts leading zeros. So `destinations[0]` and `destinations[00]` were two
+claim keys resolving to one stored bag, and the one-bag-per-address rule — added in the fourth pass
+precisely to stop a duplicated section resolving the original's credential — never fired. A single PUT
+could hand two attacker-defined destinations the same stored `secretKey`. Addresses are now parsed
+once and required to be character-for-character what `Redact` emits; the claim key, the collection
+check and the lookup read the same canonical value instead of three near-agreeing spellings.
+
+The same pass also showed the "rejected in three places" claim was one place short: every guard walked
+only property bags, so a sentinel in a field like a column's `format` passed the create check, survived
+`Restore` untouched and was persisted as the literal string. No credential is involved and a bogus
+format string is inert, but the reserved sentinel is not allowed to reach disk. `Restore` now asserts
+the outcome — no placeholder anywhere in the document it returns — which is cheaper and more durable
+than enumerating every field that is not a bag.
+
+### Known limitation: no optimistic concurrency on PUT
+
+Two editors open the same report; the second reorders its destinations and saves; the first then
+saves a placeholder addressed `destinations[0]`, which resolves against the *reordered* stored
+document and restores the wrong section's credential. The carried address is what makes a
+single-editor reorder safe, and it cannot see a change made on the stored side between the GET and
+the PUT.
+
+Not fixed here, because the fix is new API surface — an `ETag` on `GET .../config` and `If-Match` on
+the PUT, with `412` when it does not match — and this ADR is already the secrets round-trip. Recorded
+so the next change to these endpoints starts from it rather than rediscovering it. Single-worker,
+single-maintainer v1 (rule 6) makes concurrent editors unlikely, not impossible.
+
 ### Verified end to end
 
 Driven in a browser against `samples/09-web-ui-live`: a report carrying a literal password, a

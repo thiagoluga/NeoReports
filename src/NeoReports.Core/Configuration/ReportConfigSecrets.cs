@@ -104,11 +104,19 @@ public static partial class ReportConfigSecrets
         return root.ToJsonString();
     }
 
-    /// <summary>True when any property value in the document is a redaction placeholder, at any depth.</summary>
+    /// <summary>
+    /// True when anything anywhere in the document is a redaction placeholder, at any depth.
+    /// </summary>
     /// <param name="document">The configuration document to inspect.</param>
     /// <exception cref="ConfigurationException">Thrown when the document is not valid JSON.</exception>
-    public static bool ContainsRedactedValue(string document) =>
-        PropertyBagSlots(ParseObject(document)).Any(slot => ContainsRedactedNode(slot.Bag));
+    /// <remarks>
+    /// The whole document, not only its property bags. <see cref="Redact"/> only ever writes a
+    /// placeholder into a bag, so a placeholder outside one is hand-written — and while it scanned only
+    /// bags, a sentinel in a field like a column's <c>format</c> passed this guard, survived
+    /// <see cref="Restore"/> untouched and was persisted as a literal. Nothing may carry a placeholder
+    /// to disk, whether or not a credential could have lived there.
+    /// </remarks>
+    public static bool ContainsRedactedValue(string document) => ContainsRedactedNode(ParseObject(document));
 
     /// <summary>
     /// Throws when <paramref name="document"/> is not a readable configuration document. Lets a
@@ -175,6 +183,19 @@ public static partial class ReportConfigSecrets
         foreach ((JsonObject bag, string? address) in PropertyBagSlots(root))
             RestoreMembers(bag, new RestoreContext(stored, bag, address, claims), []);
 
+        // The walk above only visits property bags, because that is the only place Redact writes one.
+        // A placeholder anywhere else is therefore hand-written, and used to pass straight through to
+        // disk — a column's "format", say, is not a credential, but persisting the literal sentinel
+        // still breaks the rule that it never survives a round-trip. Cheaper to assert the outcome than
+        // to enumerate every field that is not a bag.
+        if (ContainsRedactedNode(root))
+        {
+            throw new ConfigurationException(
+                "A redaction placeholder was sent outside a property bag, where no value is ever held " +
+                "back. It stands only for a source, output or destination property; send the real value " +
+                "instead.");
+        }
+
         return root.ToJsonString();
     }
 
@@ -201,6 +222,40 @@ public static partial class ReportConfigSecrets
         string.Equals(sentinel, RedactedValue, StringComparison.Ordinal)
             ? null
             : sentinel[AddressedPrefix.Length..^1];
+
+    /// <summary>
+    /// Rejects any address that is not character-for-character what <see cref="Redact"/> emits. Only
+    /// Redact issues these, so a spelling it would never produce can only have been hand-written — and
+    /// an *equivalent* spelling defeats the one-bag-per-address rule outright: the claim is keyed on the
+    /// address text while resolution parses it as a number, so <c>destinations[0]</c> and
+    /// <c>destinations[00]</c> counted as two claims on one stored bag, and both were resolved. Parsing
+    /// once, here, is what makes the claim key, the collection check and the lookup agree by
+    /// construction rather than by coincidence.
+    /// </summary>
+    private static string? CanonicalAddress(string? address)
+    {
+        if (address is null)
+            return null;
+
+        int open = address.IndexOf('[', StringComparison.Ordinal);
+        string collection = open < 0 ? address : address[..open];
+        bool wellFormed = open > 0
+            && address.EndsWith(']')
+            && (string.Equals(collection, OutputsMember, StringComparison.Ordinal)
+                || string.Equals(collection, DestinationsMember, StringComparison.Ordinal))
+            && int.TryParse(address[(open + 1)..^1], NumberStyles.None, CultureInfo.InvariantCulture, out int index)
+            && string.Equals(address, $"{collection}[{index.ToString(CultureInfo.InvariantCulture)}]", StringComparison.Ordinal);
+
+        if (!wellFormed)
+        {
+            throw new ConfigurationException(
+                $"The placeholder '{SentinelFor(address)}' does not name a slot this report can have. A " +
+                "placeholder is only ever issued by reading the report's configuration; send the real value " +
+                "instead of writing one by hand.");
+        }
+
+        return address;
+    }
 
     // A property-bag value is not always a scalar. An HTTP source declares "headers" as an object —
     // Authorization lives in there — and a merge-join source nests whole child sources, each with
@@ -284,7 +339,8 @@ public static partial class ReportConfigSecrets
             && sentinelValue.TryGetValue(out string? text)
             && IsRedactedPlaceholder(text))
         {
-            string? address = AddressOf(text);
+            string? address = CanonicalAddress(AddressOf(text));
+            RequireAddressMatchesCollection(context, address);
             ClaimAddress(context, address);
 
             if (!TryResolveStored(context.Stored, address, path, out JsonNode? original))
@@ -314,20 +370,40 @@ public static partial class ReportConfigSecrets
         return value;
     }
 
+    /// <summary>
+    /// A placeholder must have been issued for the same collection it now sits in. The index may
+    /// legitimately differ — the whole reason the address is carried is that the client may reorder
+    /// sections or drop an earlier one, and the placeholder still stands for its own value — but the
+    /// collection may not, because <see cref="Redact"/> never issues an address across collections.
+    /// Both directions have crossed the wires here: the bare form (which addresses the source) sent
+    /// inside a destination, and a section's address sent inside the source bag.
+    /// </summary>
+    private static void RequireAddressMatchesCollection(RestoreContext context, string? address)
+    {
+        if (string.Equals(CollectionOf(address), CollectionOf(context.SlotAddress), StringComparison.Ordinal))
+            return;
+
+        throw new ConfigurationException(
+            $"The placeholder '{Placeholder(address)}' was sent inside " +
+            $"'{context.SlotAddress ?? SourceMember}', which is not what it stands for. A placeholder only " +
+            $"ever names a slot of the collection it was issued for — '{CollectionOf(context.SlotAddress)}' " +
+            "here. Send the real value instead.");
+    }
+
+    /// <summary>The collection an address belongs to: the array name, or the source for the bare form.</summary>
+    private static string CollectionOf(string? address)
+    {
+        if (address is null)
+            return SourceMember;
+
+        int bracket = address.IndexOf('[', StringComparison.Ordinal);
+        return bracket < 0 ? address : address[..bracket];
+    }
+
+    private static string Placeholder(string? address) => address is null ? RedactedValue : SentinelFor(address);
+
     private static void ClaimAddress(RestoreContext context, string? address)
     {
-        // The bare placeholder addresses the source, and only Redact issues it — inside an output or
-        // destination bag it can only have been written by hand or pasted from the docs, and honouring
-        // it would hand that section the SOURCE's credential. That is the wire-crossing the addressed
-        // form exists to prevent, reached from the other direction.
-        if (address is null && context.SlotAddress is not null)
-        {
-            throw new ConfigurationException(
-                $"The unaddressed placeholder '{RedactedValue}' was sent inside '{context.SlotAddress}'. It stands " +
-                $"only for a source property; a section's placeholder names its own slot, as in " +
-                $"'{SentinelFor(context.SlotAddress)}'. Send the real value instead.");
-        }
-
         string claimed = address ?? SourceMember;
         if (context.Claims.TryGetValue(claimed, out JsonObject? owner) && !ReferenceEquals(owner, context.Bag))
         {
@@ -451,14 +527,41 @@ public static partial class ReportConfigSecrets
         if (IsSecretKey(key))
             return true;
 
-        // Value-based, and independent of the key name: a URL can be the credential itself, and the
-        // keys it lives under are the most innocuous ones there are — "url", "baseUrl",
-        // "instanceUrl", all required properties of the shipped HTTP-family sources. Two shapes:
-        // userinfo ("https://user:pass@host/…"), and a signed or keyed query, which is the entire
-        // point of an Azure SAS or an S3/GCS pre-signed URL.
-        return Uri.TryCreate(text, UriKind.Absolute, out Uri? uri)
-            && (!string.IsNullOrEmpty(uri.UserInfo) || HasCredentialQueryParameter(uri));
+        // Value-based, and independent of the key name: the key matching above can only recognise names
+        // it was told about, and a credential does not stop being one under a name nobody listed —
+        // "dsn", "conn", "bearer". These three shapes are recognisable from the value alone.
+        return HasCredentialInUrl(text) || HasCredentialKeyword(text) || LooksLikeJsonWebToken(text);
     }
+
+    /// <summary>
+    /// A URL that is itself the credential. The keys these live under are the most innocuous there
+    /// are — <c>url</c>, <c>baseUrl</c>, <c>instanceUrl</c>, all required properties of the shipped
+    /// HTTP-family sources. Two shapes: userinfo (<c>https://user:pass@host/…</c>), and a signed or
+    /// keyed query, which is the entire point of an Azure SAS or an S3/GCS pre-signed URL.
+    /// </summary>
+    private static bool HasCredentialInUrl(string text) =>
+        Uri.TryCreate(text, UriKind.Absolute, out Uri? uri)
+        && (!string.IsNullOrEmpty(uri.UserInfo) || HasCredentialQueryParameter(uri));
+
+    /// <summary>
+    /// A <c>keyword=value;…</c> connection string carrying a credential keyword. The key it sits under
+    /// is no help: only names containing <c>connectionString</c> were caught, so the same value under
+    /// <c>dsn</c> or <c>conn</c> was returned in full. Reuses the key matching on each keyword, so
+    /// <c>Password</c>, <c>Pwd</c>, <c>AccountKey</c> and <c>SharedAccessSignature</c> all land.
+    /// </summary>
+    private static bool HasCredentialKeyword(string text) =>
+        text.Contains('=', StringComparison.Ordinal)
+        && text.Split(';', StringSplitOptions.RemoveEmptyEntries)
+            .Where(segment => segment.Contains('=', StringComparison.Ordinal))
+            .Select(segment => segment[..segment.IndexOf('=', StringComparison.Ordinal)].Trim())
+            .Any(IsSecretKey);
+
+    /// <summary>
+    /// A JWT, which is a bearer credential wherever it appears. <c>eyJ</c> is base64 for the opening
+    /// of the JSON header, and the two dots are the compact serialisation's own delimiters.
+    /// </summary>
+    private static bool LooksLikeJsonWebToken(string text) =>
+        text.StartsWith("eyJ", StringComparison.Ordinal) && text.Count(character => character == '.') == 2;
 
     private static bool HasCredentialQueryParameter(Uri uri)
     {

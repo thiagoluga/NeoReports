@@ -178,8 +178,11 @@ public static class BuilderConfigMapper
         if (string.IsNullOrEmpty(state.SourceType) && !string.IsNullOrWhiteSpace(state.SourceRef))
             state.SourceType = resolveRegisteredSourceType?.Invoke(state.SourceRef) ?? "";
 
-        if (Get(source, PropertiesMember) is not JsonObject properties)
-            return;
+        // Assigned whether or not the document has a bag, never left at whatever Reset() put there for
+        // the create wizard. A ref-based report stores no properties of its own, and the leftover
+        // KeyColumn default ("Id") was then written back as a report-local overlay that wins over the
+        // registry (D42) — an edit to the page size alone silently repointed the keyset column.
+        JsonObject? properties = Get(source, PropertiesMember) as JsonObject;
 
         if (state.UsesAdoSqlShape)
         {
@@ -190,7 +193,7 @@ public static class BuilderConfigMapper
         {
             // Every property is shown, including any the engine redacted — the placeholder is
             // editable text, so replacing it replaces the value and leaving it keeps the stored one.
-            state.SourceProperties = properties
+            state.SourceProperties = (properties ?? [])
                 .Where(pair => !string.Equals(pair.Key, ConnectionStringProperty, StringComparison.OrdinalIgnoreCase))
                 .Select(pair => new PropertyRow
                 {
@@ -553,8 +556,8 @@ public static class BuilderConfigMapper
     // The engine matches member names case-insensitively, so a hand-written document may spell them
     // any way it likes; reading and writing through these keeps a patched document from ending up
     // with both "Source" and "source".
-    private static JsonNode? Get(JsonObject owner, string name) =>
-        owner.FirstOrDefault(pair => string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase)).Value;
+    private static JsonNode? Get(JsonObject? owner, string name) =>
+        owner?.FirstOrDefault(pair => string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase)).Value;
 
     private static bool HasMember(JsonObject owner, string name) =>
         owner.Any(pair => string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase));

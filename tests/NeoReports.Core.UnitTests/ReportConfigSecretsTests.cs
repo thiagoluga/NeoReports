@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using NeoReports.Abstractions;
 using NeoReports.Core.Configuration;
 using Shouldly;
@@ -421,6 +422,37 @@ public class ReportConfigSecretsTests
     }
 
     [Fact]
+    public void A_placeholder_inside_an_array_property_that_reaches_compilation_is_rejected()
+    {
+        // The array arm of the guard, which the object case above does not exercise: a property whose
+        // value is a JSON array carries its elements as a JsonElement, so a sentinel sitting in one is
+        // invisible to both a string comparison and an object walk.
+        using JsonDocument mirrors = JsonDocument.Parse(
+            $$"""["https://a.example", "{{ReportConfigSecrets.RedactedValue}}"]""");
+
+        Should.Throw<ConfigurationException>(() => ReportConfigEnvironment.Substitute(new ReportConfig(
+            "sales",
+            new SourceConfig("http", new Dictionary<string, object?> { ["mirrors"] = mirrors.RootElement.Clone() }),
+            [new ColumnConfig("Id", ColumnType.Integer)],
+            [new OutputConfig("csv")])));
+    }
+
+    [Fact]
+    public void A_placeholder_nested_below_an_array_element_is_rejected()
+    {
+        // An array of objects: the guard has to alternate between both arms to reach the sentinel.
+        using JsonDocument children = JsonDocument.Parse(
+            """[{"name":"a"},{"credentials":{"apiKey":"SENTINEL"}}]"""
+                .Replace("SENTINEL", ReportConfigSecrets.RedactedValue, StringComparison.Ordinal));
+
+        Should.Throw<ConfigurationException>(() => ReportConfigEnvironment.Substitute(new ReportConfig(
+            "sales",
+            new SourceConfig("merge", new Dictionary<string, object?> { ["children"] = children.RootElement.Clone() }),
+            [new ColumnConfig("Id", ColumnType.Integer)],
+            [new OutputConfig("csv")])));
+    }
+
+    [Fact]
     public void ContainsRedactedValue_sees_a_nested_placeholder()
     {
         ReportConfigSecrets.ContainsRedactedValue(
@@ -574,6 +606,151 @@ public class ReportConfigSecretsTests
             .Replace("SENTINEL", sentinel, StringComparison.Ordinal);
 
         Should.Throw<ConfigurationException>(() => ReportConfigSecrets.Restore(incoming, stored));
+    }
+
+    // The key list can only recognise names it was told about. These values are credentials under names
+    // nobody would think to list, so the value itself has to give them away.
+    [Theory]
+    [InlineData("dsn", "Host=db.internal;Username=svc;Password=hunter2")]
+    [InlineData("conn", "Server=tcp:db,1433;User ID=sa;Pwd=hunter2;Encrypt=true")]
+    [InlineData("store", "DefaultEndpointsProtocol=https;AccountName=acct;AccountKey=Zm9vYmFy==")]
+    [InlineData("blob", "BlobEndpoint=https://acct.blob.core.windows.net;SharedAccessSignature=sv=2021")]
+    [InlineData("bearer", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")]
+    public void A_credential_is_redacted_from_its_value_when_the_key_name_says_nothing(string key, string value)
+    {
+        string document = """{"source":{"type":"custom","properties":{"KEY":"VALUE"}}}"""
+            .Replace("KEY", key, StringComparison.Ordinal)
+            .Replace("VALUE", value, StringComparison.Ordinal);
+
+        string redacted = ReportConfigSecrets.Redact(document);
+
+        SourceProperty(redacted, key).ShouldBe(ReportConfigSecrets.RedactedValue);
+        // And it still round-trips: what the editor could not see comes back untouched.
+        SourceProperty(ReportConfigSecrets.Restore(redacted, document), key).ShouldBe(value);
+    }
+
+    [Theory]
+    [InlineData("pageSize", "1000")]
+    [InlineData("sql", "select Id, Name from Sales where Region = 'x'")]
+    [InlineData("url", "https://api.example.com/v1/orders?top=50&skip=0")]
+    [InlineData("mode", "Append=true;Overwrite=false")]
+    public void An_ordinary_value_is_still_returned_in_full(string key, string value)
+    {
+        string document = """{"source":{"type":"custom","properties":{"KEY":"VALUE"}}}"""
+            .Replace("KEY", key, StringComparison.Ordinal)
+            .Replace("VALUE", value, StringComparison.Ordinal);
+
+        SourceProperty(ReportConfigSecrets.Redact(document), key).ShouldBe(value);
+    }
+
+    // Compared through the parsed document, not the raw JSON: System.Text.Json escapes ' and & by
+    // default, so a raw-string assertion fails on an untouched value that merely contains one.
+    private static string? SourceProperty(string document, string key) =>
+        JsonNode.Parse(document)?["source"]?["properties"]?[key]?.ToString();
+
+    // The mirror of the bare-placeholder-in-a-section case: an address only ever names a slot of the
+    // collection it was issued for. The index may differ (a reordered section keeps its own value, as
+    // the tests above require), but the collection may not — honouring that would move a credential
+    // the editor cannot see into a slot Redact never took it from.
+    [Theory]
+    [InlineData(
+        """{"source":{"type":"s3","properties":{"secretKey":"${neoreports:redacted:destinations[0]}"}},"destinations":[{"type":"s3","properties":{"secretKey":"stored"}}]}""")]
+    [InlineData(
+        """{"source":{"type":"s3","properties":{"secretKey":"${neoreports:redacted:outputs[0]}"}},"outputs":[{"format":"csv","properties":{"secretKey":"stored"}}]}""")]
+    public void A_section_address_sent_inside_the_source_bag_is_rejected(string incoming)
+    {
+        const string stored = """
+            {"source":{"type":"s3","properties":{"secretKey":"source-secret"}},
+             "destinations":[{"type":"s3","properties":{"secretKey":"destination-secret"}}],
+             "outputs":[{"format":"csv","properties":{"secretKey":"output-secret"}}]}
+            """;
+
+        Should.Throw<ConfigurationException>(() => ReportConfigSecrets.Restore(incoming, stored))
+            .Message.ShouldContain("source");
+    }
+
+    [Fact]
+    public void An_address_from_another_collection_is_rejected()
+    {
+        // A destination's address inside an output bag. Reordering can never turn one into the other,
+        // so this can only have been written by hand — and it would hand the output the destination's
+        // credential.
+        const string stored = """
+            {"source":{"type":"sql","properties":{"sql":"select 1"}},
+             "outputs":[{"format":"csv","properties":{"secretKey":"output-secret"}}],
+             "destinations":[{"type":"s3","properties":{"secretKey":"destination-secret"}}]}
+            """;
+        const string incoming = """
+            {"source":{"type":"sql","properties":{"sql":"select 1"}},
+             "outputs":[{"format":"csv","properties":{"secretKey":"${neoreports:redacted:destinations[0]}"}}],
+             "destinations":[{"type":"s3","properties":{"secretKey":"real"}}]}
+            """;
+
+        Should.Throw<ConfigurationException>(() => ReportConfigSecrets.Restore(incoming, stored))
+            .Message.ShouldContain("outputs");
+    }
+
+    // Only Redact issues an address, and it always spells the index canonically. An equivalent spelling
+    // defeated the one-bag-per-address rule outright: the claim was keyed on the address text while the
+    // lookup parsed it as a number, so these counted as two claims on one stored bag and BOTH were
+    // resolved — handing two attacker-defined destinations a credential the caller was never shown.
+    [Theory]
+    [InlineData("destinations[00]")]
+    [InlineData("destinations[+0]")]
+    [InlineData("destinations[ 0]")]
+    [InlineData("destinations[000]")]
+    public void A_non_canonical_address_index_is_rejected(string address)
+    {
+        const string stored = """
+            {"source":{"type":"sql","properties":{"sql":"select 1"}},
+             "outputs":[{"format":"csv","properties":{"secretKey":"output-secret"}}],
+             "destinations":[{"type":"s3","properties":{"secretKey":"SUPERSECRET"}}]}
+            """;
+        string incoming = """
+            {"source":{"type":"sql","properties":{"sql":"select 1"}},
+             "outputs":[{"format":"csv","properties":{"secretKey":"keep"}}],
+             "destinations":[{"type":"s3","properties":{"secretKey":"${neoreports:redacted:ADDRESS}"}}]}
+            """.Replace("ADDRESS", address, StringComparison.Ordinal);
+
+        Should.Throw<ConfigurationException>(() => ReportConfigSecrets.Restore(incoming, stored));
+    }
+
+    [Fact]
+    public void Two_destinations_cannot_both_resolve_one_stored_credential()
+    {
+        // The end the non-canonical index was a means to: the guard must hold however the address is
+        // spelled, so the whole-scenario assertion sits next to the spelling one.
+        const string stored = """
+            {"source":{"type":"sql","properties":{"sql":"select 1"}},
+             "destinations":[{"type":"s3","properties":{"bucket":"prod","secretKey":"SUPERSECRET"}}]}
+            """;
+        const string incoming = """
+            {"source":{"type":"sql","properties":{"sql":"select 1"}},
+             "destinations":[
+               {"type":"s3","properties":{"bucket":"attacker-a","secretKey":"${neoreports:redacted:destinations[0]}"}},
+               {"type":"s3","properties":{"bucket":"attacker-b","secretKey":"${neoreports:redacted:destinations[00]}"}}]}
+            """;
+
+        string message = Should.Throw<ConfigurationException>(
+            () => ReportConfigSecrets.Restore(incoming, stored)).Message;
+
+        message.ShouldNotContain("SUPERSECRET");
+    }
+
+    [Fact]
+    public void A_placeholder_outside_a_property_bag_never_reaches_disk()
+    {
+        // Not a credential — a column's "format" is not a value anything holds back — but the sentinel
+        // is reserved, and it used to pass the create guard, survive Restore untouched and be persisted
+        // as the literal string.
+        const string document = """
+            {"name":"sales","source":{"type":"sql","properties":{"sql":"select 1"}},
+             "columns":[{"name":"Id","type":"Integer","format":"${neoreports:redacted}"}],
+             "outputs":[{"format":"csv"}]}
+            """;
+
+        ReportConfigSecrets.ContainsRedactedValue(document).ShouldBeTrue();
+        Should.Throw<ConfigurationException>(() => ReportConfigSecrets.Restore(document, document));
     }
 
     [Fact]
