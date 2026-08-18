@@ -472,7 +472,7 @@ public class ReportEditEndpointsTests : IDisposable
         HttpClient client = await CreateSalesAsync(host);
 
         HttpResponseMessage config = await client.GetAsync("/api/reports/sales/config");
-        string weak = "W/" + config.Headers.ETag!.ToString();
+        string weak = $"W/{config.Headers.ETag}";
 
         string edited = Original.Replace("\"pageSize\": 100", "\"pageSize\": 250", StringComparison.Ordinal);
         (await SendJsonAsync(client, HttpMethod.Put, "/api/reports/sales", edited, weak)).StatusCode
