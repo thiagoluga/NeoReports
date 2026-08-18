@@ -211,6 +211,10 @@
         _configUnavailable = config is not { Outcome: ApiConfigOutcome.Ok, Document: { } document }
             || !BuilderConfigMapper.Hydrate(Wizard, document, RegisteredSourceType);
 
+        // Kept whatever the outcome: Hydrate clears it through Reset(), and a null here simply means
+        // the save states no precondition, which is the pre-D87 behaviour rather than a failure.
+        Wizard.OriginalVersion = config.Version;
+
         if (_configUnavailable)
             return;
 

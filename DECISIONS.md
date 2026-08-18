@@ -2129,3 +2129,74 @@ formats was opened in the Builder — every step prefilled — its page size cha
 stored document came back with the password intact, the filter intact, the column type and display
 name intact, `90` still a number, and the new page size applied. Saving with no changes at all
 reproduces the original document.
+
+## D87 — Optimistic concurrency on report editing (2026-08-18)
+
+Closes the one gap D86 recorded and did not fix.
+
+### The window
+
+D86's redaction placeholder carries the address of the slot its value came from —
+`${neoreports:redacted:destinations[1]}` — so a client may reorder, remove or retype sections and each
+placeholder still resolves to its own stored value. That is exactly what makes a *single* editor safe.
+
+It is blind in the other direction. The address names a slot of the document **as it was at the
+`GET`**, and `PUT` resolves it against the document **as it is now**. Between the two, another editor
+can reorder the destinations, and `destinations[0]` then addresses a different bucket than the one the
+first editor was shown. The result is the wrong section's credential restored into a section the
+caller defined — the precise outcome the address exists to prevent, reached through the stored side
+rather than the incoming one.
+
+### The decision: an HTTP validator, not a lock
+
+`GET /reports/{name}/config` returns an `ETag`. `PUT /reports/{name}` accepts `If-Match` and answers
+`412 Precondition Failed` when it no longer matches. Three properties matter:
+
+- **The validator is over the *redacted* form — the bytes the client was given.** The first cut hashed
+  the *stored* document, on the reasoning that it is what `Restore` resolves against. The security pass
+  showed that reasoning bought a real weakening: the redacted body and the stored document are
+  byte-identical apart from the redacted values, so publishing a hash of the stored document hands any
+  caller a free, offline **verification oracle** — reconstruct a candidate document with a guessed
+  connection string, hash it, compare. The secret still never leaves the host, but the host would
+  confirm guesses about it, at unlimited speed and with no failed login on the database to notice.
+  Hashing the redacted form removes that entirely: the tag carries nothing the client does not already
+  hold. It is also still the *right* validator, which is the part that makes this cheap — an address is
+  invalidated by a change to the document's **structure** (sections added, removed, reordered), and
+  that structure is wholly visible in the redacted body. A change to a secret *value* moves no address,
+  and an editor sending a placeholder back is asking for whatever is stored now, so resolving to the
+  newer secret is the correct outcome rather than a conflict.
+- **A keyed MAC was considered and rejected.** An HMAC under a per-process key also removes the oracle,
+  but its tags do not survive a restart and, worse, differ between instances — a load-balanced host
+  would answer `412` at random depending on which instance received the save. Deriving the key from
+  Data Protection would fix that and costs a dependency and a key-management story, for no benefit over
+  simply not hashing the secret in the first place.
+- **`If-Match` is optional, and honoured when sent.** Requiring it would break every existing client
+  of an endpoint that shipped one release ago, to protect against a window those clients are not
+  exposed to any more than they were yesterday. The realistic scenario is two people in the Builder,
+  and the Builder always sends it. A caller that omits the header gets exactly D86's behaviour.
+- **The comparison happens against the same read that `Restore` uses.** Reading the stored document
+  once and using it for both the check and the merge is what makes the check meaningful; re-reading
+  would reintroduce the window inside the handler.
+
+`*` is accepted with its RFC 9110 meaning — "if the resource exists" — which the handler has already
+established by the time it looks.
+
+### Why not a lock, a version column, or a last-modified date
+
+A lock needs a lifetime and an owner, and a browser tab that closes has neither. A version number in
+the document would be config the user can edit, and editing it is exactly what the field must survive.
+`Last-Modified` has one-second resolution, which is wider than the window it is guarding.
+
+### Not covered
+
+Two editors whose changes do not overlap still lose one of them — the second gets a `412` and has to
+reload. Merging concurrent edits is out of scope for v1 and would need a per-field model the config
+document does not have.
+
+The check is also **check-then-act, not atomic**: `IReportConfigStore` has no compare-and-swap, so a
+third writer landing between the comparison and `SaveAsync` is still not caught. That residual window
+is microseconds of in-process work rather than the human-scale minutes an editor spends on a form,
+which is the window worth closing and the one this closes. Making it atomic would mean a new
+store-contract method — a change to an interface every custom store implements, for a race that needs
+two saves inside the same instant. Recorded rather than papered over: this narrows the window, it does
+not serialise writes.

@@ -17,11 +17,37 @@ public sealed class BuilderTests : NeoReportsTestContext
     }
 
     /// <summary>Arms the wizard to open on <paramref name="name"/> with the given stored document (ADR D86).</summary>
-    private void SetupEditing(string name, string configDocument)
+    private void SetupEditing(string name, string configDocument, string? version = null)
     {
-        Api.ReportConfig = (_, _) => Task.FromResult(new ApiConfigResult(ApiConfigOutcome.Ok, configDocument));
+        Api.ReportConfig = (_, _) => Task.FromResult(new ApiConfigResult(ApiConfigOutcome.Ok, configDocument, version));
         var nav = Services.GetRequiredService<NavigationManager>();
         nav.NavigateTo(nav.GetUriWithQueryParameter("edit", name));
+    }
+
+    // ADR D87: the wizard has to carry the validator from the read to the save, or the precondition
+    // the engine now enforces is never actually stated by the one client that has something to lose.
+    [Fact]
+    public void Editing_carries_the_configurations_entity_tag_into_the_wizard()
+    {
+        SetupEngineAvailable(["sql"]);
+        SetupEditing("sales", """{"name":"sales","source":{"type":"sql","properties":{"sql":"SELECT 1"}}}""", "\"abc123\"");
+
+        Render<Builder>();
+
+        Wizard.OriginalVersion.ShouldBe("\"abc123\"");
+    }
+
+    [Fact]
+    public void An_engine_that_sends_no_entity_tag_leaves_the_wizard_stating_no_precondition()
+    {
+        SetupEngineAvailable(["sql"]);
+        SetupEditing("sales", """{"name":"sales","source":{"type":"sql","properties":{"sql":"SELECT 1"}}}""");
+
+        Render<Builder>();
+
+        // Not an error: a host from before D87 simply gets the old behaviour rather than a save that
+        // cannot be made at all.
+        Wizard.OriginalVersion.ShouldBeNull();
     }
 
     [Fact]

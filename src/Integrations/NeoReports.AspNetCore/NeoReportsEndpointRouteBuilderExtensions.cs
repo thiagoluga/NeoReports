@@ -407,7 +407,13 @@ public static class NeoReportsEndpointRouteBuilderExtensions
 
         try
         {
-            return Results.Text(ReportConfigSecrets.Redact(document), "application/json");
+            string redacted = ReportConfigSecrets.Redact(document);
+
+            // ADR D87. Deliberately a validator over what the CLIENT can see: hashing the stored
+            // document instead would let a caller confirm a guessed connection string offline, since
+            // the two differ only in the redacted values.
+            http.Response.Headers.ETag = ReportConfigETag.For(document);
+            return Results.Text(redacted, "application/json");
         }
         catch (ConfigurationException ex)
         {
@@ -597,6 +603,26 @@ public static class NeoReportsEndpointRouteBuilderExtensions
                 statusCode: StatusCodes.Status500InternalServerError);
         }
 
+        // Optimistic concurrency (ADR D87), checked against the very document Restore is about to
+        // resolve against — re-reading here would reopen the window it exists to close. A request
+        // without If-Match states no precondition and behaves exactly as it did before D87.
+        if (!ReportConfigETag.Allows(http.Request.Headers.IfMatch, stored))
+        {
+            // Shaped like every other rejection this endpoint returns, not as ProblemDetails: the
+            // client reads `error`, so a ProblemDetails body left it with nothing to show and the
+            // user was told the configuration was invalid instead of being told to reload — which is
+            // the entire point of answering 412 rather than saving.
+            return Results.Json(
+                new
+                {
+                    error = $"'{name}' changed since you opened it — another editor saved it in the " +
+                            "meantime. Reload the report and apply your change again. Saving now could " +
+                            "resolve a held-back value against a section that is no longer the one it " +
+                            "came from.",
+                },
+                statusCode: StatusCodes.Status412PreconditionFailed);
+        }
+
         string document = await ReadBodyAsync(http, cancellationToken).ConfigureAwait(false);
 
         ReportConfig config;
@@ -667,6 +693,12 @@ public static class NeoReportsEndpointRouteBuilderExtensions
         }
 
         await ReconcileScheduleAsync(name, compiled, scheduler, http, cancellationToken).ConfigureAwait(false);
+
+        // The validator for what was just stored (ADR D87). Without it an editor's captured tag goes
+        // stale the instant its own save succeeds, so any second save from the same page — a retry
+        // after "Run now" failed to start, a double-click — would be refused with a 412 that names a
+        // conflict with itself.
+        http.Response.Headers.ETag = ReportConfigETag.For(document);
 
         var columns = compiled.Schema.Columns.Select(c => c.Name).ToArray();
         return Results.Ok(new ReportCreatedResponse(name, columns));

@@ -8,6 +8,16 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 
 ## [Unreleased]
 
+### Added
+- **Optimistic concurrency on report editing (ADR D87).** `GET /api/reports/{name}/config` now returns
+  an `ETag`, and `PUT /api/reports/{name}` honours `If-Match`, answering `412 Precondition Failed`
+  when the stored document changed since it was read. This closes the window D86 recorded and left
+  open: the redaction placeholder carries the address of the slot its value came from, so if another
+  editor reorders the destinations between the `GET` and the `PUT`, `destinations[0]` addresses a
+  different bucket than the one the first editor was shown — and the wrong section's credential is
+  restored. The header is **optional**, so clients that do not send it keep working exactly as before;
+  the Builder always sends it.
+
 ### Fixed
 - **Editing a report in the Builder no longer starts from a blank form (ADR D86).** Reported by the
   maintainer: *Edit* prefilled almost nothing the report actually reads from — source type, query, key
