@@ -71,16 +71,40 @@ enterprise-readiness and test coverage, and shipped everything actionable.
 >    as a *different, plausible* date rather than being unrepresentable. Measuring also turned up
 >    `DateTime.MinValue` silently becoming `1899-12-30`, and a year below 100 throwing out of
 >    `ToOADate` and **aborting the whole workbook**. One range check closes all four.
-> 4. **CA1068-style next-major bundling** (§1) and the CI hardening in §2.
+> 4. ~~**CA1068-style next-major bundling** (§1) and the CI hardening in §2.~~ — **both SHIPPED**:
+>    §1 went out in **v2.0.0** (2026-08-08) and §2 is done (`DockerGate`, hard-fail under
+>    `NEOREPORTS_REQUIRE_DOCKER=1`).
+>
+> **State as of 2026-08-18.** With §1–§4 and §6 closed, exactly two things remain open, and each needs
+> the maintainer:
+>
+> - **§1b — no optimistic concurrency on report editing.** New API surface (`ETag` / `If-Match` /
+>   `412`); the concurrent-editor window can restore the wrong section's credential.
+> - **§5 — PostgreSQL `timetz` drops its zone.** Needs a `Time`/`TimeTz` split in the frozen
+>   `ColumnType` enum plus its own cursor-encoding decision, so it is a next-major item with a design
+>   question attached, not a cast.
 
 
-### 1. Next-major breaking cleanup (needs a 2.0 line)
+### 1. Next-major breaking cleanup — **SHIPPED in v2.0.0 (2026-08-08)**
 - **Remove the never-thrown ABI exceptions** — already done in #228, tagged for the next major.
 - **CA1068: `CancellationToken` not last** in three **public** health signatures — **done**: the
   token was moved to last (after `pingSql`/`content`, both defaulted) in `AdoSourceHealth.PingAsync`,
   `AdoSourceHealth.CheckConnectionStringAsync` and `HttpHealthProbe.SendAsync`, and all callers
   updated. Source-breaking for positional callers, so tagged **next-major** in `CHANGELOG.md`
   (Changed → breaking, public API) alongside the #228 removal.
+
+### 1b. Report editing: no optimistic concurrency on PUT (ADR D86, 2026-08-18)
+
+Two editors open the same report; the second reorders its destinations and saves; the first then saves
+a placeholder addressed `destinations[0]`, which resolves against the **reordered** stored document and
+restores the wrong section's credential. The carried address is exactly what makes a *single*-editor
+reorder safe, and it cannot see a change made on the stored side between the `GET .../config` and the
+`PUT`.
+
+Not fixed with D86 because the fix is new API surface — an `ETag` on `GET /reports/{name}/config` and
+`If-Match` on `PUT /reports/{name}`, answering `412` when they disagree — and that ADR was already the
+secrets round-trip. Single-worker, single-maintainer v1 (architecture rule 6) makes concurrent editors
+unlikely, not impossible. Recorded so the next change to these endpoints starts from it.
 
 ### 2. CI hardening
 - **Fail (not skip) the Testcontainers integration tests when Docker is absent in CI.** — **done**:
