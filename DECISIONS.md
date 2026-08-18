@@ -2081,6 +2081,33 @@ format string is inert, but the reserved sentinel is not allowed to reach disk. 
 the outcome — no placeholder anywhere in the document it returns — which is cheaper and more durable
 than enumerating every field that is not a bag.
 
+### The eighth review pass: the value rule was too eager
+
+The seventh pass fixed a credential returned in plaintext by teaching the value rule to recognise a
+connection string. That rule read *everything before the first* `=` as a keyword — and a SQL query
+has an `=` in it. `SELECT a.author_name, a.id FROM articles a WHERE a.id = @id` therefore had the
+keyword `SELECT a.author_name, a.id FROM articles a WHERE a.id`, which contains `auth`, so the whole
+query came back as a sentinel and editing one column meant retyping it from memory.
+
+That is this ADR's own opening complaint, reintroduced by its own fix, on SQL — the primary v1
+source. `session_id`, `product_key`, `password_reset_at` and `token_hash` in a `WHERE` clause all did
+the same.
+
+The rule was under-specified about what a *keyword* is. Real ones are short and word-shaped —
+`Password`, `Pwd`, `User ID`, `AccountKey`, `SharedAccessSignature`, the longest at 21 characters and
+the wordiest at three words. A clause is not: it carries punctuation a keyword never does (`.`, `,`,
+`*`, quotes, parentheses) or runs to more words than any keyword has. Requiring that shape keeps
+every credential the seventh pass caught and returns every query untouched.
+
+**The general lesson, and the reason it is written down rather than just fixed:** a guard widened to
+close a leak has to be measured against the *ordinary* values it will now see, not only against the
+credential it was written for. Five negative-control cases with real query text now sit beside the
+positive ones, because the positives alone stayed green through the whole regression.
+
+Two smaller ones from the same pass: the "this value was held back" hint was rendered only beside the
+generic property list, so a sentinel in the SQL or key box had no explanation at all — it belongs to
+the step, not to one of its editors. And the README said "those three routes" while listing five.
+
 ### Known limitation: no optimistic concurrency on PUT
 
 Two editors open the same report; the second reorders its destinations and saves; the first then

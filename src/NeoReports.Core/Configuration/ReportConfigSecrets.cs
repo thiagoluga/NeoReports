@@ -73,6 +73,12 @@ public static partial class ReportConfigSecrets
     // list carries the bare substring and this is the single exception carved out of it.
     private const string KeysetColumnProperty = "key";
 
+    // Bounds on what may be read as a connection-string keyword. The longest real credential keyword
+    // is "SharedAccessSignature" (21 characters); the wordiest is "Persist Security Info" (3 words).
+    // Past either it is a clause that merely contains a credential word, not a keyword.
+    private const int MaxKeywordLength = 32;
+    private const int MaxKeywordWords = 3;
+
     // Query-parameter names that carry a credential without matching a fragment above: Azure SAS
     // ("sv"/"sig"), OAuth's "?code=", Google's "?key=". AWS/GCS pre-signed URLs are already covered
     // ("X-Amz-Signature" contains "signature", "AWSAccessKeyId" contains "key").
@@ -554,7 +560,26 @@ public static partial class ReportConfigSecrets
         && text.Split(';', StringSplitOptions.RemoveEmptyEntries)
             .Where(segment => segment.Contains('=', StringComparison.Ordinal))
             .Select(segment => segment[..segment.IndexOf('=', StringComparison.Ordinal)].Trim())
-            .Any(IsSecretKey);
+            .Any(keyword => IsConnectionStringKeyword(keyword) && IsSecretKey(keyword));
+
+    /// <summary>
+    /// Whether text that sits before an <c>=</c> is plausibly a connection-string keyword rather than
+    /// an expression that merely contains one. Without this the rule read everything before the first
+    /// <c>=</c> as a keyword, so <c>… WHERE a.id = @id</c> was one — and <c>auth</c> inside
+    /// <c>author_name</c> redacted a whole SQL query, which is the primary v1 source and the exact
+    /// thing this ADR exists to keep editable.
+    /// </summary>
+    /// <remarks>
+    /// The real names are short and word-shaped: <c>Password</c>, <c>Pwd</c>, <c>User ID</c>,
+    /// <c>AccountKey</c>, <c>SharedAccessSignature</c>, <c>Persist Security Info</c>. A clause is not:
+    /// it carries punctuation a keyword never does (<c>.</c>, <c>,</c>, <c>*</c>, quotes, parentheses)
+    /// or runs to more words than any keyword has.
+    /// </remarks>
+    private static bool IsConnectionStringKeyword(string keyword) =>
+        keyword.Length is > 0 and <= MaxKeywordLength
+        && keyword.All(character =>
+            char.IsAsciiLetterOrDigit(character) || character is ' ' or '_' or '-')
+        && keyword.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length <= MaxKeywordWords;
 
     /// <summary>
     /// A JWT, which is a bearer credential wherever it appears. <c>eyJ</c> is base64 for the opening

@@ -69,6 +69,10 @@
                     <div class="field"><span class="label-sm">Connection</span><span class="muted" style="font-size:12px;align-self:center">resolved from <span class="mono">@Wizard.SourceRef</span> on every run</span></div>
                 }
             </div>
+            @if (HasRedactedValue)
+            {
+                <span class="muted" style="font-size:11px;display:block">A value starting with <span class="mono">${neoreports:redacted</span> is one the engine held back. Leave it to keep the stored value; overwrite it to replace it.</span>
+            }
             @if (Wizard.UsesAdoSqlShape)
             {
                 <div class="field">
@@ -85,10 +89,6 @@
                 <div class="field">
                     <span class="label-sm">Source properties <span class="muted" style="font-weight:400">— use <span class="mono">${VAR}</span> for secrets</span></span>
                     <span class="muted mono" style="font-size:11px;display:block;margin-bottom:6px">Common for "@Wizard.SourceType": @PropertyHintFor(Wizard.SourceType)</span>
-                    @if (HasRedactedProperty)
-                    {
-                        <span class="muted" style="font-size:11px;display:block;margin-bottom:6px">A value starting with <span class="mono">${neoreports:redacted</span> is one the engine held back. Leave it to keep the stored value; overwrite it to replace it.</span>
-                    }
                     <PropertyListEditor Rows="Wizard.SourceProperties" KeyPlaceholder="url" ValuePlaceholder="https://api.example.com" />
                 </div>
                 <div class="field"><span class="label-sm">Page size</span><span class="input num"><input class="mono" type="number" min="1" @bind="Wizard.PageSize" @bind:event="oninput" /></span></div>
@@ -217,8 +217,12 @@
     private bool _validationUnavailable;
     private ApiValidationResult? _validationResult;
 
-    private bool HasRedactedProperty => Wizard.SourceProperties
-        .Any(row => BuilderConfigMapper.IsRedactedPlaceholder(row.Value));
+    // Every editor on this step, not only the property list: the hint explains what a held-back value
+    // IS, and a user looking at one in the query or key box needs that as much as one looking at a row.
+    private bool HasRedactedValue =>
+        Wizard.SourceProperties.Any(row => BuilderConfigMapper.IsRedactedPlaceholder(row.Value))
+        || BuilderConfigMapper.IsRedactedPlaceholder(Wizard.SqlQuery)
+        || BuilderConfigMapper.IsRedactedPlaceholder(Wizard.KeyColumn);
 
     protected override void OnInitialized()
     {

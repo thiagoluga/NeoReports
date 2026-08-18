@@ -28,7 +28,7 @@ reports and jobs, via Minimal API.
 The `POST /reports`, `PUT /reports/{name}`, `POST /reports/validate`, `GET /reports/{name}/config`
 and `DELETE /reports/{name}` endpoints require
 `NeoReports.Core`'s `AddDynamicReports()` to be called (registers `IReportConfigStore` — see that
-package's README); without it, those three routes fail DI resolution the same way any endpoint
+package's README); without it, those five routes fail DI resolution the same way any endpoint
 does when a required service is missing.
 
 ### Editing a report

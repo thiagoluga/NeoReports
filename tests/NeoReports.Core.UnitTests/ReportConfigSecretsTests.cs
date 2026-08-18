@@ -629,7 +629,16 @@ public class ReportConfigSecretsTests
         SourceProperty(ReportConfigSecrets.Restore(redacted, document), key).ShouldBe(value);
     }
 
+    // The value rule has to know what a connection-string keyword looks like. Taking everything before
+    // the first '=' as one made a WHERE clause a keyword: "auth" inside "author_name" redacted the
+    // whole query, so editing one column meant retyping it — on SQL, the primary v1 source, which is
+    // the exact failure this whole ADR exists to fix.
     [Theory]
+    [InlineData("sql", "SELECT a.author_name, a.id FROM articles a WHERE a.id = @id")]
+    [InlineData("sql", "SELECT id FROM users WHERE session_id = @s")]
+    [InlineData("sql", "SELECT product_key FROM catalogue WHERE product_key = @k")]
+    [InlineData("sql", "UPDATE t SET password_reset_at = @now WHERE id = @id")]
+    [InlineData("sql", "SELECT * FROM audit_log WHERE token_hash = @h ORDER BY id")]
     [InlineData("pageSize", "1000")]
     [InlineData("sql", "select Id, Name from Sales where Region = 'x'")]
     [InlineData("url", "https://api.example.com/v1/orders?top=50&skip=0")]
