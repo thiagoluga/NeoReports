@@ -118,6 +118,23 @@ check-then-act rather than atomic — closing that needs a compare-and-swap on `
 an interface every custom store implements, for a race orders of magnitude smaller than the human one
 this closes.
 
+### 1c. CodeQL noise from source-generator output — **FIXED (2026-08-18)**
+
+`cs/nested-if-statements` fired four times in this repository and every one was inside
+`System.Text.RegularExpressions` source-generator output — #157/#158 (2026-07-16, QueryBuilder.Pro)
+and #307/#308 (2026-08-17, Core). Never once in code anyone wrote.
+
+`paths-ignore: **/obj/**` was added for exactly this and did not stop the second pair, which is the
+part worth remembering: for a **compiled** language the extractor takes compilation units from the
+*build*, and generator output has no file in the checkout for a path filter to match — it is reported
+under a synthetic `obj/.../generated/…` path that never existed on disk. A path filter cannot reach it
+by construction.
+
+Fixed by excluding the rule itself via `query-filters`, not by a third path tweak: it is a
+*maintainability* rule rather than a security one, SonarCloud already covers that ground here, and a
+rule at a 100% false-positive rate across two different generators will keep firing every time a
+generator changes shape.
+
 ### 2. CI hardening
 - **Fail (not skip) the Testcontainers integration tests when Docker is absent in CI.** — **done**:
   the five container `ServerFixture`s now swallow a start failure only through an exception filter,
