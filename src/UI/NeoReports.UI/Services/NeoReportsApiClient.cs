@@ -674,7 +674,8 @@ internal sealed class NeoReportsApiClient(
         {
             using var content = new StringContent(configJson, Encoding.UTF8, JsonMediaType);
             using var request = new HttpRequestMessage(
-                HttpMethod.Put, new Uri(apiBase, $"reports/{Uri.EscapeDataString(name)}")) { Content = content };
+                HttpMethod.Put, new Uri(apiBase, $"reports/{Uri.EscapeDataString(name)}"));
+            request.Content = content;
 
             // The validator read at the start of the edit (ADR D87). Added unvalidated because it is
             // echoed verbatim from the response header rather than reconstructed here — a typed
