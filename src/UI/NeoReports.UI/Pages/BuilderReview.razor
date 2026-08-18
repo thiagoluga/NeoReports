@@ -160,9 +160,21 @@
     private async Task<ApiCreateResult> PersistAsync()
     {
         string configJson = BuilderConfigMapper.ToConfigJson(Wizard);
-        return Wizard.IsEditing
-            ? await Api.TryReplaceReportAsync(Wizard.EditingOriginalName, configJson)
-            : await Api.TryCreateReportAsync(configJson);
+        if (!Wizard.IsEditing)
+            return await Api.TryCreateReportAsync(configJson);
+
+        ApiCreateResult result = await Api.TryReplaceReportAsync(
+            Wizard.EditingOriginalName, configJson, Wizard.OriginalVersion);
+
+        if (result.Outcome == ApiCreateOutcome.Created && result.Version is not null)
+            Wizard.OriginalVersion = result.Version;
+
+        // A successful save invalidates the validator this page is holding — it described the
+        // document as it was BEFORE the save. Keeping the old one would refuse the next save from
+        // this same page (a retry after "Run now" failed to start, a double-click) as a conflict
+        // with itself. Only advanced on success; a rejected save changed nothing.
+
+        return result;
     }
 
     private static string DescribeFailure(ApiCreateOutcome outcome) => outcome switch

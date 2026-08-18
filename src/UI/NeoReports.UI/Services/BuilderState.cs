@@ -203,6 +203,13 @@ public sealed class BuilderState
     public string? OriginalDocument { get; set; }
 
     /// <summary>
+    /// The entity-tag the configuration was read under (ADR D87), echoed back as <c>If-Match</c> when
+    /// the edit is saved so the engine can refuse it if another editor changed the report meanwhile.
+    /// <c>null</c> when creating, or when the engine did not supply one.
+    /// </summary>
+    public string? OriginalVersion { get; set; }
+
+    /// <summary>
     /// Identifies the source the loaded document described, so the patch can tell "the user changed
     /// the page size" from "the user pointed this report at a different source". Properties from the
     /// stored document are only carried over while this still matches <see cref="SourceIdentity"/>;
@@ -273,6 +280,7 @@ public sealed class BuilderState
         IsEditing = false;
         EditingOriginalName = "";
         OriginalDocument = null;
+        OriginalVersion = null;
         LoadedSourceIdentity = "";
         AdditionalDestinationCount = 0;
         AdditionalOutputCount = 0;

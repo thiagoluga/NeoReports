@@ -75,11 +75,10 @@ enterprise-readiness and test coverage, and shipped everything actionable.
 >    §1 went out in **v2.0.0** (2026-08-08) and §2 is done (`DockerGate`, hard-fail under
 >    `NEOREPORTS_REQUIRE_DOCKER=1`).
 >
-> **State as of 2026-08-18.** With §1–§4 and §6 closed, exactly two things remain open, and each needs
+> **State as of 2026-08-18.** With §1–§4, §1b and §6 closed, **one** thing remains open, and it needs
 > the maintainer:
 >
-> - **§1b — no optimistic concurrency on report editing.** New API surface (`ETag` / `If-Match` /
->   `412`); the concurrent-editor window can restore the wrong section's credential.
+> - ~~**§1b — no optimistic concurrency on report editing.**~~ — **FIXED (ADR D87, 2026-08-18).**
 > - **§5 — PostgreSQL `timetz` drops its zone.** Needs a `Time`/`TimeTz` split in the frozen
 >   `ColumnType` enum plus its own cursor-encoding decision, so it is a next-major item with a design
 >   question attached, not a cast.
@@ -93,7 +92,7 @@ enterprise-readiness and test coverage, and shipped everything actionable.
   updated. Source-breaking for positional callers, so tagged **next-major** in `CHANGELOG.md`
   (Changed → breaking, public API) alongside the #228 removal.
 
-### 1b. Report editing: no optimistic concurrency on PUT (ADR D86, 2026-08-18)
+### 1b. Report editing: no optimistic concurrency on PUT — **FIXED (ADR D87, 2026-08-18)**
 
 Two editors open the same report; the second reorders its destinations and saves; the first then saves
 a placeholder addressed `destinations[0]`, which resolves against the **reordered** stored document and
@@ -101,10 +100,23 @@ restores the wrong section's credential. The carried address is exactly what mak
 reorder safe, and it cannot see a change made on the stored side between the `GET .../config` and the
 `PUT`.
 
-Not fixed with D86 because the fix is new API surface — an `ETag` on `GET /reports/{name}/config` and
-`If-Match` on `PUT /reports/{name}`, answering `412` when they disagree — and that ADR was already the
-secrets round-trip. Single-worker, single-maintainer v1 (architecture rule 6) makes concurrent editors
-unlikely, not impossible. Recorded so the next change to these endpoints starts from it.
+**Fixed in D87**, with the maintainer's go-ahead on the new API surface. `GET .../config` returns an
+`ETag` and `PUT` honours `If-Match` with a `412`; the header is optional, so clients from before D87
+are unaffected, and a successful `PUT` returns the new tag so an editor can save twice in a row.
+
+The validator is computed over the **redacted** form, not the stored document. The first cut hashed the
+stored one — it is what `Restore` resolves against — and the security pass showed that made the tag a
+free offline **verification oracle**: the two forms are byte-identical apart from the redacted values,
+so a caller could reconstruct candidates, hash them, and confirm a guessed connection string with no
+failed login to notice. Hashing the redacted form carries nothing the caller does not already hold, and
+is still the right validator, because an address is invalidated by a change to the document's
+*structure* and that structure is fully visible there.
+
+Two things remain uncovered, both recorded in D87: two non-overlapping concurrent edits still cost one
+of them a reload (merging needs a per-field model the document does not have), and the check is
+check-then-act rather than atomic — closing that needs a compare-and-swap on `IReportConfigStore`,
+an interface every custom store implements, for a race orders of magnitude smaller than the human one
+this closes.
 
 ### 2. CI hardening
 - **Fail (not skip) the Testcontainers integration tests when Docker is absent in CI.** — **done**:

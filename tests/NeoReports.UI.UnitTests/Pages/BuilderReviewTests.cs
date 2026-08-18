@@ -89,7 +89,7 @@ public sealed class BuilderReviewTests : NeoReportsTestContext
     {
         Wizard.IsEditing = true;
         Wizard.EditingOriginalName = "clientsVip";
-        Api.ReplaceReport = (_, _, _) => Task.FromResult(new ApiCreateResult(ApiCreateOutcome.Unavailable, null, null));
+        Api.ReplaceReport = (_, _, _, _) => Task.FromResult(new ApiCreateResult(ApiCreateOutcome.Unavailable, null, null));
 
         var cut = RenderReview();
         cut.FindAll("button").First(b => b.TextContent.Contains("Save report")).Click();
@@ -102,7 +102,7 @@ public sealed class BuilderReviewTests : NeoReportsTestContext
     {
         Wizard.IsEditing = true;
         Wizard.EditingOriginalName = "clientsVip";
-        Api.ReplaceReport = (_, _, _) =>
+        Api.ReplaceReport = (_, _, _, _) =>
             Task.FromResult(new ApiCreateResult(ApiCreateOutcome.Invalid, null, "Query references an unknown column."));
 
         var cut = RenderReview();
@@ -120,7 +120,7 @@ public sealed class BuilderReviewTests : NeoReportsTestContext
     {
         Wizard.IsEditing = true;
         Wizard.EditingOriginalName = "clientsVip";
-        Api.ReplaceReport = (_, _, _) => Task.FromResult(
+        Api.ReplaceReport = (_, _, _, _) => Task.FromResult(
             new ApiCreateResult(ApiCreateOutcome.Invalid, null, "No report named 'clientsVip' is registered."));
 
         var cut = RenderReview();
@@ -138,7 +138,7 @@ public sealed class BuilderReviewTests : NeoReportsTestContext
         Wizard.IsEditing = true;
         Wizard.EditingOriginalName = "clientsVip";
         Wizard.ReportName = "clientsVip";
-        Api.ReplaceReport = (name, _, _) => Task.FromResult(new ApiCreateResult(ApiCreateOutcome.Created, name, null));
+        Api.ReplaceReport = (name, _, _, _) => Task.FromResult(new ApiCreateResult(ApiCreateOutcome.Created, name, null));
 
         var cut = RenderReview();
         cut.FindAll("button").First(b => b.TextContent.Contains("Save report")).Click();
@@ -167,7 +167,7 @@ public sealed class BuilderReviewTests : NeoReportsTestContext
         Wizard.KeyColumn = "Id";
         Wizard.ColumnNames = "Id";
         Wizard.Formats = ["csv"];
-        Api.ReplaceReport = (name, _, _) => Task.FromResult(new ApiCreateResult(ApiCreateOutcome.Created, name, null));
+        Api.ReplaceReport = (name, _, _, _) => Task.FromResult(new ApiCreateResult(ApiCreateOutcome.Created, name, null));
 
         var cut = RenderReview();
         cut.FindAll("button").First(b => b.TextContent.Contains("Save report")).Click();
@@ -203,5 +203,38 @@ public sealed class BuilderReviewTests : NeoReportsTestContext
 
         Wizard.ScheduleCron.ShouldBe("0 6 * * *");
         cut.WaitForState(() => cut.FindAll("button").Any(b => b.TextContent == "Clear"));
+    }
+    // ADR D87. Both of these were found by review after the engine half was already correct: the
+    // feature worked and the user could neither read what happened nor recover from it.
+    [Fact]
+    public void A_stale_save_shows_the_engines_reload_message_not_a_generic_rejection()
+    {
+        Wizard.IsEditing = true;
+        Wizard.EditingOriginalName = "sales";
+        Api.ReplaceReport = (_, _, _, _) => Task.FromResult(new ApiCreateResult(
+            ApiCreateOutcome.Invalid, null, "'sales' changed since you opened it — reload the report."));
+
+        var cut = Render<BuilderReview>();
+        cut.FindAll("button").First(b => b.TextContent.Contains("Save report")).Click();
+
+        cut.Markup.ShouldContain("reload the report");
+    }
+
+    [Fact]
+    public void A_successful_save_advances_the_validator_so_the_next_one_is_not_a_conflict()
+    {
+        Wizard.IsEditing = true;
+        Wizard.EditingOriginalName = "sales";
+        Wizard.OriginalVersion = "\"first\"";
+        Api.ReplaceReport = (name, _, _, _) => Task.FromResult(
+            new ApiCreateResult(ApiCreateOutcome.Created, name, null, "\"second\""));
+
+        var cut = Render<BuilderReview>();
+        cut.FindAll("button").First(b => b.TextContent.Contains("Save report")).Click();
+
+        // Still holding "first" would make any retry from this page a 412 naming a conflict with the
+        // save that just succeeded.
+        Wizard.OriginalVersion.ShouldBe("\"second\"");
+        Api.LastReplaceReport!.Value.Version.ShouldBe("\"first\"");
     }
 }

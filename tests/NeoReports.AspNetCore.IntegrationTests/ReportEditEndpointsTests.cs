@@ -57,12 +57,19 @@ public class ReportEditEndpointsTests : IDisposable
                 .To(Csv()));
         }, testName: testName);
 
-    private static async Task<HttpResponseMessage> SendJsonAsync(HttpClient client, HttpMethod method, string url, string json)
+    private static async Task<HttpResponseMessage> SendJsonAsync(
+        HttpClient client, HttpMethod method, string url, string json, string? ifMatch = null)
     {
         using var request = new HttpRequestMessage(method, url)
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json"),
         };
+
+        // Added raw rather than through EntityTagHeaderValue so a test can send a malformed or weak
+        // validator on purpose, which the typed header would refuse to construct.
+        if (ifMatch is not null)
+            request.Headers.TryAddWithoutValidation("If-Match", ifMatch);
+
         return await client.SendAsync(request);
     }
 
@@ -274,6 +281,202 @@ public class ReportEditEndpointsTests : IDisposable
 
         public Task<IReadOnlyList<string>> ListRegisteredNamesAsync(CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<string>>([]);
+    }
+
+    // ---- Optimistic concurrency (ADR D87) --------------------------------------------------------
+
+    [Fact]
+    public async Task Config_returns_an_etag_and_an_unchanged_report_still_matches_it()
+    {
+        using var host = await StartAsync();
+        HttpClient client = await CreateSalesAsync(host);
+
+        HttpResponseMessage config = await client.GetAsync("/api/reports/sales/config");
+        string? etag = config.Headers.ETag?.ToString();
+
+        etag.ShouldNotBeNullOrWhiteSpace();
+        // Reading twice without saving must give the same validator, or every editor would be told
+        // its document went stale the moment it reloaded.
+        (await client.GetAsync("/api/reports/sales/config")).Headers.ETag?.ToString().ShouldBe(etag);
+    }
+
+    [Fact]
+    public async Task A_put_carrying_the_current_etag_is_applied()
+    {
+        using var host = await StartAsync();
+        HttpClient client = await CreateSalesAsync(host);
+
+        HttpResponseMessage config = await client.GetAsync("/api/reports/sales/config");
+        string etag = config.Headers.ETag!.ToString();
+
+        string edited = Original.Replace("\"pageSize\": 100", "\"pageSize\": 250", StringComparison.Ordinal);
+        HttpResponseMessage response = await SendJsonAsync(
+            client, HttpMethod.Put, "/api/reports/sales", edited, etag);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        JsonElement detail = await client.GetFromJsonAsync<JsonElement>("/api/reports/sales", Json);
+        detail.GetProperty("pageSize").GetInt32().ShouldBe(250);
+    }
+
+    /// <summary>
+    /// The window D86 recorded and could not close: the address a placeholder carries names a slot of
+    /// the document as it was at the GET, and Restore resolves it against the document as it is now.
+    /// </summary>
+    [Fact]
+    public async Task A_put_carrying_a_stale_etag_is_refused_before_anything_is_restored()
+    {
+        using var host = await StartAsync();
+        HttpClient client = await CreateSalesAsync(host);
+
+        HttpResponseMessage config = await client.GetAsync("/api/reports/sales/config");
+        string staleEtag = config.Headers.ETag!.ToString();
+
+        // Another editor saves first.
+        string theirs = Original.Replace("\"pageSize\": 100", "\"pageSize\": 500", StringComparison.Ordinal);
+        (await SendJsonAsync(client, HttpMethod.Put, "/api/reports/sales", theirs)).StatusCode
+            .ShouldBe(HttpStatusCode.OK);
+
+        string mine = Original.Replace("\"pageSize\": 100", "\"pageSize\": 250", StringComparison.Ordinal);
+        HttpResponseMessage response = await SendJsonAsync(
+            client, HttpMethod.Put, "/api/reports/sales", mine, staleEtag);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.PreconditionFailed);
+
+        // And the first editor's save is what survives — the refused one changed nothing.
+        JsonElement detail = await client.GetFromJsonAsync<JsonElement>("/api/reports/sales", Json);
+        detail.GetProperty("pageSize").GetInt32().ShouldBe(500);
+    }
+
+    [Fact]
+    public async Task A_stale_save_is_told_to_reload_in_the_shape_the_client_reads()
+    {
+        using var host = await StartAsync();
+        HttpClient client = await CreateSalesAsync(host);
+
+        string stale = (await client.GetAsync("/api/reports/sales/config")).Headers.ETag!.ToString();
+        string theirs = Original.Replace("\"pageSize\": 100", "\"pageSize\": 500", StringComparison.Ordinal);
+        await SendJsonAsync(client, HttpMethod.Put, "/api/reports/sales", theirs);
+
+        HttpResponseMessage response = await SendJsonAsync(
+            client, HttpMethod.Put, "/api/reports/sales", Original, stale);
+
+        // `error`, like every other rejection on this endpoint — a ProblemDetails body reads as null
+        // to the client, which then says "the configuration was rejected" and never says "reload".
+        JsonElement body = JsonSerializer.Deserialize<JsonElement>(
+            await response.Content.ReadAsStringAsync(), Json);
+        string message = body.GetProperty("error").GetString()!;
+        message.ShouldContain("Reload");
+        message.ShouldContain("sales");
+    }
+
+    [Fact]
+    public async Task A_successful_save_hands_back_a_validator_the_next_save_can_use()
+    {
+        using var host = await StartAsync();
+        HttpClient client = await CreateSalesAsync(host);
+
+        string first = (await client.GetAsync("/api/reports/sales/config")).Headers.ETag!.ToString();
+
+        string edited = Original.Replace("\"pageSize\": 100", "\"pageSize\": 250", StringComparison.Ordinal);
+        HttpResponseMessage saved = await SendJsonAsync(
+            client, HttpMethod.Put, "/api/reports/sales", edited, first);
+        saved.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        string next = saved.Headers.ETag!.ToString();
+        next.ShouldNotBe(first);
+
+        // Saving again from the same page must work: the editor's own save is not a conflict with
+        // itself, and it is reachable by a retry or a double-click.
+        string again = Original.Replace("\"pageSize\": 100", "\"pageSize\": 300", StringComparison.Ordinal);
+        (await SendJsonAsync(client, HttpMethod.Put, "/api/reports/sales", again, next)).StatusCode
+            .ShouldBe(HttpStatusCode.OK);
+    }
+
+    /// <summary>
+    /// The validator must carry nothing the caller was not already given. Hashing the STORED document
+    /// made it an offline verification oracle for the redacted values: the two forms differ only in
+    /// those values, so a caller could reconstruct candidates and confirm a guessed connection string
+    /// without touching the database.
+    /// </summary>
+    [Fact]
+    public async Task The_entity_tag_is_computable_from_the_body_the_caller_was_given()
+    {
+        using var host = await StartAsync();
+        HttpClient client = await CreateSalesAsync(host);
+
+        HttpResponseMessage config = await client.GetAsync("/api/reports/sales/config");
+        string body = await config.Content.ReadAsStringAsync();
+        string etag = config.Headers.ETag!.ToString();
+
+        byte[] hash = System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(body));
+        string reproduced = '"' + Convert.ToBase64String(hash, 0, 16)
+            .Replace('+', '-').Replace('/', '_').TrimEnd('=') + '"';
+
+        etag.ShouldBe(reproduced);
+        // And the guard that gives it teeth: the plaintext is not in the body to begin with.
+        body.ShouldNotContain("hunter2");
+    }
+
+    [Fact]
+    public async Task Changing_only_a_secret_does_not_invalidate_an_open_editor()
+    {
+        using var host = await StartAsync();
+        HttpClient client = await CreateSalesAsync(host);
+
+        string mine = (await client.GetAsync("/api/reports/sales/config")).Headers.ETag!.ToString();
+
+        // Someone rotates the password and changes nothing else. No address moved, and a placeholder
+        // means "whatever is stored now" — so this is not a conflict, and refusing it would be noise.
+        string rotated = Original.Replace("hunter2", "rotated-secret", StringComparison.Ordinal);
+        (await SendJsonAsync(client, HttpMethod.Put, "/api/reports/sales", rotated)).StatusCode
+            .ShouldBe(HttpStatusCode.OK);
+
+        (await SendJsonAsync(client, HttpMethod.Put, "/api/reports/sales", Original, mine)).StatusCode
+            .ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task A_put_with_no_if_match_still_works_for_clients_from_before_D87()
+    {
+        using var host = await StartAsync();
+        HttpClient client = await CreateSalesAsync(host);
+
+        // Someone else saves, so any validator the caller might have had is stale — but it sends none,
+        // which states no precondition. Requiring the header would break every existing client.
+        string theirs = Original.Replace("\"pageSize\": 100", "\"pageSize\": 500", StringComparison.Ordinal);
+        (await SendJsonAsync(client, HttpMethod.Put, "/api/reports/sales", theirs)).StatusCode
+            .ShouldBe(HttpStatusCode.OK);
+
+        string mine = Original.Replace("\"pageSize\": 100", "\"pageSize\": 250", StringComparison.Ordinal);
+        (await SendJsonAsync(client, HttpMethod.Put, "/api/reports/sales", mine)).StatusCode
+            .ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Theory]
+    [InlineData("*")]                                        // RFC 9110: "if the resource exists"
+    [InlineData("\"nonsense\", *")]
+    public async Task A_wildcard_if_match_is_accepted(string ifMatch)
+    {
+        using var host = await StartAsync();
+        HttpClient client = await CreateSalesAsync(host);
+
+        string edited = Original.Replace("\"pageSize\": 100", "\"pageSize\": 250", StringComparison.Ordinal);
+        (await SendJsonAsync(client, HttpMethod.Put, "/api/reports/sales", edited, ifMatch)).StatusCode
+            .ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task A_weak_validator_never_satisfies_if_match()
+    {
+        using var host = await StartAsync();
+        HttpClient client = await CreateSalesAsync(host);
+
+        HttpResponseMessage config = await client.GetAsync("/api/reports/sales/config");
+        string weak = $"W/{config.Headers.ETag}";
+
+        string edited = Original.Replace("\"pageSize\": 100", "\"pageSize\": 250", StringComparison.Ordinal);
+        (await SendJsonAsync(client, HttpMethod.Put, "/api/reports/sales", edited, weak)).StatusCode
+            .ShouldBe(HttpStatusCode.PreconditionFailed);
     }
 
     [Fact]

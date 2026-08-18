@@ -54,7 +54,7 @@ public enum ApiCreateOutcome
 }
 
 /// <summary>Result of <see cref="INeoReportsApiClient.TryCreateReportAsync"/>.</summary>
-public sealed record ApiCreateResult(ApiCreateOutcome Outcome, string? Name, string? Error);
+public sealed record ApiCreateResult(ApiCreateOutcome Outcome, string? Name, string? Error, string? Version = null);
 
 /// <summary>Outcome of a <c>GET /api/reports/{name}/config</c> call.</summary>
 public enum ApiConfigOutcome
@@ -74,7 +74,7 @@ public enum ApiConfigOutcome
 /// not load" are separate outcomes on purpose — collapsing them turned a transient failure into a
 /// silently blank create wizard.
 /// </summary>
-public sealed record ApiConfigResult(ApiConfigOutcome Outcome, string? Document);
+public sealed record ApiConfigResult(ApiConfigOutcome Outcome, string? Document, string? Version = null);
 
 /// <summary>A single output column, as returned by <c>GET /api/reports/{name}</c>.</summary>
 public sealed record ApiReportColumn(string Name, string Type, string? DisplayName, string? Format, bool Nullable);
@@ -308,7 +308,8 @@ public interface INeoReportsApiClient
     /// <param name="name">The report to replace.</param>
     /// <param name="configJson">The full replacement configuration document.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task<ApiCreateResult> TryReplaceReportAsync(string name, string configJson, CancellationToken cancellationToken = default);
+    Task<ApiCreateResult> TryReplaceReportAsync(
+        string name, string configJson, string? version = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// The report's stored configuration document, with credential-bearing values redacted
@@ -666,17 +667,29 @@ internal sealed class NeoReportsApiClient(
     }
 
     public async Task<ApiCreateResult> TryReplaceReportAsync(
-        string name, string configJson, CancellationToken cancellationToken = default)
+        string name, string configJson, string? version = null, CancellationToken cancellationToken = default)
     {
         var apiBase = ApiBase;
         try
         {
             using var content = new StringContent(configJson, Encoding.UTF8, JsonMediaType);
-            using var response = await http.PutAsync(
-                new Uri(apiBase, $"reports/{Uri.EscapeDataString(name)}"), content, cancellationToken).ConfigureAwait(false);
+            using var request = new HttpRequestMessage(
+                HttpMethod.Put, new Uri(apiBase, $"reports/{Uri.EscapeDataString(name)}"));
+            request.Content = content;
 
+            // The validator read at the start of the edit (ADR D87). Added unvalidated because it is
+            // echoed verbatim from the response header rather than reconstructed here — a typed
+            // EntityTagHeaderValue would have to parse it back, and a value this layer cannot parse is
+            // better sent as-is and rejected by the engine than silently dropped.
+            if (!string.IsNullOrWhiteSpace(version))
+                request.Headers.TryAddWithoutValidation("If-Match", version);
+
+            using var response = await http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+
+            // The validator for what the engine just stored, so a second save from this same page
+            // states a precondition that is current rather than one that its own save invalidated.
             if (response.IsSuccessStatusCode)
-                return new ApiCreateResult(ApiCreateOutcome.Created, name, null);
+                return new ApiCreateResult(ApiCreateOutcome.Created, name, null, response.Headers.ETag?.ToString());
 
             string? error = await TryReadErrorAsync(response, cancellationToken).ConfigureAwait(false);
             // A 409 here is not "name taken" (the name is this report's own) but "this report is
@@ -686,8 +699,8 @@ internal sealed class NeoReportsApiClient(
             // it to Unavailable threw that message away and blamed the network instead.
             ApiCreateOutcome outcome = response.StatusCode switch
             {
-                HttpStatusCode.BadRequest or HttpStatusCode.Conflict or HttpStatusCode.NotFound =>
-                    ApiCreateOutcome.Invalid,
+                HttpStatusCode.BadRequest or HttpStatusCode.Conflict or HttpStatusCode.NotFound
+                    or HttpStatusCode.PreconditionFailed => ApiCreateOutcome.Invalid,
                 _ => ApiCreateOutcome.Unavailable,
             };
             return new ApiCreateResult(outcome, null, error);
@@ -716,7 +729,8 @@ internal sealed class NeoReportsApiClient(
 
             return new ApiConfigResult(
                 ApiConfigOutcome.Ok,
-                await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
+                await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false),
+                response.Headers.ETag?.ToString());
         }
         catch (Exception ex) when (IsTransient(ex))
         {
