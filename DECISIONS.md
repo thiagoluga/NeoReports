@@ -1756,3 +1756,376 @@ falls back to `NEOREPORTS_LICENSE_KEY` by design: with a key exported, the Pro c
 succeed. "No license registered" is not the state "no license available". The variable is now cleared
 around those checks and restored after, which keeps them meaningful in both modes instead of skipping
 them in the mode where a regression would be most expensive.
+
+---
+
+## D86 — Editing a report: the secrets round-trip D33 deferred (2026-08-09)
+
+**Reported by the maintainer:** opening a report's *Edit* in the Builder produced a form that was
+blank for almost everything the report actually reads from — source type, query, key column,
+connection, source properties, destination path — so "edit" meant "retype the report from memory".
+
+The cause was not a UI bug. `GET /reports/{name}` deliberately exposes none of that: **D33(c)** ruled
+that GET responses never echo property bags, because a bag may hold a secret, and **D33(f)** deferred
+report editing outright for exactly that reason — *"needs a secrets round-trip story, future ADR"*.
+The Edit button shipped later against the only endpoint available, which could offer nothing better
+than a blank form and two banners apologising for it. This is that future ADR.
+
+### The round-trip
+
+`GET /reports/{name}/config` returns the **stored** document — the one `IReportConfigStore` already
+persists with `${VAR}` placeholders unresolved — with credential-bearing values replaced by the
+reserved sentinel `${neoreports:redacted}`. `PUT /reports/{name}` swaps the sentinel back for the
+stored value. So an editor can round-trip a property it was never allowed to see, and changing a page
+size no longer costs the user a connection string.
+
+What is *not* redacted: a `${VAR}` placeholder (the secret is in the environment, not the document —
+that is the entire point of D33(d)), and any non-string value. What is: any string under a key whose
+name contains one of a list of credential fragments (`password`, `secret`, `token`, `apikey`,
+`connectionstring`, `auth`, …), plus — value-based, independent of the key name — any URL carrying
+userinfo, because `https://user:pass@host` is a credential under a key as innocent as `url`.
+
+The fragment list **over-matches on purpose**: `oauth2TokenEndpoint` contains "token" and gets hidden
+too. A denylist that fails open ships a literal secret the first time a key name is not on it; this
+one fails closed, and because `Restore` puts the value back untouched, over-matching costs only
+visibility, never correctness.
+
+**The walk is recursive, and that was not the first attempt.** A property-bag value is not always a
+scalar: an HTTP source declares `headers` as an object (`Authorization` lives in there) and a
+merge-join source nests whole child sources, each with its own `properties` and connection string.
+The first implementation stopped at the top level and handed both back in plaintext — caught by
+`/code-review`, not by any test, because every test used a flat bag. A key whose *name* matches a
+fragment now hides its entire subtree rather than being descended into: `"credentials": {…}` is a
+credential whatever its inner keys are called, and guessing at them is the fail-open behaviour the
+list exists to avoid.
+
+**The placeholder carries the address it came from** — `${neoreports:redacted:destinations[1]}` —
+so restoring never has to work out which stored section an incoming one corresponds to. Two earlier
+designs did work it out, and both were wrong. Pairing by section id alone put one S3 bucket's access
+key into another. Pairing by id-then-occurrence fixed that case and broke a different one: changing
+an earlier section's type shifts the count, so the *next* same-typed section inherits the previous
+one's secret — same silent wire-crossing, one trigger further along. There is no reliable identity to
+pair on, because a report may legitimately declare two destinations of the same type to different
+buckets, so the address is carried rather than inferred. The source is a singleton and needs none.
+
+That also removes a second defect from the occurrence design: it filtered the incoming sections to
+those carrying a property bag before counting, but not the stored ones, so a stored section without a
+bag made an otherwise untouched edit fail with a confusing 400. The address is the raw array index,
+which nothing can shift.
+
+The sentinel sits deliberately **outside** `ReportConfigEnvironment`'s `${NAME}` grammar (a colon is
+not legal in an environment variable name), so it can never be resolved as a variable lookup. It is
+rejected in three places: `POST /reports` (nothing to restore from), `Restore` itself (a sentinel with
+no stored counterpart), and `ReportConfigEnvironment.Substitute`. The last one is the one that
+matters: **a test proved the sentinel would otherwise sail through substitution as an ordinary string**
+and a report would go live with the literal `${neoreports:redacted}` as its connection string. The
+endpoint guards are the first line; the substitution guard is the one that does not depend on any
+particular caller remembering.
+
+### PUT, not delete-then-create
+
+Editing was previously validate → `DELETE` → `POST`, driven from the browser. That fails in the worst
+possible direction: the replacement is rejected *after* the original is already gone, and the user is
+left with no report at all — a case the old code could only apologise for in an error message.
+`PUT /reports/{name}` compiles the replacement before touching anything, so a rejected edit changes
+nothing. `IMutableReportRegistry` gains `Replace` (a default interface method for compatibility;
+`ReportRegistry` overrides it with a single `ConcurrentDictionary` assignment) so the report never
+briefly resolves to nothing. A schedule **override** (`PUT .../schedule`) survives an edit and stays
+effective — editing a definition is not the same act as changing when it runs. Renaming stays out:
+the document's name must match the route.
+
+`IReportConfigStore` gains `TryGetAsync` — reading one report's document previously meant reading
+every stored document.
+
+### The Builder patches the document; it does not regenerate it
+
+`BuilderConfigMapper` now writes the wizard's fields **into** the stored document. The wizard has no
+editor for a JsonLogic `filter`, per-output properties or sections, a column's type / display name /
+format / culture, or a second destination. Regenerating the document from the form — which is what
+"save" used to do — deleted every one of them without a word. In particular **every column would have
+been rewritten as an untyped `String`**, a silent downgrade of the report's output from a form that
+never showed the type in the first place.
+
+Two consequences of the same rule, both found by running the flow rather than by reading it:
+
+- A generic property row the user did not touch keeps its **original JSON type**. Every row in that
+  editor is text, so writing them all back as strings turned `"commandTimeoutSeconds": 90` into
+  `"90"` on every edit. Caught by opening the saved file after a browser run, not by a test.
+- Stored properties and the kept connection are carried over **only while the source is unchanged**.
+  Restoring an old connection into a source nobody pointed it at is the one outcome that would be
+  both invisible and wrong.
+
+The wizard edits the **first** destination and passes the rest through, saying so on the Destination
+step rather than presenting the report as having exactly one. Matching by index rather than by type
+is what makes "change local to s3" mean changing *this* destination.
+
+### What the review pass caught
+
+Four defects survived implementation, self-review and a full green suite, and were found by
+`/code-review` afterwards. All four share a shape: the code does something plausible and nothing
+throws.
+
+- **Nested bag values escaped redaction** (above) — the only one that was a live secret leak.
+- **`Restore` paired sections by first match on a non-unique id** (above).
+- **Duplicate output formats were dropped on save.** The Format step is a set of checkboxes, so the
+  Builder collapses `outputs` into a `HashSet<string>`; emitting one output per distinct format
+  deleted the second of two `csv` outputs, each of which can carry its own writer options. Every
+  stored output of a kept format is now kept, and the step says so — the same treatment destinations
+  already had.
+- **A JSON `null` became `""` on a generic-property round-trip.** A JSON null *is* a null node, so
+  "present but null" has to be told apart from "absent" with `HasMember`; comparing against a null
+  stored value called the row changed and rewrote it as an empty string on every edit.
+- **The `PUT` rollback only caught `IOException`/`UnauthorizedAccessException`.** An
+  `IReportConfigStore` is an interface and a custom one can fail with anything; any other exception
+  left the registry holding the new definition while the store held the old, so the edit applied
+  until the next restart and then silently reverted.
+
+### The second review pass
+
+A `/code-review` run after the security work found five more, and the first two were the same
+wire-crossing class arriving through new triggers — which is what moved the design from *pairing* to
+*addressing* (above) rather than patching a third heuristic. The other three:
+
+- **An object-valued property could not survive being edited.** An HTTP source's `headers` is an
+  object; the generic editor is a one-line text box, so it arrives as JSON text, and editing it wrote
+  the whole subtree back as a JSON **string** — breaking the source, and hiding any placeholder inside
+  it from every guard, since none of them look inside a larger string. Structured rows are now flagged
+  on the way in and parsed back on the way out, and `HoldsRedactedValue` — the last-resort guard, not
+  the restore path — became a substring test so an embedded placeholder is still rejected.
+- **`accountKey` and friends were in plaintext.** Excluding the bare substring `key` to protect the
+  ADO keyset column excluded every key-shaped name with it: `accountKey` (an Azure Storage account),
+  `sharedKey`, `licenseKey`. The fragment list now carries `key` and carves out the single exact word.
+- **"Destinations: none" was a lie** on a report with more than one: picking None drops the slot the
+  wizard edits, and the rest ride along as designed — the Review summary now says so.
+
+### What the security review changed, and what it deliberately did not
+
+A `/security-review` pass over the finished branch produced **no finding above the reporting bar**.
+Two candidates were raised and both were filtered out below the confidence threshold; one of them is
+worth recording, along with why the other was dropped.
+
+**Closed anyway (rated Low, not a finding): a URL can be the credential.** The value-based rule only
+tested `Uri.UserInfo`, so `https://user:pass@host` was hidden but an Azure SAS (`…?sv=…&sig=…`), an
+S3/GCS pre-signed URL, or `…?key=<google api key>` was not — and those live under `url`, `baseUrl`
+and `instanceUrl`, the required properties of every shipped HTTP-family source and the most
+innocuous key names in the document. The reviewer rated this Low because no privilege boundary is
+crossed (one `RequireAuthorization` policy covers the whole route group, so anyone who can GET the
+config can already PUT it), which is correct. It was fixed regardless: this file's stated contract is
+*fail closed, over-match on purpose*, and a credential-by-construction URL escaping it under the
+product's only bag-echoing endpoint contradicts that contract. The rule now also redacts an absolute
+URI whose query carries a credential-shaped parameter, and `cookie`, `session` and `api-key` joined
+the fragment list — `Authorization` always matched via `auth`, but `Cookie` and `X-Api-Key` matched
+nothing. `key` is treated as credential-shaped **only as a query parameter**: as a property-bag key
+it is the ADO keyset column, and hiding it would blind an editor to its own report's pagination.
+
+A follow-up review pass over that fix raised one non-security consequence worth recording rather
+than fixing: `key` and `code` are generic query-parameter names, so `?code=US` or `?key=name` on an
+ordinary paging URL now shows as the placeholder too — in the field an editor most wants to see.
+Narrowing them (say, only redacting when the value is long enough to be a credential) was considered
+and **rejected**: a length guess is exactly the fail-open heuristic this module refuses everywhere
+else, and short API keys exist. The cost stays visibility only — `Restore` returns the value
+untouched, and the Configure step already explains the placeholder — so the fail-closed side of the
+trade wins. `sig` and `sv` are unambiguous and need no such qualification.
+
+**Dropped: "PUT lets a caller reuse a credential they cannot read."** The claim is true — `Restore`
+re-attaches a stored secret to whatever document the client sends, so an editor can point a report's
+SQL or URL somewhere new while keeping a connection string they never saw. It is not a regression,
+because the pre-existing `POST /reports` path already grants exactly this, twice over: a `${VAR}`
+placeholder is returned unredacted by design, so anyone can `POST` a new report reusing it with
+arbitrary SQL; and a D42 `source.ref` resolves its connection from the registry with overlay-wins
+report-local properties, which `GET /sources` already lets a caller enumerate by name. The residual
+delta — retargeting a *literal* inline secret — is a strict subset of what the same authenticated
+caller could always do. This is the management API's established trust model (D26), recorded here
+rather than fixed: **`POST`/`PUT`/`DELETE /reports` are credential-use-equivalent and should be
+gated with the authorization one would give the secret itself.**
+
+### The third review pass
+
+A second `/code-review` after the addressing redesign found four more, two of them disclosure or
+authorization:
+
+- **A credential stored as a number was returned in plaintext.** `ShouldRedact` read the value as
+  text first and gave up when that failed, so `"apiKey": 8675309123456` sailed past the deliberately
+  generous key matching. A numeric token is still a token; a credential-named key now hides whatever
+  it holds, whatever the JSON kind.
+- **`POST /reports/validate?for={name}` did not require the document to be that report** — the check
+  `PUT` enforces. An arbitrary document could be compiled with another report's restored credentials.
+  It returns no data, so nothing leaked, but "dry-run an edit of X" has to mean a document that *is*
+  X, and the inconsistency with `PUT` was the tell.
+- **`failureRateMinimumBatches` (ADR D78) was reset on every edit.** `BuildResilience` rebuilt
+  `abortWhen` from the form, and the wizard has no control for the minimum sample — the one field
+  that escaped this ADR's own patch-don't-regenerate rule. It is now carried through, and dropped
+  only when the threshold it qualifies is switched off.
+- **An edited scalar property lost its JSON kind**, re-introducing the `90` → `"90"` coercion the
+  round-trip had fixed for *untouched* rows only. An edited row now keeps the kind the stored value
+  had when the new text still fits it, and stays a string otherwise — the kind is carried, never
+  guessed from the text, so an all-digits account id does not silently become a number.
+
+### The fourth review pass
+
+A `/code-review` after the non-string fix found four more, and the first one is worth reading as a
+correction to this ADR's own reasoning above. When the addressed placeholder was introduced I
+considered requiring an address to match the slot it appears in, and rejected it because a legitimate
+removal shifts positions. That was the right rejection of the wrong rule: the address never needed to
+match the *position*, it needed to be claimed by only **one** bag. Duplicating a section by hand —
+which the new banners tell users to do for anything the wizard cannot edit — copies its placeholders
+too, and both copies resolved to the same stored credential. Many placeholders inside one bag share
+its address and always will; two different bags naming the same one is now a 400.
+
+- **A transient `GET /sources` failure repointed a report.** The Builder cleared `source.ref` when the
+  registered-source list came back empty, and a failed call was indistinguishable from an empty one —
+  so a blip converted a registry-backed report into an inline one on save, silently changing what it
+  reads from.
+- **Format and destination ids were matched ordinally** while the engine resolves them
+  case-insensitively: a stored `"format": "CSV"` with the `csv` checkbox ticked counted as two formats
+  and saved two CSV outputs; the same on destination types dropped the stored properties.
+- **A `404` on `PUT` was reported as an unreachable engine.** A report deleted from another tab is a
+  rejected request carrying a usable message, and mapping it to *Unavailable* threw that message away
+  and blamed the network.
+
+### The fifth review pass
+
+None of these five touched the secrets mechanism itself, which the pass traced end to end without
+breaking; all five were in what surrounds it.
+
+- **A `ref`-based report's report-local connection overlay was deleted on save.** The wizard offers no
+  connection field for a registered source, so the save path dropped any `connectionString` — but a
+  report-local overlay is legitimate configuration under D42 (report-local wins), and deleting it
+  silently repointed the report at the registry's connection. A stored one is now kept as it arrived;
+  one is still never invented, since there is no field to invent it from. The matching "the stored
+  connection is kept" banner also stopped rendering for `ref` sources, where it pointed at a control
+  that is not on the page.
+- **A failed `GET .../config` was indistinguishable from "not editable"**, so Edit degraded to a blank
+  create wizard with no message — inviting the user to retype a whole report over a working one. This
+  is the same conflation `_sourcesLoaded` had just been added to fix one function above, which is the
+  more useful observation: the fix was applied to the instance, not to the pattern.
+- **A corrupt *stored* document was a 400 on `PUT`** while `GET .../config` answered the identical
+  condition with a 500 — blaming the caller for a file they never sent.
+- **`validate?for=` reported the report's own name as taken**, putting "name already taken" under
+  every successful edit validation.
+- **Changing the source mid-edit left no way forward**: the old credential is correctly dropped, but
+  nothing said so, and the save failed with a generic compile error. The Configure step now says what
+  has to be supplied.
+
+### The sixth review pass
+
+Two of these six are the ones worth carrying forward.
+
+- **A `ref`-based ADO report whose query lives in the registered definition got an empty overlay.**
+  Those boxes hydrate blank, and the save wrote `"sql": ""` / `"key": ""` into the report-local
+  overlay, which under D42 wins — so the next run failed with *requires a non-empty 'sql' property*
+  from a save that changed only the page size. Blank now means "do not override" for a `ref` source
+  and still means "clear it" for an inline one, where the query is the report's own.
+- **The unaddressed placeholder inside a section pulled the SOURCE's credential.** `AddressOf` returns
+  null for the bare form and null resolves to `source.properties`, so a bare placeholder hand-written
+  into a destination — the only form the README and CHANGELOG document — handed that destination the
+  source's connection string. This is the same wire-crossing the addressed form exists to prevent,
+  reached from the other direction, and it is the *third* distinct route into it. Rejected outright:
+  only `Redact` issues the bare form, and only for the source.
+
+The other four: a column name containing a comma was split in two by the single text box and both
+halves retyped as `String` (an untouched list is now written back as the stored array, and the step
+warns when the box cannot represent a name); `validate?for=` skipped the restore when the report was
+gone, producing a placeholder complaint instead of "that report no longer exists"; a `404` from
+`GET .../config` still degraded to a silent blank wizard; and destination card selection was still an
+ordinal comparison after the rest of the destination matching went case-insensitive.
+
+### The seventh review pass
+
+Three real ones, and the shape of two of them is the same: **a rule that could only recognise the
+names it was told about.**
+
+- **A credential under a name nobody listed came back in plaintext.** The key matching covers
+  `password`, `token`, `connectionString` and the rest, and the value-based fallback covered URLs —
+  but `"dsn": "Host=db;Username=svc;Password=hunter2"`, `"conn": "…;Pwd=…"` and `"bearer": "eyJ…"`
+  matched neither, so `GET .../config` returned all three in full. The fallback now recognises the
+  *value*: a `keyword=value;…` string carrying a credential keyword (reusing the same key matching on
+  each keyword, so `Password`, `Pwd`, `AccountKey` and `SharedAccessSignature` all land) and a JWT.
+  Key lists cannot be completed; value shapes can be recognised.
+- **A section's address sent inside the source bag relocated a credential.** The sixth pass rejected
+  the bare form inside a section; this is its mirror, and it moved `destinations[0]`'s stored
+  `secretKey` into `source.properties`. Both are now one rule: a placeholder must have been issued
+  for the same *collection* it now sits in. The index may still differ — that is the whole reason the
+  address is carried, so a reordered or deduplicated section keeps its own value — but the collection
+  may not, because `Redact` never issues an address across collections. The first attempt at this was
+  a strict slot-equality check, and the reorder tests caught it immediately: they are the cases the
+  address mechanism was built for.
+- **Hydrate left the create wizard's defaults in place when the document had no `source.properties`.**
+  A `ref`-based report stores none, and `Reset()`'s `KeyColumn = "Id"` was then written back as a
+  report-local keyset overlay that wins over the registered definition (D42) — the same silent-repoint
+  as the sixth pass's empty overlay, from the *non-blank* default rather than the blank one. Hydrate
+  now assigns the fields it owns whether or not the bag is there; inheriting a create default into a
+  loaded document is never right.
+
+`ReconcileScheduleAsync` also had no coverage at all: inverting the branch that chooses between
+registering and removing left the whole suite green, so an edit that added a cron could have quietly
+never run. Now covered in both directions.
+
+### What the second security review changed
+
+The attack-path pass found one thing the line-by-line passes did not, and it is the sharper kind of
+finding: **a control defeated by an equivalent spelling, not by a missing check.**
+
+`Claims` was keyed on the address *text* while the lookup parsed it as a *number* under
+`NumberStyles.None`, which accepts leading zeros. So `destinations[0]` and `destinations[00]` were two
+claim keys resolving to one stored bag, and the one-bag-per-address rule — added in the fourth pass
+precisely to stop a duplicated section resolving the original's credential — never fired. A single PUT
+could hand two attacker-defined destinations the same stored `secretKey`. Addresses are now parsed
+once and required to be character-for-character what `Redact` emits; the claim key, the collection
+check and the lookup read the same canonical value instead of three near-agreeing spellings.
+
+The same pass also showed the "rejected in three places" claim was one place short: every guard walked
+only property bags, so a sentinel in a field like a column's `format` passed the create check, survived
+`Restore` untouched and was persisted as the literal string. No credential is involved and a bogus
+format string is inert, but the reserved sentinel is not allowed to reach disk. `Restore` now asserts
+the outcome — no placeholder anywhere in the document it returns — which is cheaper and more durable
+than enumerating every field that is not a bag.
+
+### The eighth review pass: the value rule was too eager
+
+The seventh pass fixed a credential returned in plaintext by teaching the value rule to recognise a
+connection string. That rule read *everything before the first* `=` as a keyword — and a SQL query
+has an `=` in it. `SELECT a.author_name, a.id FROM articles a WHERE a.id = @id` therefore had the
+keyword `SELECT a.author_name, a.id FROM articles a WHERE a.id`, which contains `auth`, so the whole
+query came back as a sentinel and editing one column meant retyping it from memory.
+
+That is this ADR's own opening complaint, reintroduced by its own fix, on SQL — the primary v1
+source. `session_id`, `product_key`, `password_reset_at` and `token_hash` in a `WHERE` clause all did
+the same.
+
+The rule was under-specified about what a *keyword* is. Real ones are short and word-shaped —
+`Password`, `Pwd`, `User ID`, `AccountKey`, `SharedAccessSignature`, the longest at 21 characters and
+the wordiest at three words. A clause is not: it carries punctuation a keyword never does (`.`, `,`,
+`*`, quotes, parentheses) or runs to more words than any keyword has. Requiring that shape keeps
+every credential the seventh pass caught and returns every query untouched.
+
+**The general lesson, and the reason it is written down rather than just fixed:** a guard widened to
+close a leak has to be measured against the *ordinary* values it will now see, not only against the
+credential it was written for. Five negative-control cases with real query text now sit beside the
+positive ones, because the positives alone stayed green through the whole regression.
+
+Two smaller ones from the same pass: the "this value was held back" hint was rendered only beside the
+generic property list, so a sentinel in the SQL or key box had no explanation at all — it belongs to
+the step, not to one of its editors. And the README said "those three routes" while listing five.
+
+### Known limitation: no optimistic concurrency on PUT
+
+Two editors open the same report; the second reorders its destinations and saves; the first then
+saves a placeholder addressed `destinations[0]`, which resolves against the *reordered* stored
+document and restores the wrong section's credential. The carried address is what makes a
+single-editor reorder safe, and it cannot see a change made on the stored side between the GET and
+the PUT.
+
+Not fixed here, because the fix is new API surface — an `ETag` on `GET .../config` and `If-Match` on
+the PUT, with `412` when it does not match — and this ADR is already the secrets round-trip. Recorded
+so the next change to these endpoints starts from it rather than rediscovering it. Single-worker,
+single-maintainer v1 (rule 6) makes concurrent editors unlikely, not impossible.
+
+### Verified end to end
+
+Driven in a browser against `samples/09-web-ui-live`: a report carrying a literal password, a
+JsonLogic filter, a typed column with a display name, a numeric source property and two output
+formats was opened in the Builder — every step prefilled — its page size changed, and saved. The
+stored document came back with the password intact, the filter intact, the column type and display
+name intact, `90` still a number, and the new page size applied. Saving with no changes at all
+reproduces the original document.

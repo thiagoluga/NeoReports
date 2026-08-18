@@ -27,7 +27,7 @@
             else
             {
                 <div class="r-name">@Wizard.SourceType <span class="muted" style="font-weight:400;font-size:12px">· engine source type</span></div>
-                <div class="r-meta">@(string.IsNullOrWhiteSpace(Wizard.ConnectionStringVariable) ? "no connection string variable set" : $"${{{Wizard.ConnectionStringVariable}}}")</div>
+                <div class="r-meta">@Wizard.ConnectionSummary</div>
             }
         </div>
         <button class="btn link" @onclick="@(() => Nav.NavigateTo("builder?resume=true"))">Change →</button>
@@ -40,11 +40,21 @@
             <Button Variant="outline" Size="sm" Icon="circle-check" Loading="_validating" OnClick="ValidateAsync">Validate</Button>
         </Action>
         <ChildContent>
-        @if (Wizard.IsEditing && string.IsNullOrEmpty(Wizard.SourceRef))
+        @* Only where the connection field actually is: a ref-based source has none, so the banner
+           would point at a control that is not on the page. *@
+        @if (Wizard.IsEditing && Wizard.ConnectionStringKept && string.IsNullOrEmpty(Wizard.SourceRef))
+        {
+            <Banner Variant="info" Icon="lock">
+                <b>The stored connection is kept.</b>
+                <span style="font-size:12px">Its value is not shown — the engine holds back anything that could be the secret itself. Leave the field below blank to keep it, or name an environment variable to replace it.</span>
+            </Banner>
+        }
+        @if (Wizard.IsEditing && Wizard.SourceChanged && string.IsNullOrEmpty(Wizard.SourceRef)
+             && string.IsNullOrWhiteSpace(Wizard.ConnectionStringVariable))
         {
             <Banner Variant="warn" Icon="alert-triangle">
-                <b>Re-enter the source properties and connection.</b>
-                <span style="font-size:12px">The engine never returns a report's raw source properties, even when editing — same security boundary as registered sources. Everything else below was prefilled from "@Wizard.EditingOriginalName".</span>
+                <b>Set a connection for the new source.</b>
+                <span style="font-size:12px">You changed the source from what "@Wizard.EditingOriginalName" was reading, so its stored connection was not carried over — restoring it into a different source is not something the engine can assume. Name an environment variable below; saving without one is rejected.</span>
             </Banner>
         }
         <div class="col" style="gap:12px">
@@ -52,13 +62,17 @@
                 <div class="field"><span class="label-sm">Report name</span><span class="input mono"><input class="mono" @bind="Wizard.ReportName" @bind:event="oninput" placeholder="monthly-sales" readonly="@Wizard.IsEditing" style="width:100%" /></span></div>
                 @if (string.IsNullOrEmpty(Wizard.SourceRef))
                 {
-                    <div class="field"><span class="label-sm">Connection string variable</span><span class="input mono"><span class="mono muted" style="font-size:11px">${</span><input class="mono" @bind="Wizard.ConnectionStringVariable" @bind:event="oninput" placeholder="SALES_DB" style="flex:1" /><span class="mono muted" style="font-size:11px">}</span></span></div>
+                    <div class="field"><span class="label-sm">Connection string variable</span><span class="input mono"><span class="mono muted" style="font-size:11px">${</span><input class="mono" @bind="Wizard.ConnectionStringVariable" @bind:event="oninput" placeholder="@(Wizard.ConnectionStringKept ? "kept — type to replace" : "SALES_DB")" style="flex:1" /><span class="mono muted" style="font-size:11px">}</span></span></div>
                 }
                 else
                 {
                     <div class="field"><span class="label-sm">Connection</span><span class="muted" style="font-size:12px;align-self:center">resolved from <span class="mono">@Wizard.SourceRef</span> on every run</span></div>
                 }
             </div>
+            @if (HasRedactedValue)
+            {
+                <span class="muted" style="font-size:11px;display:block">A value starting with <span class="mono">${neoreports:redacted</span> is one the engine held back. Leave it to keep the stored value; overwrite it to replace it.</span>
+            }
             @if (Wizard.UsesAdoSqlShape)
             {
                 <div class="field">
@@ -78,6 +92,13 @@
                     <PropertyListEditor Rows="Wizard.SourceProperties" KeyPlaceholder="url" ValuePlaceholder="https://api.example.com" />
                 </div>
                 <div class="field"><span class="label-sm">Page size</span><span class="input num"><input class="mono" type="number" min="1" @bind="Wizard.PageSize" @bind:event="oninput" /></span></div>
+            }
+            @if (Wizard.IsEditing && !Wizard.ColumnNamesAreSplittable)
+            {
+                <Banner Variant="warn" Icon="alert-triangle">
+                    <b>A column name contains a comma.</b>
+                    <span style="font-size:12px">This box separates columns with commas, so it cannot represent that name. Leave it exactly as it is and the stored columns are kept untouched; editing it would split that name into two columns.</span>
+                </Banner>
             }
             <div class="field"><span class="label-sm">Output columns</span><span class="input mono"><input class="mono" @bind="Wizard.ColumnNames" @bind:event="oninput" placeholder="Id, Customer, Amount" style="width:100%" /></span></div>
             <div class="cgr"><span class="lbl">Track progress</span><div class="ctl"><Switch @bind-Value="Wizard.TrackProgress" /><span class="hint">counts the source rows once before each run · enables a real completion percentage</span></div></div>
@@ -196,6 +217,13 @@
     private bool _validationUnavailable;
     private ApiValidationResult? _validationResult;
 
+    // Every editor on this step, not only the property list: the hint explains what a held-back value
+    // IS, and a user looking at one in the query or key box needs that as much as one looking at a row.
+    private bool HasRedactedValue =>
+        Wizard.SourceProperties.Any(row => BuilderConfigMapper.IsRedactedPlaceholder(row.Value))
+        || BuilderConfigMapper.IsRedactedPlaceholder(Wizard.SqlQuery)
+        || BuilderConfigMapper.IsRedactedPlaceholder(Wizard.KeyColumn);
+
     protected override void OnInitialized()
     {
         if (!Wizard.UsesAdoSqlShape && Wizard.SourceProperties.Count == 0)
@@ -210,7 +238,8 @@
         try
         {
             string configJson = BuilderConfigMapper.ToConfigJson(Wizard);
-            _validationResult = await Api.TryValidateReportAsync(configJson);
+            _validationResult = await Api.TryValidateReportAsync(
+                configJson, Wizard.IsEditing ? Wizard.EditingOriginalName : null);
             _validationUnavailable = _validationResult is null;
         }
         finally

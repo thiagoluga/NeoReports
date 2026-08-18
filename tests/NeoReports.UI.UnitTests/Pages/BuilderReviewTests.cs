@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Bunit;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
@@ -84,79 +85,100 @@ public sealed class BuilderReviewTests : NeoReportsTestContext
     }
 
     [Fact]
-    public void Editing_with_unreachable_validation_reports_unavailable_and_never_deletes()
+    public void Editing_with_an_unreachable_engine_reports_unavailable()
     {
         Wizard.IsEditing = true;
         Wizard.EditingOriginalName = "clientsVip";
-        Api.ValidateReport = (_, _) => Task.FromResult<ApiValidationResult?>(null);
+        Api.ReplaceReport = (_, _, _) => Task.FromResult(new ApiCreateResult(ApiCreateOutcome.Unavailable, null, null));
 
         var cut = RenderReview();
         cut.FindAll("button").First(b => b.TextContent.Contains("Save report")).Click();
 
-        Api.LastDeletedReportName.ShouldBeNull();
         cut.Markup.ShouldContain("The engine is not reachable right now.");
     }
 
     [Fact]
-    public void Editing_with_an_invalid_config_reports_the_validation_error_and_never_deletes()
+    public void Editing_with_an_invalid_config_reports_the_engine_error_and_leaves_the_report_alone()
     {
         Wizard.IsEditing = true;
         Wizard.EditingOriginalName = "clientsVip";
-        Api.ValidateReport = (_, _) => Task.FromResult<ApiValidationResult?>(
-            new ApiValidationResult(false, "Query references an unknown column.", null, null, false));
+        Api.ReplaceReport = (_, _, _) =>
+            Task.FromResult(new ApiCreateResult(ApiCreateOutcome.Invalid, null, "Query references an unknown column."));
 
         var cut = RenderReview();
         cut.FindAll("button").First(b => b.TextContent.Contains("Save report")).Click();
 
+        // The whole point of replacing in one call: a rejected edit deletes nothing. The old flow
+        // deleted first and could leave the user with no report at all.
         Api.LastDeletedReportName.ShouldBeNull();
+        Api.LastCreateReportConfigJson.ShouldBeNull();
         cut.Markup.ShouldContain("Query references an unknown column.");
     }
 
     [Fact]
-    public void Editing_when_deleting_the_original_fails_reports_that_nothing_changed_and_never_creates()
+    public void Editing_a_report_deleted_elsewhere_shows_the_engines_message_not_a_network_error()
     {
         Wizard.IsEditing = true;
         Wizard.EditingOriginalName = "clientsVip";
-        Api.ValidateReport = (_, _) => Task.FromResult<ApiValidationResult?>(new ApiValidationResult(true, null, "clientsVip", [], true));
-        Api.DeleteReport = (_, _) => Task.FromResult(false);
+        Api.ReplaceReport = (_, _, _) => Task.FromResult(
+            new ApiCreateResult(ApiCreateOutcome.Invalid, null, "No report named 'clientsVip' is registered."));
 
         var cut = RenderReview();
         cut.FindAll("button").First(b => b.TextContent.Contains("Save report")).Click();
 
-        Api.LastCreateReportConfigJson.ShouldBeNull();
-        cut.Markup.ShouldContain("Could not remove the existing \"clientsVip\" report to replace it. Nothing was changed.");
+        // A 404 is a rejected request carrying a usable message — mapping it to Unavailable threw the
+        // message away and blamed the network for a report someone deleted in another tab.
+        cut.Markup.ShouldContain("No report named 'clientsVip' is registered.");
+        cut.Markup.ShouldNotContain("The engine is not reachable right now.");
     }
 
     [Fact]
-    public void Editing_full_success_deletes_the_original_then_creates_the_replacement()
+    public void Editing_saves_through_a_single_replace_call_and_never_deletes()
     {
         Wizard.IsEditing = true;
         Wizard.EditingOriginalName = "clientsVip";
         Wizard.ReportName = "clientsVip";
-        Api.ValidateReport = (_, _) => Task.FromResult<ApiValidationResult?>(new ApiValidationResult(true, null, "clientsVip", [], true));
-        Api.DeleteReport = (_, _) => Task.FromResult(true);
-        Api.CreateReport = (_, _) => Task.FromResult(new ApiCreateResult(ApiCreateOutcome.Created, "clientsVip", null));
+        Api.ReplaceReport = (name, _, _) => Task.FromResult(new ApiCreateResult(ApiCreateOutcome.Created, name, null));
 
         var cut = RenderReview();
         cut.FindAll("button").First(b => b.TextContent.Contains("Save report")).Click();
 
-        Api.LastDeletedReportName.ShouldBe("clientsVip");
+        Api.LastReplaceReport!.Value.Name.ShouldBe("clientsVip");
+        Api.LastDeletedReportName.ShouldBeNull();
+        Api.LastCreateReportConfigJson.ShouldBeNull();
         Services.GetRequiredService<NavigationManager>().Uri.ShouldEndWith("reports/clientsVip");
     }
 
     [Fact]
-    public void Editing_when_recreate_fails_after_delete_explains_the_original_is_already_gone()
+    public void Editing_sends_the_stored_document_patched_rather_than_a_regenerated_one()
     {
         Wizard.IsEditing = true;
         Wizard.EditingOriginalName = "clientsVip";
-        Api.ValidateReport = (_, _) => Task.FromResult<ApiValidationResult?>(new ApiValidationResult(true, null, "clientsVip", [], true));
-        Api.DeleteReport = (_, _) => Task.FromResult(true);
-        Api.CreateReport = (_, _) => Task.FromResult(new ApiCreateResult(ApiCreateOutcome.Invalid, null, "Bad query."));
+        Wizard.ReportName = "clientsVip";
+        Wizard.PageSize = 250;
+        Wizard.OriginalDocument = """
+            {"name":"clientsVip","source":{"type":"sql","properties":{"sql":"SELECT 1","key":"Id"}},
+             "columns":[{"name":"Id","type":"Integer"}],"outputs":[{"format":"csv"}],"pageSize":1000,
+             "filter":{"==":[{"var":"Active"},true]}}
+            """;
+        Wizard.LoadedSourceIdentity = "type:sql";
+        Wizard.SourceType = "sql";
+        Wizard.SqlQuery = "SELECT 1";
+        Wizard.KeyColumn = "Id";
+        Wizard.ColumnNames = "Id";
+        Wizard.Formats = ["csv"];
+        Api.ReplaceReport = (name, _, _) => Task.FromResult(new ApiCreateResult(ApiCreateOutcome.Created, name, null));
 
         var cut = RenderReview();
         cut.FindAll("button").First(b => b.TextContent.Contains("Save report")).Click();
 
-        cut.Markup.ShouldContain("was removed but the replacement could not be created: Bad query. Recreate it from the Builder.");
+        using JsonDocument sent = JsonDocument.Parse(Api.LastReplaceReport!.Value.ConfigJson);
+        sent.RootElement.GetProperty("pageSize").GetInt32().ShouldBe(250);
+        // The wizard has no filter editor and no column-type editor. Regenerating the document from
+        // the form would have deleted both without a word.
+        sent.RootElement.TryGetProperty("filter", out _).ShouldBeTrue();
+        sent.RootElement.GetProperty("columns").EnumerateArray().Single()
+            .GetProperty("type").GetString().ShouldBe("Integer");
     }
 
     [Fact]

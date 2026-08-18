@@ -49,6 +49,17 @@ public sealed class FileReportConfigStore : IReportConfigStore
     }
 
     /// <inheritdoc />
+    public async Task<string?> TryGetAsync(string name, CancellationToken cancellationToken)
+    {
+        ValidateName(name);
+
+        string path = GetPath(name);
+        return File.Exists(path)
+            ? await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false)
+            : null;
+    }
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<(string Name, string Document)>> ListAsync(CancellationToken cancellationToken)
     {
         if (!Directory.Exists(_directory))

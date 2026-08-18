@@ -34,6 +34,32 @@ public sealed class BuilderConfigureTests : NeoReportsTestContext
         cut.Markup.ShouldNotContain("Connection string variable");
     }
 
+    // The hint explains what a held-back value IS. It was rendered only beside the generic property
+    // list, so a sentinel sitting in the SQL or key box — the ADO shape, which is the other half of
+    // this step — appeared with no explanation at all.
+    [Theory]
+    [InlineData("sql")]
+    [InlineData("key")]
+    public void The_held_back_value_hint_covers_the_ado_editors_too(string field)
+    {
+        Wizard.SourceType = "sql";
+        if (field == "sql")
+            Wizard.SqlQuery = BuilderConfigMapper.RedactedValue;
+        else
+            Wizard.KeyColumn = BuilderConfigMapper.RedactedValue;
+
+        Render<BuilderConfigure>().Markup.ShouldContain("the engine held back");
+    }
+
+    [Fact]
+    public void The_held_back_value_hint_stays_off_when_nothing_was_held_back()
+    {
+        Wizard.SourceType = "sql";
+        Wizard.SqlQuery = "SELECT a.author_name FROM articles a WHERE a.id = @id";
+
+        Render<BuilderConfigure>().Markup.ShouldNotContain("the engine held back");
+    }
+
     [Fact]
     public void Validate_success_shows_the_valid_banner_with_columns()
     {

@@ -58,17 +58,31 @@ public sealed class BuilderDestinationTests : NeoReportsTestContext
     }
 
     [Fact]
-    public void Editing_with_a_type_but_no_path_shows_the_re_enter_warning()
+    public void Editing_a_report_with_extra_destinations_says_they_ride_along_untouched()
     {
         Wizard.IsEditing = true;
         Wizard.EngineAvailable = true;
         Wizard.DestinationType = "s3";
-        Wizard.DestinationPath = "";
+        Wizard.AdditionalDestinationCount = 2;
         Api.Capabilities = _ => Task.FromResult<ApiCapabilities?>(new ApiCapabilities([], [], ["s3"]));
 
         var cut = Render<BuilderDestination>();
 
-        cut.Markup.ShouldContain("Re-enter the path / key template.");
+        cut.Markup.ShouldContain("2 further destinations on this report.");
+    }
+
+    [Fact]
+    public void Editing_a_single_destination_report_shows_no_extra_destination_banner()
+    {
+        Wizard.IsEditing = true;
+        Wizard.EngineAvailable = true;
+        Wizard.DestinationType = "s3";
+        Wizard.AdditionalDestinationCount = 0;
+        Api.Capabilities = _ => Task.FromResult<ApiCapabilities?>(new ApiCapabilities([], [], ["s3"]));
+
+        var cut = Render<BuilderDestination>();
+
+        cut.Markup.ShouldNotContain("further destination");
     }
 
     [Fact]
