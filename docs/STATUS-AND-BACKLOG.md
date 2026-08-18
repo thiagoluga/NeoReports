@@ -135,6 +135,21 @@ Fixed by excluding the rule itself via `query-filters`, not by a third path twea
 rule at a 100% false-positive rate across two different generators will keep firing every time a
 generator changes shape.
 
+### 1d. A code-registered report name is never validated — open
+
+`AddReport<T>(name, …)` accepts any non-blank string, and `ReportRunner` builds the run's output file
+as `Path.Combine(tempDir, $"{report.Name}.{ext}")`. So `AddReport<T>("../sales", …)` writes outside the
+run's temp directory and escapes its cleanup, and a name with a newline reaches the same log
+statements the dynamic-name fix above just closed.
+
+**Not** fixed alongside that one, deliberately. The obvious guard — reject control characters in
+`ReportBuilder`'s constructor — throws `ArgumentException`, and every `ReportConfigCompiler.Compile`
+call site catches only `ConfigurationException`: it would turn a bad name into a 500 on `POST`/`PUT`
+and on the *validate* endpoint (which exists never to throw), and in `FileStoreRegistryHydrator` it
+would escape the per-report skip and stop the host from starting at all. Doing this properly means
+deciding where a code-first name is validated and with which exception, which is a design question,
+and the input is the host developer's own literal rather than anything remote.
+
 ### 2. CI hardening
 - **Fail (not skip) the Testcontainers integration tests when Docker is absent in CI.** — **done**:
   the five container `ServerFixture`s now swallow a start failure only through an exception filter,
