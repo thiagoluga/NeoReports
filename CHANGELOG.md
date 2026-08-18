@@ -8,6 +8,18 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 
 ## [Unreleased]
 
+### Fixed
+- **A dynamic report name could end in a newline.** `DynamicReportName.Pattern` was anchored with
+  `$`, which in .NET matches at the end of input **and** immediately before a trailing newline — so
+  a name ending in one was accepted. That name is remotely creatable via `POST /api/reports`, and
+  it reaches a file name on disk, a URL segment, a job record field and every log line about a run.
+  The concrete consequence is the last one: in a plain-text log sink the newline splits the line and
+  lets the name forge a log entry of its own (CodeQL `cs/log-forging` on `ReportJobWorker` and
+  `InMemoryJobScheduler`). Path traversal was never reachable through it — `/`, `\`, `.` and `:` have
+  never been in the character class — so this is the validator not doing what it documented rather
+  than a hole in the file layout. Anchored with `\z`, which means end of input and nothing else. The
+  validator had no tests at all, which is how this survived; it has sixteen now.
+
 ### Added
 - **Optimistic concurrency on report editing (ADR D87).** `GET /api/reports/{name}/config` now returns
   an `ETag`, and `PUT /api/reports/{name}` honours `If-Match`, answering `412 Precondition Failed`
