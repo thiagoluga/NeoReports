@@ -186,6 +186,36 @@ build output.
 make quietly. The four alerts are dismissed with the reasoning above in the meantime, so the repo's
 open count stays at 0.
 
+### 1f. No workflow declared a timeout — **FIXED (2026-08-19)**
+
+`Install Playwright browsers` fetches browser binaries from an external CDN, and it stalled there
+twice: 27 minutes on PR #287 before being cancelled by hand, then the **full 6-hour** Actions default
+on PR #295, blocking that PR for an afternoon. No job or step in any workflow declared
+`timeout-minutes`, so a stalled step always burned the whole default.
+
+All four workflows now cap the job at 30 minutes, and the Playwright step at 15. The numbers come from
+**job** timings over the last 15 successful runs of each:
+
+| workflow | job duration | cap |
+|---|---|---|
+| `ci.yml` | 5.2–10.1 min | 30 |
+| `release.yml` | 1.4–4.8 min | 30 |
+| `codeql.yml` | 6.9–11.3 min | 30 |
+| `sonar.yml` | 5.3–6.3 min | 30 |
+| Playwright install step | 23 s–4 min 48 s (median 28 s) | 15 |
+
+A timeout is still a failure, which is what both Playwright steps' existing comments ask for: a
+missing browser must fail the job rather than let the E2E suite self-skip.
+
+**Worth remembering how the first attempt got this wrong.** It exempted `sonar.yml` on the grounds
+that one successful run took 65 minutes, so a 30-minute cap would have killed real work. That figure
+was the *workflow run's* wall clock — `created` to `updated`, queue time included — and
+`timeout-minutes` bounds **job execution**, which for that same run was 5 m 50 s. Re-derived from job
+timings the argument reversed completely: `sonar.yml` is the workflow that hard-waits on an external
+API (`sonar.qualitygate.wait`, already seen returning 504s here) *and* is a required check, so leaving
+it uncapped was the worst of the four choices. The same first attempt also described the download as
+taking "1–3 minutes" when the median is 28 seconds.
+
 ### 2. CI hardening
 - **Fail (not skip) the Testcontainers integration tests when Docker is absent in CI.** — **done**:
   the five container `ServerFixture`s now swallow a start failure only through an exception filter,
