@@ -74,7 +74,11 @@ public class ScheduleEndpointTests
         // override under this name. That is the resource's state, not a malformed request — and it
         // must not be the ArgumentException-turned-500 it used to be.
         response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
-        (await response.Content.ReadAsStringAsync()).ShouldContain(DynamicReportName.Pattern);
+        // Read through the parsed body, not the raw JSON: the pattern contains a backslash (it is
+        // anchored with \z, since $ also matches before a trailing newline), and JSON doubles it on
+        // the wire — a substring check against the raw text compares two different encodings.
+        JsonElement body = await response.Content.ReadFromJsonAsync<JsonElement>(Json);
+        body.GetProperty("error").GetString()!.ShouldContain(DynamicReportName.Pattern);
     }
 
     [Fact]

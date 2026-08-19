@@ -18,6 +18,12 @@ jobs:
   analyze:
     name: SonarCloud
     runs-on: ubuntu-latest
+    # Job durations measured 5.3–6.3 minutes over the last 15 successful runs — the workflow's
+    # 65-minute wall clock that first argued for leaving this uncapped was queue time, which
+    # timeout-minutes does not bound. This job hard-waits on SonarCloud's API
+    # (sonar.qualitygate.wait), which the repo has already seen return 504s, and it is a required
+    # check — so an unbounded stall here blocks merges for six hours.
+    timeout-minutes: 30
     # The whole job is skipped (neutral, never red) until SonarCloud is fully set up.
     # To activate: import the project on sonarcloud.io, add the SONAR_TOKEN secret,
     # then set the repository variable SONAR_ENABLED to "true"

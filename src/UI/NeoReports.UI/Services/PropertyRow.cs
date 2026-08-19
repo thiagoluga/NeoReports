@@ -9,4 +9,12 @@ public sealed class PropertyRow
 {
     public string Key { get; set; } = "";
     public string Value { get; set; } = "";
+
+    /// <summary>
+    /// True when <see cref="Value"/> is the JSON text of an object or array rather than a plain
+    /// scalar — an HTTP source's <c>headers</c>, a merge-join source's child sources. The editor is
+    /// a one-line text box either way, so the flag is what tells the save path to parse the text
+    /// back instead of storing the whole subtree as a JSON <em>string</em>.
+    /// </summary>
+    public bool IsStructured { get; set; }
 }

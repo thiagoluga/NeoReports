@@ -8,6 +8,9 @@ namespace NeoReports.UI.UnitTests;
 /// <summary>Epic D / D6: <see cref="BuilderConfigMapper.ToConfigJson"/> — BuilderState to config JSON.</summary>
 public class BuilderConfigMapperTests
 {
+    private const string PropertiesMember = "properties";
+    private const string SourceMember = "source";
+
     private static readonly string[] IdCustomerAmountColumns = { "Id", "Customer", "Amount" };
     private static readonly string[] CsvXlsxFormats = { "csv", "xlsx" };
     private static readonly string[] ZetaAlphaMiddleColumns = { "Zeta", "Alpha", "Middle" };
@@ -342,5 +345,575 @@ public class BuilderConfigMapperTests
         JsonElement properties = doc.RootElement.GetProperty("source").GetProperty("properties");
         properties.GetProperty("sql").GetString().ShouldBe(state.SqlQuery);
         properties.GetProperty("key").GetString().ShouldBe(state.KeyColumn);
+    }
+
+    // ---- Editing an existing report (ADR D86) --------------------------------------------------
+
+    private const string StoredDocument = """
+        {
+          "name": "monthly-sales",
+          "source": {
+            "type": "sql",
+            "properties": {
+              "sql": "SELECT Id FROM Sales ORDER BY Id",
+              "key": "Id",
+              "connectionString": "${neoreports:redacted}",
+              "commandTimeoutSeconds": 90
+            }
+          },
+          "columns": [{ "name": "Id", "type": "Integer", "displayName": "Sale ID" }],
+          "outputs": [{ "format": "xlsx", "properties": { "autoFilter": true } }],
+          "destinations": [
+            { "type": "local", "properties": { "path": "./out/{name}.{ext}" } },
+            { "type": "s3", "properties": { "bucket": "reports", "path": "{name}.{ext}" } }
+          ],
+          "pageSize": 1000,
+          "filter": { "==": [{ "var": "Active" }, true] }
+        }
+        """;
+
+    private static BuilderState HydratedState()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, StoredDocument).ShouldBeTrue();
+        return state;
+    }
+
+    [Fact]
+    public void Hydrate_reads_back_everything_the_wizard_edits()
+    {
+        var state = HydratedState();
+
+        state.ReportName.ShouldBe("monthly-sales");
+        state.SourceType.ShouldBe("sql");
+        state.SqlQuery.ShouldBe("SELECT Id FROM Sales ORDER BY Id");
+        state.KeyColumn.ShouldBe("Id");
+        state.ColumnNames.ShouldBe("Id");
+        state.Formats.ShouldBe(["xlsx"]);
+        state.DestinationType.ShouldBe("local");
+        state.DestinationPath.ShouldBe("./out/{name}.{ext}");
+        state.PageSize.ShouldBe(1000);
+        state.AdditionalDestinationCount.ShouldBe(1);
+        state.ConnectionStringRedacted.ShouldBeTrue();
+        state.ConnectionStringVariable.ShouldBe("");
+    }
+
+    [Fact]
+    public void Hydrate_returns_false_for_a_document_it_cannot_read()
+    {
+        var state = new BuilderState();
+
+        BuilderConfigMapper.Hydrate(state, "not json at all").ShouldBeFalse();
+
+        state.OriginalDocument.ShouldBeNull();
+        state.ReportName.ShouldBe("");
+    }
+
+    [Fact]
+    public void An_untouched_edit_round_trips_everything_the_wizard_cannot_show()
+    {
+        var state = HydratedState();
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+        JsonElement root = doc.RootElement;
+
+        // None of these have an editor in the wizard. Regenerating the document from the form —
+        // what this used to do — deleted every one of them on the way past.
+        root.GetProperty("filter").GetProperty("==").GetArrayLength().ShouldBe(2);
+        root.GetProperty("columns").EnumerateArray().Single().GetProperty("type").GetString().ShouldBe("Integer");
+        root.GetProperty("columns").EnumerateArray().Single().GetProperty("displayName").GetString().ShouldBe("Sale ID");
+        root.GetProperty("outputs").EnumerateArray().Single().GetProperty("properties").GetProperty("autoFilter").GetBoolean().ShouldBeTrue();
+        root.GetProperty("source").GetProperty("properties").GetProperty("commandTimeoutSeconds").GetInt32().ShouldBe(90);
+
+        JsonElement[] destinations = root.GetProperty("destinations").EnumerateArray().ToArray();
+        destinations.Length.ShouldBe(2);
+        destinations[1].GetProperty("type").GetString().ShouldBe("s3");
+        destinations[1].GetProperty("properties").GetProperty("bucket").GetString().ShouldBe("reports");
+    }
+
+    [Fact]
+    public void An_untouched_redacted_connection_string_is_sent_back_as_the_placeholder()
+    {
+        var state = HydratedState();
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        doc.RootElement.GetProperty("source").GetProperty("properties")
+            .GetProperty("connectionString").GetString().ShouldBe("${neoreports:redacted}");
+    }
+
+    [Fact]
+    public void Naming_a_connection_variable_replaces_the_redacted_one()
+    {
+        var state = HydratedState();
+        state.ConnectionStringVariable = "SALES_DB";
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        doc.RootElement.GetProperty("source").GetProperty("properties")
+            .GetProperty("connectionString").GetString().ShouldBe("${SALES_DB}");
+    }
+
+    [Fact]
+    public void An_untouched_generic_property_keeps_its_original_json_type()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"type":"http","properties":{"pageSize":90,"hasHeader":true,"url":"https://x"}}}
+            """).ShouldBeTrue();
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        // Every row in the generic editor is text. Writing them all back as strings would turn 90
+        // into "90" and true into "true" on every single edit — silently, and only some providers
+        // parse their way out of it.
+        JsonElement properties = doc.RootElement.GetProperty("source").GetProperty("properties");
+        properties.GetProperty("pageSize").ValueKind.ShouldBe(JsonValueKind.Number);
+        properties.GetProperty("hasHeader").ValueKind.ShouldBe(JsonValueKind.True);
+        properties.GetProperty("url").ValueKind.ShouldBe(JsonValueKind.String);
+    }
+
+    [Fact]
+    public void An_edited_numeric_property_stays_a_number()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"type":"http","properties":{"pageSize":90,"retries":true}}}
+            """).ShouldBeTrue();
+        state.SourceProperties.Single(row => row.Key == "pageSize").Value = "120";
+        state.SourceProperties.Single(row => row.Key == "retries").Value = "false";
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        // Only untouched rows kept their kind before, so the very 90 → "90" coercion the round-trip
+        // fixed came back the moment someone edited the value.
+        JsonElement properties = doc.RootElement.GetProperty(SourceMember).GetProperty(PropertiesMember);
+        properties.GetProperty("pageSize").ValueKind.ShouldBe(JsonValueKind.Number);
+        properties.GetProperty("pageSize").GetInt32().ShouldBe(120);
+        properties.GetProperty("retries").ValueKind.ShouldBe(JsonValueKind.False);
+    }
+
+    [Fact]
+    public void An_edited_string_property_stays_a_string_even_when_it_looks_numeric()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"type":"http","properties":{"accountId":"00090"}}}
+            """).ShouldBeTrue();
+        state.SourceProperties.Single().Value = "12345";
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        // The kind is carried from the stored value, never guessed from the text — otherwise an
+        // all-digits account id or PIN would silently become a number and lose its leading zeros.
+        doc.RootElement.GetProperty(SourceMember).GetProperty(PropertiesMember).GetProperty("accountId")
+            .GetString().ShouldBe("12345");
+    }
+
+    [Fact]
+    public void An_edited_numeric_property_becomes_text_when_the_new_value_is_not_a_number()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"type":"http","properties":{"pageSize":90}}}
+            """).ShouldBeTrue();
+        state.SourceProperties.Single().Value = "${PAGE_SIZE}";
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        // Keeping the kind must not mangle a value that genuinely changed shape — an env placeholder
+        // is a string, and the engine resolves it at compile time.
+        doc.RootElement.GetProperty(SourceMember).GetProperty(PropertiesMember).GetProperty("pageSize")
+            .GetString().ShouldBe("${PAGE_SIZE}");
+    }
+
+    [Fact]
+    public void An_edit_keeps_the_failure_rate_minimum_batches_the_wizard_cannot_show()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"type":"http"},
+             "resilience":{"onFailure":"skip-and-log",
+                           "abortWhen":{"failureRate":0.25,"failureRateMinimumBatches":50}}}
+            """).ShouldBeTrue();
+        state.PageSize = 250;
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        // ADR D78's minimum sample is a real field the compiler honours and the wizard has no
+        // control for; rebuilding abortWhen from the form silently reset it to 10 on every edit.
+        JsonElement abortWhen = doc.RootElement.GetProperty("resilience").GetProperty("abortWhen");
+        abortWhen.GetProperty("failureRate").GetDouble().ShouldBe(0.25);
+        abortWhen.GetProperty("failureRateMinimumBatches").GetInt32().ShouldBe(50);
+    }
+
+    [Fact]
+    public void Turning_the_failure_rate_threshold_off_drops_its_minimum_batches_too()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"type":"http"},
+             "resilience":{"onFailure":"skip-and-log",
+                           "abortWhen":{"failureRate":0.25,"failureRateMinimumBatches":50}}}
+            """).ShouldBeTrue();
+        state.AbortOnFailureRate = false;
+        state.AbortOnTotalFailures = true;
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        // The minimum only qualifies failureRate; carrying it past the threshold it qualifies would
+        // leave a setting behind with nothing to apply to.
+        doc.RootElement.GetProperty("resilience").GetProperty("abortWhen")
+            .TryGetProperty("failureRateMinimumBatches", out _).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void A_json_null_property_survives_an_untouched_round_trip()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"type":"http","properties":{"proxy":null,"url":"https://x"}}}
+            """).ShouldBeTrue();
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        // A JSON null IS a null node, so "present but null" has to be told apart from "absent" —
+        // otherwise the row reads as changed and `null` is written back as `""` on every edit.
+        JsonElement properties = doc.RootElement.GetProperty("source").GetProperty(PropertiesMember);
+        properties.GetProperty("proxy").ValueKind.ShouldBe(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public void Two_outputs_of_the_same_format_both_survive_an_edit()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"type":"http"},
+             "outputs":[{"format":"csv","properties":{"delimiter":";"}},
+                        {"format":"csv","properties":{"delimiter":"|"}},
+                        {"format":"xlsx"}]}
+            """).ShouldBeTrue();
+
+        // The Format step is a set of checkboxes and collapses these to {csv, xlsx}; emitting one
+        // output per distinct format would silently delete the second csv on any edit.
+        state.AdditionalOutputCount.ShouldBe(1);
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        JsonElement[] outputs = doc.RootElement.GetProperty("outputs").EnumerateArray().ToArray();
+        outputs.Length.ShouldBe(3);
+        outputs.Where(o => o.GetProperty("format").GetString() == "csv")
+            .Select(o => o.GetProperty(PropertiesMember).GetProperty("delimiter").GetString())
+            .ShouldBe([";", "|"]);
+    }
+
+    [Fact]
+    public void Clearing_a_format_removes_every_output_of_it()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"type":"http"},
+             "outputs":[{"format":"csv"},{"format":"csv"},{"format":"xlsx"}]}
+            """).ShouldBeTrue();
+        state.Formats.Remove("csv");
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        doc.RootElement.GetProperty("outputs").EnumerateArray()
+            .Select(o => o.GetProperty("format").GetString()).ShouldBe(["xlsx"]);
+    }
+
+    [Fact]
+    public void An_edited_object_valued_property_stays_an_object()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"type":"http","properties":{"headers":{"Accept":"text/csv"}}}}
+            """).ShouldBeTrue();
+        state.SourceProperties.Single().Value = """{"Accept":"application/json"}""";
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        // The editor is a one-line text box, so an object arrives as JSON text. Writing that back as
+        // a JSON *string* broke the source outright — and hid any placeholder inside it from every
+        // guard, since none of them look inside a larger string.
+        JsonElement headers = doc.RootElement.GetProperty("source").GetProperty(PropertiesMember).GetProperty("headers");
+        headers.ValueKind.ShouldBe(JsonValueKind.Object);
+        headers.GetProperty("Accept").GetString().ShouldBe("application/json");
+    }
+
+    [Fact]
+    public void An_edited_object_valued_property_keeps_a_nested_placeholder_recognisable()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"type":"http","properties":{
+              "headers":{"Accept":"text/csv","Authorization":"${neoreports:redacted}"}}}}
+            """).ShouldBeTrue();
+        state.SourceProperties.Single().Value =
+            """{"Accept":"application/json","Authorization":"${neoreports:redacted}"}""";
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        // Parsed back as an object, the placeholder is a whole value again — so Restore resolves it
+        // and the compile-time guard can see it. Embedded in a JSON string it was invisible to both.
+        doc.RootElement.GetProperty("source").GetProperty(PropertiesMember).GetProperty("headers")
+            .GetProperty("Authorization").GetString().ShouldBe("${neoreports:redacted}");
+    }
+
+    [Fact]
+    public void An_addressed_placeholder_on_the_connection_is_sent_back_verbatim()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"type":"http","properties":{"connectionString":"${neoreports:redacted}"}}}
+            """).ShouldBeTrue();
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        doc.RootElement.GetProperty("source").GetProperty(PropertiesMember)
+            .GetProperty("connectionString").GetString().ShouldBe("${neoreports:redacted}");
+    }
+
+    [Fact]
+    public void A_format_id_stored_in_a_different_case_is_not_treated_as_a_second_format()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"type":"http"},"outputs":[{"format":"CSV","properties":{"delimiter":";"}}]}
+            """).ShouldBeTrue();
+        state.Formats.Add("csv");
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        // The engine resolves format ids case-insensitively; matching them ordinally here made a
+        // stored "CSV" plus a ticked "csv" checkbox save two CSV outputs.
+        JsonElement[] outputs = doc.RootElement.GetProperty("outputs").EnumerateArray().ToArray();
+        outputs.Length.ShouldBe(1);
+        outputs[0].GetProperty(PropertiesMember).GetProperty("delimiter").GetString().ShouldBe(";");
+    }
+
+    [Fact]
+    public void A_destination_type_stored_in_a_different_case_keeps_its_properties()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"type":"http"},
+             "destinations":[{"type":"S3","properties":{"bucket":"reports","path":"a.csv"}}]}
+            """).ShouldBeTrue();
+        state.DestinationType = "s3";
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        // Ordinal matching treated this as a type change and dropped the stored bucket.
+        doc.RootElement.GetProperty("destinations").EnumerateArray().Single()
+            .GetProperty(PropertiesMember).GetProperty("bucket").GetString().ShouldBe("reports");
+    }
+
+    [Fact]
+    public void A_ref_based_report_keeps_its_report_local_connection_overlay()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"ref":"sales-db","properties":{
+              "sql":"SELECT 1","connectionString":"${neoreports:redacted}"}}}
+            """, _ => "sql").ShouldBeTrue();
+        state.PageSize = 250;
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        // A registered source supplies the connection, so the wizard offers no field — but a
+        // report-local overlay is legitimate config (D42: report-local wins), and deleting a stored
+        // one repointed the report at the registry's connection without saying so.
+        doc.RootElement.GetProperty(SourceMember).GetProperty(PropertiesMember)
+            .GetProperty("connectionString").GetString().ShouldBe("${neoreports:redacted}");
+    }
+
+    [Fact]
+    public void A_ref_based_report_without_an_overlay_still_gets_no_connection_invented()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"ref":"sales-db","properties":{"sql":"SELECT 1"}}}
+            """, _ => "sql").ShouldBeTrue();
+        state.ConnectionStringVariable = "SALES_DB";
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        // Sending one here would shadow the registry's; there is no field for it either.
+        doc.RootElement.GetProperty(SourceMember).GetProperty(PropertiesMember)
+            .TryGetProperty("connectionString", out _).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void A_ref_report_whose_query_lives_in_the_definition_gets_no_empty_overlay()
+    {
+        var state = new BuilderState();
+        // The query and key live in the registered definition, so these boxes hydrate empty.
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"ref":"sales-db","properties":{}}}
+            """, _ => "sql").ShouldBeTrue();
+        state.PageSize = 250;
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        // Writing "sql": "" here wins over the definition (D42) and the next run fails with "requires
+        // a non-empty 'sql' property" — from a save that changed nothing but the page size.
+        JsonElement properties = doc.RootElement.GetProperty(SourceMember).GetProperty(PropertiesMember);
+        properties.TryGetProperty("sql", out _).ShouldBeFalse();
+        properties.TryGetProperty("key", out _).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void A_ref_report_with_no_properties_member_at_all_gets_no_overlay()
+    {
+        var state = new BuilderState();
+        // Not an empty bag — no bag at all, which is what a report that takes everything from the
+        // registered source stores. Hydrate used to return early here and leave Reset()'s create-wizard
+        // defaults in place, so the non-blank one ("Id") was written back as a keyset-column overlay
+        // that wins over the definition (D42) — again from a save that only touched the page size.
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"ref":"sales-db"}}
+            """, _ => "sql").ShouldBeTrue();
+        state.KeyColumn.ShouldBe("");
+        state.PageSize = 250;
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        JsonElement source = doc.RootElement.GetProperty(SourceMember);
+        if (source.TryGetProperty(PropertiesMember, out JsonElement properties))
+        {
+            properties.TryGetProperty("key", out _).ShouldBeFalse();
+            properties.TryGetProperty("sql", out _).ShouldBeFalse();
+        }
+    }
+
+    [Fact]
+    public void An_inline_ado_report_still_sends_its_own_query_and_key()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"type":"sql","properties":{"sql":"SELECT 1","key":"Id"}}}
+            """).ShouldBeTrue();
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        JsonElement properties = doc.RootElement.GetProperty(SourceMember).GetProperty(PropertiesMember);
+        properties.GetProperty("sql").GetString().ShouldBe("SELECT 1");
+        properties.GetProperty("key").GetString().ShouldBe("Id");
+    }
+
+    [Fact]
+    public void An_untouched_column_list_round_trips_a_name_containing_a_comma()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"type":"http"},
+             "columns":[{"name":"Total, net","type":"Decimal"},{"name":"Id","type":"Integer"}]}
+            """).ShouldBeTrue();
+        state.PageSize = 250;
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        // The box separates columns with commas, so re-deriving from it split this name into two
+        // columns and retyped both as String — the exact downgrade patch-don't-regenerate prevents.
+        JsonElement[] columns = doc.RootElement.GetProperty("columns").EnumerateArray().ToArray();
+        columns.Length.ShouldBe(2);
+        columns[0].GetProperty("name").GetString().ShouldBe("Total, net");
+        columns[0].GetProperty("type").GetString().ShouldBe("Decimal");
+        state.ColumnNamesAreSplittable.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void An_edited_column_list_is_rebuilt_from_the_text()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """
+            {"name":"feed","source":{"type":"http"},"columns":[{"name":"Id","type":"Integer"}]}
+            """).ShouldBeTrue();
+        state.ColumnNames = "Id, Customer";
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        JsonElement[] columns = doc.RootElement.GetProperty("columns").EnumerateArray().ToArray();
+        columns.Select(c => c.GetProperty("name").GetString()).ShouldBe(["Id", "Customer"]);
+        columns[0].GetProperty("type").GetString().ShouldBe("Integer");
+    }
+
+    [Fact]
+    public void Switching_the_source_drops_the_stored_properties_and_the_kept_connection()
+    {
+        var state = HydratedState();
+        state.SourceType = "http";
+        state.SourceProperties = [new() { Key = "url", Value = "https://api.example.com" }];
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        JsonElement properties = doc.RootElement.GetProperty("source").GetProperty("properties");
+        properties.EnumerateObject().Select(p => p.Name).ShouldBe(["url"]);
+        // Restoring the old connection into a source nobody pointed it at is the one outcome that
+        // would be both invisible and wrong.
+        properties.TryGetProperty("connectionString", out _).ShouldBeFalse();
+        properties.TryGetProperty("commandTimeoutSeconds", out _).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Changing_the_destination_type_does_not_inherit_the_old_types_properties()
+    {
+        var state = HydratedState();
+        state.DestinationType = "s3";
+        state.DestinationPath = "{name}.{ext}";
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        JsonElement[] destinations = doc.RootElement.GetProperty("destinations").EnumerateArray().ToArray();
+        destinations[0].GetProperty("type").GetString().ShouldBe("s3");
+        destinations[0].GetProperty("properties").GetProperty("path").GetString().ShouldBe("{name}.{ext}");
+        // The wizard edits the first destination; the second is a different one and stays put.
+        destinations[1].GetProperty("type").GetString().ShouldBe("s3");
+    }
+
+    [Fact]
+    public void Adding_a_column_types_it_as_String_without_disturbing_the_existing_ones()
+    {
+        var state = HydratedState();
+        state.ColumnNames = "Id, Customer";
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        JsonElement[] columns = doc.RootElement.GetProperty("columns").EnumerateArray().ToArray();
+        columns[0].GetProperty("type").GetString().ShouldBe("Integer");
+        columns[1].GetProperty("name").GetString().ShouldBe("Customer");
+        columns[1].GetProperty("type").GetString().ShouldBe("String");
+    }
+
+    [Fact]
+    public void Removing_the_only_destination_keeps_the_ones_the_wizard_never_showed()
+    {
+        var state = HydratedState();
+        state.DestinationType = "";
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        JsonElement destination = doc.RootElement.GetProperty("destinations").EnumerateArray().Single();
+        destination.GetProperty("type").GetString().ShouldBe("s3");
+    }
+
+    [Fact]
+    public void A_document_with_differently_cased_members_is_patched_not_duplicated()
+    {
+        var state = new BuilderState();
+        BuilderConfigMapper.Hydrate(state, """{"Name":"legacy","Source":{"Type":"sql","Properties":{"sql":"SELECT 1","key":"Id"}}}""")
+            .ShouldBeTrue();
+        state.PageSize = 42;
+
+        using JsonDocument doc = JsonDocument.Parse(BuilderConfigMapper.ToConfigJson(state));
+
+        // The engine reads member names case-insensitively, so a hand-written document may spell
+        // them any way it likes; emitting both "Name" and "name" would be a document the engine
+        // parses with one of them silently winning.
+        doc.RootElement.EnumerateObject().Count(p => string.Equals(p.Name, "name", StringComparison.OrdinalIgnoreCase)).ShouldBe(1);
+        doc.RootElement.GetProperty("name").GetString().ShouldBe("legacy");
+        doc.RootElement.GetProperty("source").GetProperty("properties").GetProperty("sql").GetString().ShouldBe("SELECT 1");
     }
 }

@@ -71,16 +71,150 @@ enterprise-readiness and test coverage, and shipped everything actionable.
 >    as a *different, plausible* date rather than being unrepresentable. Measuring also turned up
 >    `DateTime.MinValue` silently becoming `1899-12-30`, and a year below 100 throwing out of
 >    `ToOADate` and **aborting the whole workbook**. One range check closes all four.
-> 4. **CA1068-style next-major bundling** (§1) and the CI hardening in §2.
+> 4. ~~**CA1068-style next-major bundling** (§1) and the CI hardening in §2.~~ — **both SHIPPED**:
+>    §1 went out in **v2.0.0** (2026-08-08) and §2 is done (`DockerGate`, hard-fail under
+>    `NEOREPORTS_REQUIRE_DOCKER=1`).
+>
+> **State as of 2026-08-18.** With §1–§4, §1b and §6 closed, **one** thing remains open, and it needs
+> the maintainer:
+>
+> - ~~**§1b — no optimistic concurrency on report editing.**~~ — **FIXED (ADR D87, 2026-08-18).**
+> - **§5 — PostgreSQL `timetz` drops its zone.** Needs a `Time`/`TimeTz` split in the frozen
+>   `ColumnType` enum plus its own cursor-encoding decision, so it is a next-major item with a design
+>   question attached, not a cast.
 
 
-### 1. Next-major breaking cleanup (needs a 2.0 line)
+### 1. Next-major breaking cleanup — **SHIPPED in v2.0.0 (2026-08-08)**
 - **Remove the never-thrown ABI exceptions** — already done in #228, tagged for the next major.
 - **CA1068: `CancellationToken` not last** in three **public** health signatures — **done**: the
   token was moved to last (after `pingSql`/`content`, both defaulted) in `AdoSourceHealth.PingAsync`,
   `AdoSourceHealth.CheckConnectionStringAsync` and `HttpHealthProbe.SendAsync`, and all callers
   updated. Source-breaking for positional callers, so tagged **next-major** in `CHANGELOG.md`
   (Changed → breaking, public API) alongside the #228 removal.
+
+### 1b. Report editing: no optimistic concurrency on PUT — **FIXED (ADR D87, 2026-08-18)**
+
+Two editors open the same report; the second reorders its destinations and saves; the first then saves
+a placeholder addressed `destinations[0]`, which resolves against the **reordered** stored document and
+restores the wrong section's credential. The carried address is exactly what makes a *single*-editor
+reorder safe, and it cannot see a change made on the stored side between the `GET .../config` and the
+`PUT`.
+
+**Fixed in D87**, with the maintainer's go-ahead on the new API surface. `GET .../config` returns an
+`ETag` and `PUT` honours `If-Match` with a `412`; the header is optional, so clients from before D87
+are unaffected, and a successful `PUT` returns the new tag so an editor can save twice in a row.
+
+The validator is computed over the **redacted** form, not the stored document. The first cut hashed the
+stored one — it is what `Restore` resolves against — and the security pass showed that made the tag a
+free offline **verification oracle**: the two forms are byte-identical apart from the redacted values,
+so a caller could reconstruct candidates, hash them, and confirm a guessed connection string with no
+failed login to notice. Hashing the redacted form carries nothing the caller does not already hold, and
+is still the right validator, because an address is invalidated by a change to the document's
+*structure* and that structure is fully visible there.
+
+Two things remain uncovered, both recorded in D87: two non-overlapping concurrent edits still cost one
+of them a reload (merging needs a per-field model the document does not have), and the check is
+check-then-act rather than atomic — closing that needs a compare-and-swap on `IReportConfigStore`,
+an interface every custom store implements, for a race orders of magnitude smaller than the human one
+this closes.
+
+### 1c. CodeQL noise from source-generator output — **partially fixed; recurred (2026-08-19)**
+
+`cs/nested-if-statements` fired four times in this repository and every one was inside
+`System.Text.RegularExpressions` source-generator output — #157/#158 (2026-07-16, QueryBuilder.Pro)
+and #307/#308 (2026-08-17, Core). Never once in code anyone wrote.
+
+`paths-ignore: **/obj/**` was added for exactly this and did not stop the second pair, which is the
+part worth remembering: for a **compiled** language the extractor takes compilation units from the
+*build*, and generator output has no file in the checkout for a path filter to match — it is reported
+under a synthetic `obj/.../generated/…` path that never existed on disk. A path filter cannot reach it
+by construction.
+
+Fixed by excluding the rule itself via `query-filters`, not by a third path tweak: it is a
+*maintainability* rule rather than a security one, SonarCloud already covers that ground here, and a
+rule at a 100% false-positive rate across two different generators will keep firing every time a
+generator changes shape.
+
+### 1d. A code-registered report name is never validated — open
+
+`AddReport<T>(name, …)` accepts any non-blank string, and `ReportRunner` builds the run's output file
+as `Path.Combine(tempDir, $"{report.Name}.{ext}")`. So `AddReport<T>("../sales", …)` writes outside the
+run's temp directory and escapes its cleanup, and a name with a newline reaches the same log
+statements the dynamic-name fix above just closed.
+
+**Not** fixed alongside that one, deliberately. The obvious guard — reject control characters in
+`ReportBuilder`'s constructor — throws `ArgumentException`, and every `ReportConfigCompiler.Compile`
+call site catches only `ConfigurationException`: it would turn a bad name into a 500 on `POST`/`PUT`
+and on the *validate* endpoint (which exists never to throw), and in `FileStoreRegistryHydrator` it
+would escape the per-report skip and stop the host from starting at all. Doing this properly means
+deciding where a code-first name is validated and with which exception, which is a design question,
+and the input is the host developer's own literal rather than anything remote.
+
+### 1e. Windows device names still pass the report/source name grammar — open
+
+`CON`, `NUL`, `PRN`, `AUX`, `COM1`–`COM9` and `LPT1`–`LPT9` satisfy `DynamicReportName`, but a name
+becomes a file name and on Windows `CON.json` resolves to a device: the save throws
+`FileNotFoundException`, so `POST /api/reports` answers `500` for what is really an invalid name.
+Measured, not assumed — CON/NUL/PRN/AUX/COM1/LPT1 all failed to write on Windows 10 while `CON1` wrote
+normally, and `COM0`/`LPT0` turned out to be ordinary writable files despite being documented as
+reserved. No data is at risk: the create path already rolls the registry back.
+
+**Attempted and backed out.** Adding the device names to the pattern looks like a one-line fix and is
+not, because `DynamicReportName.IsValid` serves two roles: a *validator* (reject → 400) and a
+*discriminator* (could a file-backed store hold this?). Narrowing it flips the second role — a
+`source.ref` of `CON` and `GET /api/sources/CON` both turned from a clean 404/400 into a 500, and a
+`nul.json` created on Linux before the change would rehydrate and run but answer `409 "code-registered"`
+on delete, unrecoverable except by deleting the file by hand.
+
+The `500` half of that fallout is fixed (see the source-store lookup change above); the remaining work
+is separating the two roles, and deciding what happens to an already-stored name that the new rule
+would reject. That is a design decision, and the bug it fixes is a wrong status code.
+
+**It came back the next day, under a different rule.** `#310`/`#311` (`cs/useless-assignment-to-local`,
+2026-08-19) are the *same generated file* as `#307`/`#308`. Excluding `cs/nested-if-statements` in
+PR #292 removed one symptom, not the cause: the extractor keeps analysing source-generator output, and
+every maintainability rule in the suite is a candidate to fire on it. Four alerts, two rules, one file.
+
+Adding each rule as it appears is whack-a-mole and I am not doing a third round of it. The mechanism
+fix is to stop asking CodeQL for the *quality* half at all — `queries: security-and-quality` in
+`.github/workflows/codeql.yml` is what pulls in maintainability rules like these two; `security-extended`
+would keep every security query and drop the class entirely. That fits how this repo already divides
+the work (SonarCloud owns quality, CodeQL owns security), and Sonar analyses real source rather than
+build output.
+
+**Left to the maintainer** because it narrows what a security scanner reports, which is not a call to
+make quietly. The four alerts are dismissed with the reasoning above in the meantime, so the repo's
+open count stays at 0.
+
+### 1f. No workflow declared a timeout — **FIXED (2026-08-19)**
+
+`Install Playwright browsers` fetches browser binaries from an external CDN, and it stalled there
+twice: 27 minutes on PR #287 before being cancelled by hand, then the **full 6-hour** Actions default
+on PR #295, blocking that PR for an afternoon. No job or step in any workflow declared
+`timeout-minutes`, so a stalled step always burned the whole default.
+
+All four workflows now cap the job at 30 minutes, and the Playwright step at 15. The numbers come from
+**job** timings over the last 15 successful runs of each:
+
+| workflow | job duration | cap |
+|---|---|---|
+| `ci.yml` | 5.2–10.1 min | 30 |
+| `release.yml` | 1.4–4.8 min | 30 |
+| `codeql.yml` | 6.9–11.3 min | 30 |
+| `sonar.yml` | 5.3–6.3 min | 30 |
+| Playwright install step | 23 s–4 min 48 s (median 28 s) | 15 |
+
+A timeout is still a failure, which is what both Playwright steps' existing comments ask for: a
+missing browser must fail the job rather than let the E2E suite self-skip.
+
+**Worth remembering how the first attempt got this wrong.** It exempted `sonar.yml` on the grounds
+that one successful run took 65 minutes, so a 30-minute cap would have killed real work. That figure
+was the *workflow run's* wall clock — `created` to `updated`, queue time included — and
+`timeout-minutes` bounds **job execution**, which for that same run was 5 m 50 s. Re-derived from job
+timings the argument reversed completely: `sonar.yml` is the workflow that hard-waits on an external
+API (`sonar.qualitygate.wait`, already seen returning 504s here) *and* is a required check, so leaving
+it uncapped was the worst of the four choices. The same first attempt also described the download as
+taking "1–3 minutes" when the median is 28 seconds.
 
 ### 2. CI hardening
 - **Fail (not skip) the Testcontainers integration tests when Docker is absent in CI.** — **done**:

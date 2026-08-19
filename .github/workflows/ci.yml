@@ -18,6 +18,11 @@ jobs:
   build:
     name: build · test · format
     runs-on: ubuntu-latest
+    # Without this the job inherits the 6-hour default, and a stalled step burns all of it before
+    # anyone finds out. Job durations measured 5.2–10.1 minutes over the last 15 successful runs, so
+    # 30 is about three times the worst observed — long enough that a slow-but-working runner still
+    # passes, short enough that a hang is a fast red instead of a PR blocked for an afternoon.
+    timeout-minutes: 30
     env:
       DOTNET_NOLOGO: true
       DOTNET_CLI_TELEMETRY_OPTOUT: true
@@ -52,6 +57,13 @@ jobs:
         # generated playwright.ps1 exists; --with-deps pulls the shared libraries a headless
         # browser needs on a bare runner. Skipped browsers would make the E2E tests self-skip,
         # so the install failing must fail the job rather than quietly reduce coverage.
+        #
+        # Bounded because this is the step that has actually hung, fetching browser binaries from an
+        # external CDN: it stalled 27 minutes on PR #287 before being cancelled by hand, then for the
+        # full 6-hour job default on PR #295. Successful installs measured 23s–4m48s (median 28s) over
+        # the last 15 runs, so 15 is about three times the worst observed. A timeout is still a
+        # failure, which is the behaviour the note above asks for.
+        timeout-minutes: 15
         run: pwsh tests/NeoReports.WebUi.E2ETests/bin/Release/net8.0/playwright.ps1 install --with-deps chromium
 
       - name: Test
