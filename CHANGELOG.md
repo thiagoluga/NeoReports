@@ -9,6 +9,16 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 ## [Unreleased]
 
 ### Fixed
+- **An invalid source name in the URL is a `404`, not a `500`.** `GET`/`DELETE /api/sources/{name}`
+  passed the raw route segment into the registry store, whose `GetAsync`/`DeleteAsync` threw
+  `ArgumentException` for a name it could never have written — and nothing above catches it, so
+  `GET /api/sources/a%20b` answered **500 with the whole validation regex in the body**, where an
+  unknown-but-legal name has always answered a clean `404`. Reads and deletes now treat such a name as
+  a miss; writes still validate, since there a bad name is the caller's mistake and rejecting it is
+  what keeps it from ever becoming a key or a path. The same lookup backs `source.ref` resolution, so
+  a report referencing an unusable source name now fails with "No source named 'x' is registered"
+  instead of a 500.
+
 - **A dynamic report name could end in a newline.** `DynamicReportName.Pattern` was anchored with
   `$`, which in .NET matches at the end of input **and** immediately before a trailing newline — so
   a name ending in one was accepted. That name is remotely creatable via `POST /api/reports`, and

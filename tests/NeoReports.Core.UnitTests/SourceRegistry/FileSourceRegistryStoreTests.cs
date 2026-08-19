@@ -128,16 +128,31 @@ public class FileSourceRegistryStoreTests : IDisposable
         (await store.GetAsync("broken", CancellationToken.None)).ShouldBeNull();
     }
 
+    /// <summary>
+    /// A write under a name the store cannot key is the caller's mistake and still throws — rejecting
+    /// it is what keeps the name from ever becoming a path. A read or delete is a miss instead: a
+    /// lookup for something that could never have been written is simply not found, and throwing there
+    /// made <c>GET /api/sources/{name}</c> answer 500 (with the validation regex in the body) for a
+    /// name a plain 404 already describes.
+    /// </summary>
     [Theory]
     [InlineData("../evil")]
     [InlineData("a b")]
     [InlineData("")]
-    public async Task Invalid_name_throws_on_every_operation(string invalidName)
+    public async Task Invalid_name_is_refused_on_write_and_a_miss_on_read(string invalidName)
     {
         var store = new FileSourceRegistryStore(_directory);
-        await Should.ThrowAsync<ArgumentException>(() => store.SaveAsync(new SourceDefinition(invalidName, "sql"), CancellationToken.None));
-        await Should.ThrowAsync<ArgumentException>(() => store.GetAsync(invalidName, CancellationToken.None));
-        await Should.ThrowAsync<ArgumentException>(() => store.DeleteAsync(invalidName, CancellationToken.None));
+
+        await Should.ThrowAsync<ArgumentException>(
+            () => store.SaveAsync(new SourceDefinition(invalidName, "sql"), CancellationToken.None));
+
+        (await store.GetAsync(invalidName, CancellationToken.None)).ShouldBeNull();
+        (await store.DeleteAsync(invalidName, CancellationToken.None)).ShouldBeFalse();
+
+        // None of the three touched the filesystem: the store only creates its directory on a
+        // successful write, so its absence is the strongest available proof that the name never
+        // reached GetPath.
+        Directory.Exists(_directory).ShouldBeFalse();
     }
 
     public void Dispose()

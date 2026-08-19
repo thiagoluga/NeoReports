@@ -150,6 +150,26 @@ would escape the per-report skip and stop the host from starting at all. Doing t
 deciding where a code-first name is validated and with which exception, which is a design question,
 and the input is the host developer's own literal rather than anything remote.
 
+### 1e. Windows device names still pass the report/source name grammar — open
+
+`CON`, `NUL`, `PRN`, `AUX`, `COM1`–`COM9` and `LPT1`–`LPT9` satisfy `DynamicReportName`, but a name
+becomes a file name and on Windows `CON.json` resolves to a device: the save throws
+`FileNotFoundException`, so `POST /api/reports` answers `500` for what is really an invalid name.
+Measured, not assumed — CON/NUL/PRN/AUX/COM1/LPT1 all failed to write on Windows 10 while `CON1` wrote
+normally, and `COM0`/`LPT0` turned out to be ordinary writable files despite being documented as
+reserved. No data is at risk: the create path already rolls the registry back.
+
+**Attempted and backed out.** Adding the device names to the pattern looks like a one-line fix and is
+not, because `DynamicReportName.IsValid` serves two roles: a *validator* (reject → 400) and a
+*discriminator* (could a file-backed store hold this?). Narrowing it flips the second role — a
+`source.ref` of `CON` and `GET /api/sources/CON` both turned from a clean 404/400 into a 500, and a
+`nul.json` created on Linux before the change would rehydrate and run but answer `409 "code-registered"`
+on delete, unrecoverable except by deleting the file by hand.
+
+The `500` half of that fallout is fixed (see the source-store lookup change above); the remaining work
+is separating the two roles, and deciding what happens to an already-stored name that the new rule
+would reject. That is a design decision, and the bug it fixes is a wrong status code.
+
 ### 2. CI hardening
 - **Fail (not skip) the Testcontainers integration tests when Docker is absent in CI.** — **done**:
   the five container `ServerFixture`s now swallow a start failure only through an exception filter,
