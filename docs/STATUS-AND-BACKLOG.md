@@ -118,7 +118,7 @@ check-then-act rather than atomic — closing that needs a compare-and-swap on `
 an interface every custom store implements, for a race orders of magnitude smaller than the human one
 this closes.
 
-### 1c. CodeQL noise from source-generator output — **FIXED (2026-08-18)**
+### 1c. CodeQL noise from source-generator output — **partially fixed; recurred (2026-08-19)**
 
 `cs/nested-if-statements` fired four times in this repository and every one was inside
 `System.Text.RegularExpressions` source-generator output — #157/#158 (2026-07-16, QueryBuilder.Pro)
@@ -169,6 +169,22 @@ on delete, unrecoverable except by deleting the file by hand.
 The `500` half of that fallout is fixed (see the source-store lookup change above); the remaining work
 is separating the two roles, and deciding what happens to an already-stored name that the new rule
 would reject. That is a design decision, and the bug it fixes is a wrong status code.
+
+**It came back the next day, under a different rule.** `#310`/`#311` (`cs/useless-assignment-to-local`,
+2026-08-19) are the *same generated file* as `#307`/`#308`. Excluding `cs/nested-if-statements` in
+PR #292 removed one symptom, not the cause: the extractor keeps analysing source-generator output, and
+every maintainability rule in the suite is a candidate to fire on it. Four alerts, two rules, one file.
+
+Adding each rule as it appears is whack-a-mole and I am not doing a third round of it. The mechanism
+fix is to stop asking CodeQL for the *quality* half at all — `queries: security-and-quality` in
+`.github/workflows/codeql.yml` is what pulls in maintainability rules like these two; `security-extended`
+would keep every security query and drop the class entirely. That fits how this repo already divides
+the work (SonarCloud owns quality, CodeQL owns security), and Sonar analyses real source rather than
+build output.
+
+**Left to the maintainer** because it narrows what a security scanner reports, which is not a call to
+make quietly. The four alerts are dismissed with the reasoning above in the meantime, so the repo's
+open count stays at 0.
 
 ### 2. CI hardening
 - **Fail (not skip) the Testcontainers integration tests when Docker is absent in CI.** — **done**:
