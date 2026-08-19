@@ -25,6 +25,31 @@ public class SourceEndpointTests
     }
 
     /// <summary>
+    /// A route name the registry could never have written used to reach the store's ValidateName,
+    /// which throws ArgumentException — and nothing above catches it, so the caller got a 500 whose
+    /// body carried the whole validation regex. An unknown-but-legal name has always answered a clean
+    /// 404; these now do the same.
+    /// </summary>
+    [Theory]
+    [InlineData("a b")]
+    [InlineData("../evil")]
+    [InlineData("1abc")]
+    public async Task An_unwritable_source_name_is_404_not_500(string name)
+    {
+        using var host = await TestApp.StartAsync(AddSourceRegistryHost);
+        HttpClient client = host.GetTestClient();
+        string escaped = Uri.EscapeDataString(name);
+
+        HttpResponseMessage read = await client.GetAsync($"/api/sources/{escaped}");
+        read.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+
+        // And the answer must not hand back the validation rule.
+        (await read.Content.ReadAsStringAsync()).ShouldNotContain("[a-zA-Z]");
+
+        (await client.DeleteAsync($"/api/sources/{escaped}")).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    /// <summary>
     /// A source's <c>properties</c> bag is typed <c>object?</c>, so System.Text.Json hands each value
     /// over as a <c>JsonElement</c>. <c>FileSourceRegistryStore</c> launders that away by serializing,
     /// but <c>InMemorySourceRegistryStore</c> keeps what it is given — so a source created over HTTP

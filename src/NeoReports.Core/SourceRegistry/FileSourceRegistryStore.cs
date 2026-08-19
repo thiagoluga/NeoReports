@@ -46,7 +46,14 @@ public sealed class FileSourceRegistryStore : ISourceRegistryStore
     /// <inheritdoc />
     public async Task<SourceDefinition?> GetAsync(string name, CancellationToken cancellationToken)
     {
-        ValidateName(name);
+        // A LOOKUP for a name this store could never have written is a miss, not an error. It used to
+        // throw, and nothing above catches ArgumentException: GET /api/sources/{name} with a name like
+        // "a b" answered 500 with the whole validation regex in the body, where an unknown-but-legal
+        // name answers a clean 404. Writes still validate — there a bad name is the caller's mistake,
+        // and rejecting it is what keeps the name from ever becoming a path.
+        if (!DynamicReportName.IsValid(name))
+            return null;
+
         string path = GetPath(name);
         if (!File.Exists(path))
             return null;
@@ -58,7 +65,12 @@ public sealed class FileSourceRegistryStore : ISourceRegistryStore
     /// <inheritdoc />
     public Task<bool> DeleteAsync(string name, CancellationToken cancellationToken)
     {
-        ValidateName(name);
+        // Same rule as GetAsync: nothing under an unwritable name can be there to remove, so report
+        // "removed nothing" rather than throwing at a caller that only asked. Also keeps the name away
+        // from GetPath, which is the whole reason it was validated here.
+        if (!DynamicReportName.IsValid(name))
+            return Task.FromResult(false);
+
         string path = GetPath(name);
         if (!File.Exists(path))
             return Task.FromResult(false);

@@ -22,6 +22,10 @@ jobs:
   publish:
     name: Pack & publish to NuGet
     runs-on: ubuntu-latest
+    # Same reasoning as ci.yml. Job durations measured 1.4–4.8 minutes, so 30 is well clear — and a
+    # release blocked for an afternoon by a stalled download is worse than one that fails fast and
+    # can be re-run on the same tag.
+    timeout-minutes: 30
     # Requires a NUGET_API_KEY secret. The job is skipped on forks without it.
     if: ${{ github.repository == 'thiagoluga/NeoReports' }}
     env:
@@ -50,6 +54,13 @@ jobs:
       - name: Install Playwright browsers
         # Without this the E2E suite self-skips and the release gate would verify only that the host
         # boots — 3 of its 16 tests — while looking green. Same stance as the Docker gate below.
+        #
+        # Bounded because this is the step that has actually hung, fetching browser binaries from an
+        # external CDN: it stalled 27 minutes on PR #287 before being cancelled by hand, then for the
+        # full 6-hour job default on PR #295. Successful installs measured 23s–4m48s (median 28s) over
+        # the last 15 runs, so 15 is about three times the worst observed. A timeout is still a
+        # failure, which is the behaviour the note above asks for.
+        timeout-minutes: 15
         run: pwsh tests/NeoReports.WebUi.E2ETests/bin/Release/net8.0/playwright.ps1 install --with-deps chromium
 
       - name: Test

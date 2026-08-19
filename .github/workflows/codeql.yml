@@ -20,6 +20,10 @@ jobs:
   analyze:
     name: Analyze (C#)
     runs-on: ubuntu-latest
+    # Job durations measured 6.9–11.3 minutes over the last 15 successful runs. This job has already
+    # died once on a 429 while downloading the CodeQL action itself; bounding it means the next
+    # external stall is a fast red rather than six hours of a blocked PR.
+    timeout-minutes: 30
     permissions:
       actions: read
       contents: read

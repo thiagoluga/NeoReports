@@ -26,4 +26,28 @@ public interface IReportConfigStore
     /// <summary>All stored documents, as (name, document) pairs, ordered by name.</summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task<IReadOnlyList<(string Name, string Document)>> ListAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The document stored under <paramref name="name"/>, or <c>null</c> when none is (ADR D86 —
+    /// editing a report needs its own document back, which until now could only be reached by
+    /// reading every stored document).
+    /// </summary>
+    /// <param name="name">The report name.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <remarks>
+    /// Default-implemented over <see cref="ListAsync"/> so an existing external implementation keeps
+    /// compiling; that fallback reads every document to return one. Implementations that can address
+    /// a single document should override it.
+    /// </remarks>
+    async Task<string?> TryGetAsync(string name, CancellationToken cancellationToken)
+    {
+        IReadOnlyList<(string Name, string Document)> all = await ListAsync(cancellationToken).ConfigureAwait(false);
+        foreach ((string storedName, string document) in all)
+        {
+            if (string.Equals(storedName, name, StringComparison.Ordinal))
+                return document;
+        }
+
+        return null;
+    }
 }

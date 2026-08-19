@@ -8,6 +8,146 @@ The `NeoReports.Abstractions` contract follows SemVer strictly.
 
 ## [Unreleased]
 
+### Fixed
+- **An invalid source name in the URL is a `404`, not a `500`.** `GET`/`DELETE /api/sources/{name}`
+  passed the raw route segment into the registry store, whose `GetAsync`/`DeleteAsync` threw
+  `ArgumentException` for a name it could never have written — and nothing above catches it, so
+  `GET /api/sources/a%20b` answered **500 with the whole validation regex in the body**, where an
+  unknown-but-legal name has always answered a clean `404`. Reads and deletes now treat such a name as
+  a miss; writes still validate, since there a bad name is the caller's mistake and rejecting it is
+  what keeps it from ever becoming a key or a path. The same lookup backs `source.ref` resolution, so
+  a report referencing an unusable source name now fails with "No source named 'x' is registered"
+  instead of a 500.
+
+- **A dynamic report name could end in a newline.** `DynamicReportName.Pattern` was anchored with
+  `$`, which in .NET matches at the end of input **and** immediately before a trailing newline — so
+  a name ending in one was accepted. That name is remotely creatable via `POST /api/reports`, and
+  it reaches a file name on disk, a URL segment, a job record field and every log line about a run.
+  The concrete consequence is the last one: in a plain-text log sink the newline splits the line and
+  lets the name forge a log entry of its own (CodeQL `cs/log-forging` on `ReportJobWorker` and
+  `InMemoryJobScheduler`). Path traversal was never reachable through it — `/`, `\`, `.` and `:` have
+  never been in the character class — so this is the validator not doing what it documented rather
+  than a hole in the file layout. Anchored with `\z`, which means end of input and nothing else. The
+  validator had no tests at all, which is how this survived; it has sixteen now.
+
+### Added
+- **Optimistic concurrency on report editing (ADR D87).** `GET /api/reports/{name}/config` now returns
+  an `ETag`, and `PUT /api/reports/{name}` honours `If-Match`, answering `412 Precondition Failed`
+  when the stored document changed since it was read. This closes the window D86 recorded and left
+  open: the redaction placeholder carries the address of the slot its value came from, so if another
+  editor reorders the destinations between the `GET` and the `PUT`, `destinations[0]` addresses a
+  different bucket than the one the first editor was shown — and the wrong section's credential is
+  restored. The header is **optional**, so clients that do not send it keep working exactly as before;
+  the Builder always sends it.
+
+### Fixed
+- **Editing a report in the Builder no longer starts from a blank form (ADR D86).** Reported by the
+  maintainer: *Edit* prefilled almost nothing the report actually reads from — source type, query, key
+  column, connection, source properties, destination path were all empty, so editing meant retyping
+  the report from memory. The cause was in the engine, not the UI: no endpoint returned a report's
+  configuration, because D33(c) barred GET responses from echoing property bags and D33(f) deferred
+  editing until there was a secrets round-trip story. There is one now, so every step prefills.
+- **Saving an edit no longer silently deletes what the wizard cannot show.** The Builder now patches
+  the stored document instead of regenerating one from the form, so a JsonLogic `filter`, per-output
+  properties and sections, a column's type / display name / format / culture, and any destination past
+  the first all survive an edit. Previously **every column was rewritten as an untyped `String`** by a
+  form that never displayed the type.
+- **Two outputs of the same format both survive an edit.** The Format step is a set of checkboxes, so
+  the Builder collapses outputs to distinct formats; it used to emit one output per format and delete
+  the second `csv` (each of which can carry its own writer options). Clearing a format still removes
+  every output of it, and the step now says when a report has more outputs than formats.
+- **A JSON `null` source property no longer becomes `""` on every edit.** A JSON null *is* a null
+  node, so "present but null" now tests membership rather than the value.
+- **A failed `PUT` save rolls the registry back whatever the failure was.** It previously caught only
+  `IOException`/`UnauthorizedAccessException`; any other store failure left the running report and the
+  persisted one disagreeing, so the edit applied until the next restart and then silently reverted.
+- **Editing one output or destination can no longer hand another one its credential.** The redaction
+  placeholder now carries the address it came from (`${neoreports:redacted:destinations[1]}`) instead
+  of being matched back by section id and position — a report may legitimately declare two `s3`
+  destinations, and removing, reordering or retyping any earlier section used to shift the match onto
+  the wrong one. It also removes a spurious 400 on untouched edits of a report whose stored sections
+  do not all carry a property bag.
+- **An object-valued source property survives being edited.** An HTTP source's `headers` is an object;
+  the one-line property editor showed it as JSON text and wrote it back as a JSON *string*, breaking
+  the source and hiding any placeholder inside it from the guards.
+- **`accountKey`, `sharedKey` and `licenseKey` are redacted.** Excluding the bare substring `key` to
+  keep the ADO keyset column visible had excluded every key-shaped name along with it.
+- **The Review step no longer reports "Destinations: none"** for a report that still has others; the
+  wizard edits the first destination and the rest are kept, which the summary now states.
+- **A credential stored as a JSON number or boolean is redacted too.** `"apiKey": 8675309123456` was
+  returned in plaintext because the value was read as text first; a credential-named key now hides
+  whatever it holds.
+- **`POST /api/reports/validate?for={name}` requires the document to be that report**, the same check
+  `PUT` enforces — otherwise an arbitrary document could be compiled with another report's credentials.
+- **`abortWhen.failureRateMinimumBatches` (ADR D78) survives an edit.** The wizard has no control for
+  it, and rebuilding the resilience block from the form silently reset it to the default.
+- **An edited source property keeps its JSON kind.** Editing `90` turned it into `"90"`; only
+  untouched rows were protected. The kind is carried from the stored value, never guessed from the
+  text, so an all-digits account id stays a string.
+- **Two sections cannot both claim the same stored credential.** Duplicating an output or destination
+  block by hand copies its placeholder too, and both copies used to resolve to the same secret. An
+  address may now be claimed by one property bag only; many placeholders *inside* one bag still share
+  it, as they always must.
+- **A transient `GET /api/sources` failure no longer repoints a report.** The Builder cleared
+  `source.ref` when the list came back empty, and a failed call was indistinguishable from an empty
+  one — so a blip converted a registry-backed report into an inline one on save.
+- **Format and destination ids are matched case-insensitively**, the way the engine resolves them; a
+  stored `"CSV"` with `csv` ticked used to save two CSV outputs, and the same on destination types
+  dropped the stored properties.
+- **A `404` when saving an edit shows the engine's message**, not "the engine is not reachable" — a
+  report deleted from another tab is a rejected request, not a network failure.
+- **A `ref`-based report keeps its report-local connection overlay.** The wizard offers no connection
+  field for a registered source, so saving deleted any `connectionString` — silently repointing the
+  report at the registry's connection, though D42 makes a report-local overlay win.
+- **A failed configuration load says so** instead of silently becoming a blank create wizard.
+- **A corrupt stored document is a `500` on `PUT`**, matching what `GET .../config` already returns
+  for the same condition, rather than a `400` blaming the caller.
+- **`validate?for={name}` no longer reports that report's own name as taken**, which put "name already
+  taken" under every successful edit validation.
+- **Changing the source mid-edit now says the connection must be re-supplied**, rather than failing at
+  save with a generic compile error.
+- **A `ref`-based ADO report keeps the query that lives in its registered definition.** Those boxes
+  hydrate blank, and the save wrote an empty `sql`/`key` overlay — which wins under D42, so the next
+  run failed from a save that changed only the page size.
+- **An unaddressed placeholder inside an output or destination is rejected**, rather than resolving
+  against `source.properties` and handing that section the source's credential.
+- **A column name containing a comma survives an edit.** The single comma-separated box split it in
+  two and retyped both as `String`; an untouched list is now written back as the stored array, and the
+  step warns when the box cannot represent a name.
+- **`validate?for={name}` says when that report has no stored configuration**, instead of complaining
+  about a placeholder the caller sent correctly.
+- **A `404` from `GET .../config` says so** instead of silently becoming a blank create wizard.
+- **Destination card selection matches case-insensitively**, like the rest of the destination matching.
+
+### Added
+- **`GET /api/reports/{name}/config`** returns a config-origin report's stored document with
+  credential-bearing values replaced by the reserved placeholder `${neoreports:redacted}` (`404` for a
+  code-registered report). A `${VAR}` placeholder is not a secret and comes back verbatim. Redaction
+  walks nested objects and arrays — an HTTP source's `headers.Authorization` and a merge-join
+  source's child `connectionString` are both inside nested values — and a key whose *name* looks like
+  a credential hides its whole subtree rather than being descended into. A URL is redacted when it
+  carries userinfo **or** a credential-shaped query parameter — an Azure SAS, an S3/GCS pre-signed
+  URL and a `?key=`/`?access_token=` endpoint are the credential, and they live under `url` /
+  `baseUrl` / `instanceUrl`. `Cookie`, `X-Api-Key` and `sessionId` now match the key list too;
+  `Authorization` always did, via `auth`.
+- **`PUT /api/reports/{name}`** replaces a report in one step, restoring any `${neoreports:redacted}`
+  from the stored document, so an editor can change a page size without the user retyping a connection
+  string and without the secret ever leaving the host.
+- **`POST /api/reports/validate?for={name}`** dry-runs a document as an *edit* of that report,
+  resolving the placeholder first, so validation means the same thing while editing as while creating.
+- `IReportConfigStore.TryGetAsync` (default-implemented over `ListAsync`; the file-backed store reads
+  the one file) and `IMutableReportRegistry.Replace` (default-implemented as unregister-then-register;
+  `ReportRegistry` overrides it atomically). Both are additive — existing implementations still compile.
+
+### Changed
+- **A rejected edit can no longer destroy the report being edited.** Editing used to be
+  validate → `DELETE` → `POST` driven from the browser, which failed in the worst direction: the engine
+  rejected the replacement *after* the original was already gone. `PUT /reports/{name}` compiles the
+  replacement before touching anything.
+- `ReportConfigEnvironment.Substitute` now rejects the redaction placeholder instead of passing it
+  through as an ordinary string — a report could otherwise go live with the literal
+  `${neoreports:redacted}` as its connection string.
+
 ## [2.0.0] - 2026-08-09
 
 **Major release.** The breaking changes below were held back for exactly this line — see the

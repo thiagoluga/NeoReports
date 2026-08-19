@@ -35,4 +35,34 @@ public class InMemorySourceRegistryStoreTests
 
         (await store.ListAsync(CancellationToken.None)).Select(d => d.Name).ShouldBe(new[] { "alpha-db", "beta-db" });
     }
+    // A lookup for a name the store could never have written is a miss, not an error. It used to
+    // throw ArgumentException, which nothing above catches — GET /api/sources/{name} with such a name
+    // answered 500 (echoing the validation regex) where an unknown-but-legal name answers 404.
+    [Theory]
+    [InlineData("a b")]
+    [InlineData("../evil")]
+    [InlineData("1abc")]
+    [InlineData("")]
+    public async Task A_lookup_for_an_unwritable_name_is_a_miss(string name)
+    {
+        var store = new InMemorySourceRegistryStore();
+        await store.SaveAsync(new SourceDefinition("real-db", "sql"), CancellationToken.None);
+
+        (await store.GetAsync(name, CancellationToken.None)).ShouldBeNull();
+        (await store.DeleteAsync(name, CancellationToken.None)).ShouldBeFalse();
+
+        // And the store is untouched by the attempt.
+        (await store.ListAsync(CancellationToken.None)).Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task A_write_under_an_unwritable_name_still_throws()
+    {
+        var store = new InMemorySourceRegistryStore();
+
+        // Writes keep validating: there a bad name is the caller's mistake, and rejecting it is what
+        // keeps the name from ever becoming a key or a path.
+        await Should.ThrowAsync<ArgumentException>(
+            () => store.SaveAsync(new SourceDefinition("a b", "sql"), CancellationToken.None));
+    }
 }

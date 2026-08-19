@@ -18,7 +18,29 @@
     {
         <Banner Variant="warn" Icon="alert-triangle">
             <b>Confirm the source type.</b>
-            <span style="font-size:12px">Not shown for "@Wizard.EditingOriginalName" — the engine doesn't track a compiled report's source type. Pick the correct one below; saving with the wrong type would silently change what the report reads from.</span>
+            <span style="font-size:12px">"@Wizard.EditingOriginalName" has no source type in its stored configuration. Pick the correct one below; saving with the wrong type would silently change what the report reads from.</span>
+        </Banner>
+    }
+    else if (Wizard.IsEditing)
+    {
+        <Banner Variant="info" Icon="info-circle">
+            <b>Editing "@Wizard.EditingOriginalName".</b>
+            <span style="font-size:12px">Every step is prefilled from the report's stored configuration. Values the engine holds back — connection strings, API tokens — are kept as they are unless you replace them.</span>
+        </Banner>
+    }
+    @if (_configUnavailable)
+    {
+        <Banner Variant="danger" Icon="alert-triangle">
+            @if (_configOutcome == ApiConfigOutcome.NotFound)
+            {
+                <b>That report has no stored configuration to edit.</b>
+                <span style="font-size:12px">It was deleted, or it is registered in code — either way there is nothing here to change. Nothing was prefilled, so this is a blank new report.</span>
+            }
+            else
+            {
+                <b>Could not load that report's configuration.</b>
+                <span style="font-size:12px">Nothing was prefilled, so this is a blank new report — saving it would not edit the one you came from. Go back and try again.</span>
+            }
         </Banner>
     }
     @if (!Wizard.EngineAvailable)
@@ -86,6 +108,15 @@
     private IReadOnlyList<string> _engineSources = Array.Empty<string>();
     private IReadOnlyList<ApiSourceView> _registeredSources = Array.Empty<ApiSourceView>();
 
+    /// <summary>Whether the registered-source list actually loaded, as opposed to failing to.</summary>
+    private bool _sourcesLoaded;
+
+    /// <summary>Set when an edit was asked for and the report's configuration could not be read.</summary>
+    private bool _configUnavailable;
+
+    /// <summary>Why it could not be read, so the message can say which of the two happened.</summary>
+    private ApiConfigOutcome _configOutcome = ApiConfigOutcome.Ok;
+
     /// <summary>
     /// Set by ReportDetail's "Edit" button (<c>?edit=name</c>) — hydrates the wizard from that
     /// report instead of starting blank.
@@ -107,71 +138,92 @@
 
     protected override async Task OnInitializedAsync()
     {
-        if (!string.IsNullOrWhiteSpace(EditName))
-            await LoadForEditAsync(EditName);
-        else if (!IsResuming)
+        string? editName = string.IsNullOrWhiteSpace(EditName) ? null : EditName;
+        if (editName is null && !IsResuming)
             Wizard.Reset();
 
         ApiCapabilities? capabilities = await Api.TryGetCapabilitiesAsync();
-        Wizard.EngineAvailable = capabilities is { Sources.Count: > 0 };
-        if (!Wizard.EngineAvailable)
-            return;
+        if (capabilities is not { Sources.Count: > 0 })
+        {
+            // Nothing to hydrate against and nothing to save to; the wizard stays browsable. Only
+            // the edit path resets here — a mid-wizard "Back" must keep what the user already typed
+            // (D69), and an unreachable engine is no reason to throw it away.
+            if (editName is not null)
+                Wizard.Reset();
 
-        _engineSources = capabilities!.Sources;
+            Wizard.EngineAvailable = false;
+            return;
+        }
+
+        _engineSources = capabilities.Sources;
+
+        // null means the call failed, which is NOT the same as "this host has no registered sources".
+        // Conflating them cleared an edited report's source.ref on a transient blip and saved it back
+        // as an inline source — a silent repointing of what the report reads from.
+        IReadOnlyList<ApiSourceView>? registered = await Api.TryListSourcesAsync();
+        _sourcesLoaded = registered is not null;
+        _registeredSources = registered ?? Array.Empty<ApiSourceView>();
+
+        // Loaded after the registered sources on purpose: a ref-based document names a source but
+        // not its type (the type belongs to the registry, D42), and the Configure step's editor
+        // shape depends on knowing it.
+        if (editName is not null)
+            await LoadForEditAsync(editName);
+
+        // Set last, because Reset() clears it and both paths above may have called it.
+        Wizard.EngineAvailable = true;
+
         // Not editing: an unrecognized/blank type (e.g. right after Reset()'s "sql" default, on a
-        // host that doesn't register a "sql" provider) falls back to the first available type. In
-        // edit mode, Wizard.SourceType is deliberately blank — leave it that way so nothing looks
-        // pre-selected; see the comment in LoadForEditAsync.
+        // host that doesn't register a "sql" provider) falls back to the first available type. While
+        // editing, a blank type means the stored document genuinely had none — left blank so nothing
+        // looks pre-selected and Continue stays disabled until the user confirms one.
         if (!Wizard.IsEditing && !_engineSources.Contains(Wizard.SourceType))
             Wizard.SourceType = _engineSources.Contains("sql") ? "sql" : _engineSources[0];
 
-        _registeredSources = await Api.TryListSourcesAsync() ?? Array.Empty<ApiSourceView>();
-        if (!string.IsNullOrEmpty(Wizard.SourceRef) && _registeredSources.All(s => s.Name != Wizard.SourceRef))
+        if (_sourcesLoaded && !string.IsNullOrEmpty(Wizard.SourceRef) && _registeredSources.All(s => s.Name != Wizard.SourceRef))
             Wizard.SourceRef = "";
     }
 
     /// <summary>
-    /// Prefills everything <c>GET /api/reports/{name}</c> safely exposes. The SQL query, key
-    /// column, connection string / source ref, and destination path are NOT retrievable — the
-    /// engine deliberately never returns a source's raw property bag (same write-only boundary
-    /// D33 already applies to registered sources) — and are left blank; BuilderConfigure and
-    /// BuilderDestination show a banner asking the user to re-enter them.
+    /// Prefills the whole wizard from the report's stored configuration document
+    /// (<c>GET /api/reports/{name}/config</c>, ADR D86) — source type/ref, query, key column,
+    /// properties, columns, formats, destination and path, resilience and schedule.
+    /// <para>
+    /// Values the engine redacts (connection strings, tokens) come back as a placeholder and are
+    /// preserved on save without ever being shown; see <see cref="BuilderConfigMapper"/>.
+    /// </para>
     /// </summary>
     private async Task LoadForEditAsync(string name)
     {
         Wizard.Reset();
 
-        ApiReportDetail? detail = await Api.TryGetReportDetailAsync(name);
-        if (detail is null || !detail.Deletable)
-            return; // Not editable (code-registered, or no longer exists) — falls back to a blank wizard.
+        ApiConfigResult config = await Api.TryGetReportConfigAsync(name);
+
+        // "Could not load it" is not "it is not editable" — the same conflation _sourcesLoaded fixes
+        // above. Silently degrading to a blank create wizard on a transient failure would invite the
+        // user to type a whole report over a working one.
+        // NotFound counts too: Edit is only offered for a config-origin report, so a 404 here means it
+        // was deleted or is code-registered — either way the user asked to edit something and must not
+        // be handed a blank create form without a word.
+        // Ok with no document cannot happen through the client, but matching the document out rather
+        // than asserting it keeps that from becoming a null dereference if it ever does.
+        _configOutcome = config.Outcome;
+        _configUnavailable = config is not { Outcome: ApiConfigOutcome.Ok, Document: { } document }
+            || !BuilderConfigMapper.Hydrate(Wizard, document, RegisteredSourceType);
+
+        // Kept whatever the outcome: Hydrate clears it through Reset(), and a null here simply means
+        // the save states no precondition, which is the pre-D87 behaviour rather than a failure.
+        Wizard.OriginalVersion = config.Version;
+
+        if (_configUnavailable)
+            return;
 
         Wizard.IsEditing = true;
         Wizard.EditingOriginalName = name;
-        Wizard.ReportName = detail.Name;
-        // Not retrievable — GET /api/reports/{name} doesn't expose the source type at all (it isn't
-        // tracked past compilation), unlike the properties bag's deliberate secrecy. Left blank
-        // (not defaulted to "sql") so nothing is pre-selected below; the user must actively confirm
-        // it, and the existing validate-before-delete step in BuilderReview blocks Save outright if
-        // they don't — the alternative (silently keeping the "sql" default) could quietly change a
-        // report's real source type on save if the user never revisits this step.
-        Wizard.SourceType = "";
-        Wizard.PageSize = detail.PageSize;
-        Wizard.ColumnNames = string.Join(", ", detail.Columns.Select(c => c.Name));
-        Wizard.Formats = new HashSet<string>(detail.Formats);
-        Wizard.DestinationType = detail.Destinations.FirstOrDefault() ?? "";
-        Wizard.RetryMaxAttempts = detail.RetryMaxAttempts;
-        Wizard.RetryBackoff = detail.RetryBackoff;
-        Wizard.RetryBaseDelaySeconds = detail.RetryBaseDelaySeconds;
-        Wizard.RetryJitter = detail.RetryUseJitter;
-        Wizard.FailureStrategy = detail.FailureStrategy;
-        Wizard.AbortOnConsecutiveFailures = detail.AbortAfterConsecutiveFailures is not null;
-        Wizard.AbortConsecutiveFailures = detail.AbortAfterConsecutiveFailures ?? 3;
-        Wizard.AbortOnTotalFailures = detail.AbortAfterTotalFailures is not null;
-        Wizard.AbortTotalFailures = detail.AbortAfterTotalFailures ?? 10;
-        Wizard.AbortOnFailureRate = detail.AbortAtFailureRate is not null;
-        Wizard.AbortFailureRatePercent = (detail.AbortAtFailureRate ?? 0.5) * 100;
-        Wizard.ScheduleCron = detail.ScheduleCron ?? "";
     }
+
+    private string? RegisteredSourceType(string sourceRef) =>
+        _registeredSources.FirstOrDefault(s => string.Equals(s.Name, sourceRef, StringComparison.Ordinal))?.Type;
 
     /// <summary>
     /// True only in edit mode, before the user has (re-)confirmed a source type (see

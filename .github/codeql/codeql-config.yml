@@ -1,5 +1,22 @@
 name: "NeoReports CodeQL config"
 
+# Only reaches files that exist in the checkout. Kept because it is correct for anything
+# a build leaves behind on disk — but see query-filters below for why it is not enough.
 paths-ignore:
   - "**/obj/**"
   - "**/bin/**"
+
+# `cs/nested-if-statements` has fired four times in this repository and every one of them was
+# inside System.Text.RegularExpressions source-generator output — alerts #157/#158 (2026-07-16)
+# and #307/#308 (2026-08-17); never once in code anyone wrote. The paths-ignore above was added
+# for exactly this and did not stop it: for a compiled language the extractor takes compilation
+# units from the BUILD, and generator output has no checkout file for a path filter to match, so
+# it is reported under a synthetic `obj/.../generated/...` path that never existed on disk.
+#
+# Dropping the rule rather than dismissing its alerts one release at a time: it is a
+# maintainability rule, not a security one, SonarCloud already covers that ground for this repo,
+# and a rule that has produced a 100% false-positive rate across two source generators will keep
+# producing them every time a generator changes shape.
+query-filters:
+  - exclude:
+      id: cs/nested-if-statements

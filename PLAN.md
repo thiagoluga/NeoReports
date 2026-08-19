@@ -1376,12 +1376,14 @@ maintainer during Q1) — `LicenseToken` deliberately has no per-product field.
   issue a license**: `LicenseSigner` existed as a library API that nothing called, so the maintainer
   could not produce a key at all. Reuses `LicenseToken`/`LicenseSigner` rather than restating the
   token shape, so an issued key can't drift from what the validator accepts.
-- [ ] **Q3b — Rotate to a production signing key.** Q1's embedded `ProLicense.PublicKeyBase64` is a
-  **placeholder whose private half was generated in a chat session** — plaintext, unrotatable,
-  unaudited. Run `keygen` locally, move the private key straight into a vault, embed the new public
-  key, and ship it **before** any customer license is issued. Blocks Q3c.
-- [ ] **Q3c — Publish the Pro packages.** Lift D30's "not published" posture: the three Pro projects
-  are `IsPackable=false` with `PackageLicenseExpression` cleared, so `release.yml` (which packs the
-  whole solution) skips them today. Needs a decision on the mechanism — extend `release.yml`, or make
-  `pack-pro.yml` push instead of only uploading artifacts — plus the feed/registry choice.
-  `NeoReports.Licensing` itself is already packable and MIT, so it rides the normal OSS release.
+- [x] **Q3b — Rotate to a production signing key.** **Done (ADR D83, 2026-08-08.)** Q1's embedded
+  `ProLicense.PublicKeyBase64` was a **placeholder whose private half was generated in a chat
+  session** — plaintext, unrotatable, unaudited. The maintainer generated the production pair locally
+  and vaulted the private half; the public key shipped before any customer license was issued.
+  Re-rotating is now a breaking change for issued keys.
+- [x] **Q3c — Publish the Pro packages.** **Done (ADR D83, 2026-08-08.)** D30's "not published"
+  posture is lifted: the three Pro projects are packable and `release.yml` pushes them to nuget.org on
+  a `v*.*.*` tag, with no human step in the publish path — a guard test is the gate. Shipped together
+  with Q3b in one PR because the halves are unsafe apart (publishing under the placeholder key would
+  have made the placeholder permanent). `NeoReports.Licensing` is MIT and rides the normal OSS
+  release.
