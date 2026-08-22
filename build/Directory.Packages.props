@@ -27,7 +27,7 @@
     <PackageVersion Include="ClosedXML" Version="0.105.1" />
     <PackageVersion Include="DocumentFormat.OpenXml" Version="3.5.1" />
     <PackageVersion Include="Parquet.Net" Version="6.0.3" />
-    <PackageVersion Include="AWSSDK.S3" Version="4.0.102" />
+    <PackageVersion Include="AWSSDK.S3" Version="4.0.102.3" />
 
     <!-- Scheduling -->
     <PackageVersion Include="Cronos" Version="0.13.0" />
