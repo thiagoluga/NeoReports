@@ -21,7 +21,7 @@
     <PackageVersion Include="Npgsql" Version="10.0.3" />
     <PackageVersion Include="MySqlConnector" Version="2.6.1" />
     <PackageVersion Include="Oracle.ManagedDataAccess.Core" Version="23.26.300" />
-    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.11" />
     <PackageVersion Include="Snowflake.Data" Version="5.7.0" />
     <PackageVersion Include="MongoDB.Driver" Version="3.10.0" />
     <PackageVersion Include="ClosedXML" Version="0.105.1" />
