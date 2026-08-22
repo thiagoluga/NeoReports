@@ -60,7 +60,7 @@
     <!-- Samples / Aspire (Epic H) — 9.5.2 is the last Aspire line targeting net8.0/net9.0;
          Aspire 13.x's AppHost SDK forces net10.0, which would be inconsistent with every other
          runnable sample and every runtime this repo otherwise ships/tests against. -->
-    <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.4.6" />
+    <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.5.2" />
     <PackageVersion Include="Aspire.Hosting.PostgreSQL" Version="13.4.6" />
     <PackageVersion Include="Aspire.Hosting.MySql" Version="13.4.6" />
     <PackageVersion Include="Aspire.Hosting.SqlServer" Version="13.4.6" />
