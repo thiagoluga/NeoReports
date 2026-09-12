@@ -33,9 +33,9 @@
     <PackageVersion Include="Cronos" Version="0.13.0" />
 
     <!-- Jobs -->
-    <PackageVersion Include="Hangfire.Core" Version="1.8.24" />
+    <PackageVersion Include="Hangfire.Core" Version="1.8.25" />
     <PackageVersion Include="Hangfire.SqlServer" Version="1.8.24" />
-    <PackageVersion Include="Hangfire.AspNetCore" Version="1.8.24" />
+    <PackageVersion Include="Hangfire.AspNetCore" Version="1.8.25" />
     <PackageVersion Include="Hangfire.InMemory" Version="1.0.0" />
 
     <!-- Tests -->
